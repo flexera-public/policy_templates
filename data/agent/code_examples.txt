@@ -1,0 +1,1764 @@
+Canonical DSL and JavaScript code examples for the Flexera Policy Template
+Language. Referenced by section title from .github/agents/policy-dev.agent.md.
+This file intentionally contains code only, not prose explanation - consult
+policy-dev.agent.md for the rules, rationale, and full field/label tables.
+
+================================================================================
+## Policy Template Anatomy - Header Block
+================================================================================
+
+name "Provider Example Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Does X and Y. See the [README](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME"
+category "Cost"          # Cost, Compliance, Operational, Security, SaaS, Automation
+severity "low"           # low, medium, high, critical
+default_frequency "weekly"  # "15 minutes", "hourly", "daily", "weekly", "monthly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Storage",
+  policy_set: "",
+  recommendation_type: "Usage Reduction",  # "Usage Reduction" or "Rate Reduction"
+  hide_skip_approvals: "true"
+)
+
+================================================================================
+## Policy Template Structure - Section Divider Skeleton
+================================================================================
+
+###############################################################################
+# Parameters
+###############################################################################
+
+###############################################################################
+# Authentication
+###############################################################################
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+###############################################################################
+# Policy
+###############################################################################
+
+###############################################################################
+# Escalations
+###############################################################################
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+================================================================================
+## DSL Quick Reference
+================================================================================
+
+### Credentials
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number  # for Meta Policy cross-account support
+end
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_oracle" do
+  schemes "oracle"
+  label "Oracle"
+  description "Select the Oracle Cloud (OCI) Credential from the list."
+  tags "provider=oracle"
+end
+
+### Pagination
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true    # nextLink IS the full URL for the next page - do not append as a parameter
+  end
+end
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+### Datasource - REST Request
+
+datasource "ds_example" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws   # omit if the endpoint is not paginated
+    host "ec2.amazonaws.com"
+    path "/some/endpoint"
+    query "param", "value"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+    end
+  end
+end
+
+# Variant: XML response (many older AWS EC2/RDS endpoints)
+
+  result do
+    encoding "xml"
+    collect xpath(response, "//item") do
+      field "id", xpath(col_item, "snapshotId/text()")
+      field "size", xpath(col_item, "volumeSize/text()")
+    end
+  end
+
+# Variant: raw text response (e.g. CSV)
+
+  result do
+    encoding "text"    # entire response body is the datasource value (a string)
+  end
+
+# Variant: iterate a datasource over a list (e.g. one request per region)
+
+datasource "ds_per_region" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/some/endpoint"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Items[*]") do
+      field "id", jmes_path(col_item, "Id")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+# Variant: single-object response - no collect
+
+result do
+  encoding "json"
+  field "id", jmes_path(response, "id")
+  field "name", jmes_path(response, "name")
+end
+
+### Datasource - Static POST / PUT / DELETE Request
+
+datasource "ds_create_items" do
+  iterate $ds_items_to_create
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/some/api/v1/orgs/", rs_org_id, "/items"])
+    header "User-Agent", "RS Policies"
+    body_field "name", val(iter_item, "name")
+    body_field "params", val(iter_item, "params")
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# Variant: raw string body instead of body_field
+
+datasource "ds_post_raw" do
+  request do
+    auth $auth_aws
+    verb "POST"
+    host "some-aws-api.amazonaws.com"
+    path "/some/endpoint"
+    body "{}"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+### Datasource - Dynamic / POST Request
+
+datasource "ds_billing_data" do
+  request do
+    run_script $js_billing_request, $ds_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "account_id", jmes_path(col_item, "dimensions.vendor_account")
+      field "account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_billing_request", type: "javascript" do
+  parameters "billing_centers", "rs_org_id", "rs_optima_host"
+  result "request"   # MUST be named "request" when used inside request do
+  code <<-'EOS'
+    var end_date = new Date(); end_date.setDate(end_date.getDate() - 1)
+    var start_date = new Date(); start_date.setDate(start_date.getDate() - 30)
+
+    request = {
+      auth: "auth_flexera",    // credential name as a string, NOT a $variable
+      host: rs_optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+      body_fields: {
+        dimensions: ["vendor_account", "vendor_account_name"],
+        granularity: "day",
+        start_at: start_date.toISOString().split("T")[0],
+        end_at: end_date.toISOString().split("T")[0],
+        metrics: ["cost_amortized_unblended_adj"],
+        billing_center_ids: _.pluck(billing_centers, "id")
+      },
+      headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+      ignore_status: [400]
+    }
+EOS
+end
+
+### Datasource - JavaScript Transform
+
+datasource "ds_filtered" do
+  run_script $js_filter_items, $ds_raw_items, $param_threshold
+end
+
+script "js_filter_items", type: "javascript" do
+  parameters "items", "threshold"
+  result "result"
+  code <<-'EOS'
+    // Underscore.js (_) is available for use in all script blocks
+    result = _.filter(items, function(item) {
+      return item.value > threshold
+    })
+EOS
+end
+
+### Common JavaScript Patterns - Tag Filtering
+
+script "js_filter_resources", type: "javascript" do
+  parameters "resources", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+    comparators = _.map(param_exclusion_tags, function(item) {
+      if (item.indexOf('==') != -1) {
+        return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+      }
+      if (item.indexOf('!=') != -1) {
+        return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+      }
+      if (item.indexOf('=~') != -1) {
+        value = item.split('=~')[1]
+        regex = new RegExp(value.slice(1, value.length - 1))
+        return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+      }
+      if (item.indexOf('!~') != -1) {
+        value = item.split('!~')[1]
+        regex = new RegExp(value.slice(1, value.length - 1))
+        return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+      }
+      return { comparison: 'key', key: item, value: null, string: item }
+    })
+
+    result = _.reject(resources, function(resource) {
+      resource_tags = {}
+      // AWS: tags are [{key: "k", value: "v"}, ...] - adjust for Azure/GCP as needed
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) { resource_tags[tag['key']] = tag['value'] })
+      }
+
+      found_tags = []
+      _.each(comparators, function(comparator) {
+        resource_tag = resource_tags[comparator['key']]
+        if (comparator['comparison'] == 'key' && resource_tag != undefined)                                          { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '==' && resource_tag == comparator['value'])                                 { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '!=' && resource_tag != comparator['value'])                                 { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '=~' && resource_tag != undefined && comparator['value'].test(resource_tag)) { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '!~' && (resource_tag == undefined || !comparator['value'].test(resource_tag))) { found_tags.push(comparator['string']) }
+      })
+
+      if (param_exclusion_tags.length == 0) { return false }
+      if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
+      return found_tags.length == comparators.length  // 'All'
+    })
+EOS
+end
+
+### Common JavaScript Patterns - Region Filtering
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+### Common JavaScript Patterns - Azure Subscription Filtering
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
+  }
+EOS
+end
+
+### Common JavaScript Patterns - Google Project Filtering
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-'EOS'
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_no_projects_error" do
+  run_script $js_no_projects_error, $ds_google_projects, $ds_applied_policy
+end
+
+script "js_no_projects_error", type: "javascript" do
+  parameters "ds_google_projects", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_google_projects.length == 0) {
+    var policy_name = "Google Policy"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+
+    result = [{
+      error: "No Google projects were returned. This typically indicates that the Google credential does not have the required 'resourcemanager.projects.get' permission, or that there are no accessible Google projects associated with this credential.",
+      policy_name: policy_name
+    }]
+  }
+EOS
+end
+
+### Policy Block
+
+policy "pol_example" do
+  validate_each $ds_items do
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Items Found"
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    escalate $esc_email
+    escalate $esc_delete
+    hash_exclude "tags", "savings"
+    export do
+      resource_level true
+      field "id" do label "Resource ID" end
+      field "name" do label "Resource Name" end
+      field "region" do label "Region" end
+      field "display_id" do
+        label "ID"
+        path "id"
+      end
+      field "console_link" do
+        label "Console Link"
+        format "link-external"
+      end
+    end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+### AWS Region Error-Reporting Pattern
+
+# 1. Probe each region for accessibility
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["lambda.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/2015-03-31/functions/"
+    query "MaxItems", "1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+# 2. Identify inaccessible regions
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) { region_responses[item.region] = "OK" }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+  var forbidden_regions = []
+
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to list [resources] in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required " +
+      "'[service]:[Action]' permission for these regions, or these regions may not be enabled." +
+      " To resolve: (1) Verify the credential has the required permission, " +
+      "(2) Ensure these regions are opted-in in your account, or " +
+      "(3) Exclude these regions using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Policy"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+# 3. Policy block uses 'validate' (not validate_each) for the error datasource
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify the AWS credential has the required permissions for all policy regions.
+    2. Ensure any opt-in regions are enabled in your AWS account.
+    3. Use the Allow/Deny Regions List parameter to exclude inaccessible regions.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+
+# 4. Dedicated escalation - simple email with no table attachment
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+### Common JavaScript Patterns - Final Transform / Cost Template Conventions
+
+# Standard fields set on result[0] (the first item in the result array):
+result[0]['policy_name'] = ds_applied_policy['name']
+result[0]['message']     = "Multi-line markdown string..."
+result[0]['total_savings'] = "Total Estimated Monthly Savings: " + currency_symbol + total
+
+# Canonical export block example:
+export do
+  resource_level true
+  field "accountID" do
+    label "Account ID"
+  end
+  field "accountName" do
+    label "Account Name"
+  end
+  field "resourceID" do
+    label "Resource ID"
+  end
+  field "resourceName" do
+    label "Resource Name"
+  end
+  field "tags" do
+    label "Resource Tags"
+  end
+  field "recommendationDetails" do
+    label "Recommendation"
+  end
+  field "region" do
+    label "Region"
+  end
+  field "state" do
+    label "State"
+  end
+  field "resourceType" do
+    label "Resource Type"
+    path "runtime"    # use 'path' to alias a data field to a standard name
+  end
+  field "savings" do
+    label "Estimated Monthly Savings"
+  end
+  field "savingsCurrency" do
+    label "Savings Currency"
+  end
+  field "lookbackPeriod" do
+    label "Look Back Period (Days)"
+  end
+  field "service" do
+    label "Service"
+  end
+  field "resourceARN" do
+    label "Resource ARN"
+  end
+  field "id" do
+    label "ID"
+    path "resourceID"
+  end
+end
+
+hash_exclude "tags", "savings", "savingsCurrency"
+
+# Final transform result.push example:
+result.push({
+  accountID: ds_aws_account['id'],
+  accountName: ds_aws_account['name'],
+  resourceID: resource['id'],
+  resourceName: resource['name'],
+  tags: tags.join(', '),
+  recommendationDetails: recommendationDetails,
+  region: region,
+  // Resource-specific fields here ...
+  savings: parseFloat(item_savings.toFixed(3)),
+  savingsCurrency: ds_currency['symbol'],
+  lookbackPeriod: param_lookback_days,
+  service: "EC2",
+  resourceARN: resource['arn'],
+})
+
+### Escalations
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_delete" do
+  automatic contains($param_automatic_action, "Delete Items")
+  label "Delete Items"
+  description "Approval to delete all selected items"
+  run "delete_items", data, $param_some_option
+end
+
+escalation "esc_create_and_resolve" do
+  automatic true
+  label "Create Items"
+  description "Creates the listed items and closes the incident"
+  run "create_items", data
+  resolve_incident
+end
+
+### Cloud Workflow (Actions)
+
+define delete_items($data, $param_some_option) return $all_responses do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call delete_one_item($item) retrieve $response
+    end
+    $$all_responses << $response
+  end
+
+  if size($$errors) > 0
+    raise join($$errors, "\n")
+  end
+end
+
+# Pattern A - AWS/Oracle: http_request with split host/href and explicit https: flag
+define delete_one_item_aws($item) return $response do
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "delete",
+    host: "example.com",
+    href: join(["/items/", $item["id"]]),
+    headers: { "Accept": "application/json" }
+  )
+end
+
+# Pattern B - Google/Azure: shorthand method with a single full URL
+define delete_one_item_azure($item) return $response do
+  $response = http_delete(
+    auth: $$auth_google,
+    url: join(["https://example.com/items/", $item["id"]]),
+    headers: { "Accept": "application/json" }
+  )
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
+
+  call delete_one_item($item) retrieve $response   # captures return value
+  call log_event($item)                            # fire-and-forget; no return value needed
+
+define delete_one_item($item) return $response do
+  $url = "https://example.com/items/" + $item["id"]
+  task_label("DELETE " + $url)
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "delete",
+    host: "example.com",
+    href: join(["/items/", $item["id"]])
+  )
+  task_label("DELETE " + $url + " response: " + to_json($response))
+end
+
+  if inspect($$errors) != "null"
+    raise "\n" + join($$errors, "\n") + "\n"
+  end
+
+  concurrent foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_one_instance($instance)
+    end
+  end
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting item " + $item["id"] + ": " + to_json($response)
+  else
+    task_label("Successfully deleted item: " + $item["id"])
+  end
+
+  while $instance_state != "running" do
+    call get_instance_state($instance) retrieve $instance_state
+    sleep(10)
+  end
+
+  sub timeout: 5m, on_timeout: skip do
+    while $state != "RUNNING" do
+      call get_state($item) retrieve $state
+      sleep(5)
+    end
+  end
+
+  sub timeout: 5m, on_timeout: handle_timeout() do
+    while $state == null do
+      call get_state($item) retrieve $state
+      sleep(10)
+    end
+  end
+
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: { "content-type": "application/json" },
+    body: { "labels": $new_labels }
+  )
+
+### Flexera API Boilerplate Datasources
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host     # use rs_optima_host directly, NOT val($ds_flexera_api_hosts, ...)
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_bc_list
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_bc_list.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_bc_list, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_bc_list, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    result = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    result = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")  # use azure.subscriptionId, gcp.projectId etc. for other providers
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Variant: Fallback for AWS account name lookup when ds_cloud_vendor_accounts lacks the account
+# (queries the Bill Analysis API directly for a vendor_account/vendor_account_name pair)
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+### Meta Policy Canonical Block
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+### Provider Boilerplate Datasources
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_google_projects" do
+  request do
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
+    end
+  end
+end
+
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
+
+================================================================================
+## Standard Parameter Conventions
+================================================================================
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When set, the policy will automatically take the selected action(s)."
+  allowed_values ["Delete Items"]
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied project IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter resources containing any of the specified tags or only those that contain all of them."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Policy Settings"
+  label "Incident Table Size"
+  description "Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues."
+  min_value 1
+  max_value 500
+  default 20
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Policy Settings"
+  label "Attach Incident CSV"
+  description "Whether or not to attach a CSV of the incident data to the incident email."
+  allowed_values "true", "false"
+  default "true"
+end
+
+### Statistics Category Parameters
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CloudWatch data when assessing resources. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+### Currency Conversion Boilerplate
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+# Variant: templates that convert costs into the org's currency (rather than just formatting $)
+# chain ds_currency_target -> ds_conditional_currency_conversion -> ds_currency_conversion -> ds_currency
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-'EOS'
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-'EOS'
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+### Common JavaScript Patterns - Multi-Stage Resource Filter Pipeline
+
+# Resource-heavy templates (e.g. Azure Storage Accounts, Azure SQL Servers) chain tag -> region -> resource-group
+# filters in sequence, each stage consuming the prior stage's output datasource.
+
+datasource "ds_azure_storage_accounts_tag_filtered" do
+  run_script $js_azure_storage_accounts_tag_filtered, $ds_azure_storage_accounts, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_storage_accounts_tag_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_storage_accounts, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_storage_accounts
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_region_filtered" do
+  run_script $js_azure_storage_accounts_region_filtered, $ds_azure_storage_accounts_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_storage_accounts_region_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
+      include_account = _.contains(param_regions_list, account['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_account = !include_account
+      }
+
+      return include_account
+    })
+  } else {
+    result = ds_azure_storage_accounts_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_rg_filtered" do
+  run_script $js_azure_storage_accounts_rg_filtered, $ds_azure_storage_accounts_name_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_storage_accounts_rg_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_name_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_storage_accounts_name_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_storage_accounts_name_filtered
+    }
+EOS
+end
+
+### AWS Instance Type Reference Datasources
+
+datasource "ds_aws_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
+end
+
+### Common Bill Ingestion (CBI) / Rule-Based Dimensions (RBD) Datasources
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+datasource "ds_pending_bill_uploads" do
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_pending_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_existing_bill_uploads, function(item) {
+    return item["status"] != "complete" && item["status"] != "aborted"
+  })
+EOS
+end
+
+datasource "ds_abort_pending_bill_uploads" do
+  iterate $ds_pending_bill_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "abort"
+    ignore_status [400, 401, 402, 403, 404, 405, 429, 500, 502]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = year + "-" + month
+  } else {
+    result = param_effective_date
+  }
+EOS
+end
+
+# Rule-Based Dimensions (RBD): create the RBD, then apply its ruleset in a second dependent call
+# `ds_create_rbds` is passed as a parameter into `js_apply_rbds` purely to force execution order
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+### Turbonomic Token / API Datasources
+
+datasource "ds_get_turbonomic_token" do
+  request do
+    run_script $js_get_turbonomic_token, $param_turbonomic_endpoint, $param_turbonomic_audience
+  end
+  result do
+    encoding "json"
+    field "access_token", jmes_path(response, "access_token")
+  end
+end
+
+script "js_get_turbonomic_token", type: "javascript" do
+  parameters "turbonomic_endpoint", "audience"
+  result "request"
+  code <<-'EOS'
+    var request = {
+      verb: "POST",
+      auth: "auth_turbonomic"
+      host: turbonomic_endpoint,
+      path: "/oauth2/token",
+      headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "grant_type=client_credentials" + "&audience=" + audience + "&scope=role:OBSERVER"
+
+    }
+EOS
+end
+
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint, $param_provider
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
