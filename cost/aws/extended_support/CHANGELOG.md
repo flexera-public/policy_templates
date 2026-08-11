@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.3
+
+- Updated policy logic for internal consistency; no functional or user-facing changes.
+
 ## v1.2.2
 
 - Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions

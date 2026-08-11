@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v0.5.7
 
 - Minor code formatting fixes. Functionality unchanged.
