@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+
 ## v0.7.7
 
 - Updated documentation link in policy description. Functionality unchanged.
