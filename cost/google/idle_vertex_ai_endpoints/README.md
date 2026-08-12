@@ -16,7 +16,7 @@ This policy template identifies Google Cloud Vertex AI online prediction endpoin
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the idle endpoint is deleted.
 
-- The `Estimated Monthly Savings` is calculated as `pricePerHour × nodeCount × 730` for each deployed model using `dedicatedResources`, where `nodeCount` is the minimum replica count and `730` is the average number of hours in a month.
+- The `Estimated Monthly Savings` is calculated as `pricePerHour x nodeCount x 730` for each deployed model using `dedicatedResources`, where `nodeCount` is the minimum replica count and `730` is the average number of hours in a month.
 - Pricing is sourced from the pre-fetched data file `data/google/google_vertex_ai_pricing.json`, keyed by region and machine type. This data does not account for Flexera adjustment rules or negotiated discounts.
 - If pricing data is not available for a given machine type in the endpoint's region, the cost for that machine type is treated as `$0`.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -78,7 +78,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
+Additionally, this policy template requires that the following APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
 - [Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com)

@@ -1,6 +1,6 @@
 # Policy API List
 
-This directory contains auto-generated files listing all API calls made by policy templates in the catalog. **Do not manually modify these files** — they are regenerated automatically.
+This directory contains auto-generated files listing all API calls made by policy templates in the catalog. **Do not manually modify these files** - they are regenerated automatically.
 
 ## Auto-Generated Files
 
@@ -8,7 +8,7 @@ This directory contains auto-generated files listing all API calls made by polic
 
 **Script:** [`tools/policy_api_list_generation/policy_api_list_generator.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/policy_api_list_generation/policy_api_list_generator.py)
 
-**Workflow:** [Generate Policy API List](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-policy-api-list.yaml) — runs on every push to the default branch and opens a pull request if the output changes.
+**Workflow:** [Generate Policy API List](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-policy-api-list.yaml) - runs on every push to the default branch and opens a pull request if the output changes.
 
 **Description:** A complete list of every API call made by every policy template in the catalog, extracted by statically analyzing each `.pt` file. The JSON and CSV files contain identical data in different formats. Used by tooling and consumers that need to understand which APIs policy templates depend on, or audit API usage across the catalog.
 

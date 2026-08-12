@@ -26,21 +26,21 @@ There is an automated [GitHub Workflow](https://github.com/flexera-public/policy
 
 The output JSON contains a top-level `policies` array. Each entry includes:
 
-- `name` — Policy template display name
-- `file_name` — Repository-relative path to the `.pt` file
-- `version` — Semantic version from the template header
-- `change_log` — Repository-relative path to the template's `CHANGELOG.md`
-- `readme` — Repository-relative path to the template's `README.md`
-- `description` — Short description from the template header
-- `category` — Template category (e.g. `Cost`, `Compliance`)
-- `severity` — Incident severity (`low`, `medium`, `high`, `critical`)
-- `provider` — Cloud provider (e.g. `AWS`, `Azure`, `Google`)
-- `service` — Cloud service (e.g. `Compute`, `Storage`)
-- `policy_set` — Recommendation grouping label
-- `recommendation_type` — `Usage Reduction` or `Rate Reduction` (if applicable)
-- `updated_at` — ISO 8601 timestamp of when the most recent change to the file was merged into master (falls back to the commit's own date if no merged pull request is found)
-- `generally_recommended` — Whether the template is in the generally-recommended list for its provider
-- `deprecated` — Whether the template is marked as deprecated
-- `hide_skip_approvals` — Whether the "Skip Approval" UI button is hidden
+- `name` - Policy template display name
+- `file_name` - Repository-relative path to the `.pt` file
+- `version` - Semantic version from the template header
+- `change_log` - Repository-relative path to the template's `CHANGELOG.md`
+- `readme` - Repository-relative path to the template's `README.md`
+- `description` - Short description from the template header
+- `category` - Template category (e.g. `Cost`, `Compliance`)
+- `severity` - Incident severity (`low`, `medium`, `high`, `critical`)
+- `provider` - Cloud provider (e.g. `AWS`, `Azure`, `Google`)
+- `service` - Cloud service (e.g. `Compute`, `Storage`)
+- `policy_set` - Recommendation grouping label
+- `recommendation_type` - `Usage Reduction` or `Rate Reduction` (if applicable)
+- `updated_at` - ISO 8601 timestamp of when the most recent change to the file was merged into master (falls back to the commit's own date if no merged pull request is found)
+- `generally_recommended` - Whether the template is in the generally-recommended list for its provider
+- `deprecated` - Whether the template is marked as deprecated
+- `hide_skip_approvals` - Whether the "Skip Approval" UI button is hidden
 
 The policies array is sorted alphabetically by name to minimize diffs between runs.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.10.1
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
 ## v0.10.0
 
 - Added support for AWS and Azure cross-family compute recommendations.

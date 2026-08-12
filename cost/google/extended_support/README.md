@@ -10,10 +10,10 @@ The policy targets GKE clusters enrolled in the **EXTENDED** release channel (En
 
 The policy includes an estimated monthly extended-support surcharge for each resource. The estimated surcharge represents the incremental cost incurred by remaining on an extended-support version rather than upgrading.
 
-- For **GKE** clusters, the `Estimated Monthly Savings` is calculated as `$0.50/cluster/hr × 730.44` (the average number of hours in a month).
-- For **Cloud SQL** dedicated-core instances, the `Estimated Monthly Savings` is calculated as `$0.07/vCPU/hr × vCPU_count × 730.44` (Year 1–2 rate). The vCPU count is derived from the instance tier string (e.g. `db-custom-4-15360` → 4 vCPUs; `db-n1-standard-8` → 8 vCPUs).
-- For **Cloud SQL** shared-core instances, the `Estimated Monthly Savings` is calculated as `rate × 730.44` where `db-f1-micro` = `$0.018/hr` and `db-g1-small` = `$0.035/hr` (Year 1–2 rates).
-- Rates are maintained in `data/google/google_extended_support_dates.json` using Google's published Year 1–2 extended support pricing. The Year 3 rate doubles. Region-level rate variation is not modeled; a single representative rate is used per engine version.
+- For **GKE** clusters, the `Estimated Monthly Savings` is calculated as `$0.50/cluster/hr x 730.44` (the average number of hours in a month).
+- For **Cloud SQL** dedicated-core instances, the `Estimated Monthly Savings` is calculated as `$0.07/vCPU/hr x vCPU_count x 730.44` (Year 1-2 rate). The vCPU count is derived from the instance tier string (e.g. `db-custom-4-15360` → 4 vCPUs; `db-n1-standard-8` → 8 vCPUs).
+- For **Cloud SQL** shared-core instances, the `Estimated Monthly Savings` is calculated as `rate x 730.44` where `db-f1-micro` = `$0.018/hr` and `db-g1-small` = `$0.035/hr` (Year 1-2 rates).
+- Rates are maintained in `data/google/google_extended_support_dates.json` using Google's published Year 1-2 extended support pricing. The Year 3 rate doubles. Region-level rate variation is not modeled; a single representative rate is used per engine version.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Estimated Monthly Extended-Support Surcharge`.
 - All amounts are reported in the currency of the Flexera organization the policy is applied in.
 

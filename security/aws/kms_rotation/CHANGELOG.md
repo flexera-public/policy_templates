@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2.0
+
+- Added logic required for 'Meta Policy' use-cases.
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve KMS key data from one or more AWS regions due to permission or configuration errors.
+
 ## v3.1.3
 
 - Minor code formatting cleanup. No functional or user-facing changes.

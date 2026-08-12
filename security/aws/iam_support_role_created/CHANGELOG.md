@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0
+
+- Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.
+
 ## v3.1.2
 
 - Minor code formatting cleanup. No functional or user-facing changes.

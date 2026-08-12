@@ -10,7 +10,7 @@ The following files are produced by scripts in [`tools/active_policy_list_genera
 
 **Script:** [`tools/active_policy_list_generation/generate_active_policy_list.rb`](https://github.com/flexera-public/policy_templates/blob/master/tools/active_policy_list_generation/generate_active_policy_list.rb)
 
-**Workflow:** [Update Active Policy List](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-active-policy-list.yaml) — runs every time a pull request is merged.
+**Workflow:** [Update Active Policy List](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-active-policy-list.yaml) - runs every time a pull request is merged.
 
 **Description:** A complete list of all policy templates published to the Flexera policy catalog, with their metadata. This is the authoritative source for policy catalog tooling; automation scripts and customer integrations use it to discover available templates.
 

@@ -72,7 +72,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 ### Credential configuration
 
-This Policy Template requires that several APIs be enabled in your Google Cloud environment:
+This policy template requires that the following APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
 - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)

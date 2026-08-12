@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
 ## v0.1.3
 
 - Minor code formatting cleanup. No functional or user-facing changes.
