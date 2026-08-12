@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.11.4
+
+- Fixed the region-accessibility probe to use the correct `MaxRecords` query parameter (instead of `MaxResults`) for the RDS `DescribeDBInstances` API call, ensuring the probe works reliably across all regions.
+
 ## v5.11.3
 
 - Minor code formatting cleanup. No functional or user-facing changes.

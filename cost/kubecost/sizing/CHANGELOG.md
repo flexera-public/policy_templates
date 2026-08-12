@@ -3,6 +3,7 @@
 ## v0.5.4
 
 - Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+- Corrected the order of fields in the policy validation block to match the standard field ordering convention. No functional changes.
 
 ## v0.5.3
 
