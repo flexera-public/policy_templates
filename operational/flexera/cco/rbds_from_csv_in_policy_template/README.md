@@ -4,7 +4,7 @@
 
 This policy creates and updates custom Rule-Based Dimensions based on data provided in CSV format. It allows you to create multiple Rule-Based Dimensions at once using data from a CSV file that maps dimension values to other values that should be used as rules.
 
-> **Important:** There is a **1MB** file size limit for Policy Template files.  If your CSV is larger than this already, please use one of the other methods to transform your CSV into Rule-Based Dimensions
+> **Important:** There is a **1MB** file size limit for Policy Template files. If your CSV is larger than this already, please use one of the other methods to transform your CSV into Rule-Based Dimensions
 
 ## How It Works
 
@@ -37,7 +37,7 @@ If using Excel to manage the CSV and the `vendor_account` dimension for conditio
 
 ### Helper Policy Template Format
 
-The helper policy template [csv_for_rbds_from_csv.pt](csv_for_rbds_from_csv.pt) is used to upload and store the CSV data on the Flexera platform.  Your CSV data should be copied and pasted between the "Begin" and "End" comment blocks in the helper policy template.  Once updated, the helper policy template can be uploaded to the Flexera platform -- there is no need to apply the helper policy template.
+The helper policy template [csv_for_rbds_from_csv.pt](csv_for_rbds_from_csv.pt) is used to upload and store the CSV data on the Flexera platform. Your CSV data should be copied and pasted between the "Begin" and "End" comment blocks in the helper policy template. Once updated, the helper policy template can be uploaded to the Flexera platform -- there is no need to apply the helper policy template.
 
 ```javascript
 ///////////////////////////////////////////////////////////

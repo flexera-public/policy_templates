@@ -131,7 +131,7 @@ To distribute CloudTrail costs from all AWS Organization accounts to an account 
 
 ## Input Parameters
 
-- *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Should be changed to identify the use-case for the reallocation.  Example: `cbi-oi-optima-costreallocation-centralizedlogging`
+- *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Should be changed to identify the use-case for the reallocation. Example: `cbi-oi-optima-costreallocation-centralizedlogging`
 
   This policy requires a Bill Connect ID. By default it will use `cbi-oi-optima-costreallocation-default` but you should specify a custom ID. The Bill Connect will be created if it does not already exist.
 
