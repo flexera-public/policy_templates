@@ -394,11 +394,11 @@ The following guidelines should be used for `parameters` blocks:
   - Should be used to group similar parameters together.
   - _Example_: `Filters`
   - The following categories are standard and should be used when appropriate. Other categories may be used when these don't fit.
-    - `Policy Settings` — General policy configuration (credentials, regions, etc.)
-    - `Filters` — Parameters that filter which resources are included or excluded
-    - `Statistics` — Parameters that control how statistics or lookback periods are calculated
-    - `Actions` — Parameters that control what actions the policy template takes
-    - `Incident Settings` — Parameters that control email notifications and incident table behavior
+    - `Policy Settings` - General policy configuration (credentials, regions, etc.)
+    - `Filters` - Parameters that filter which resources are included or excluded
+    - `Statistics` - Parameters that control how statistics or lookback periods are calculated
+    - `Actions` - Parameters that control what actions the policy template takes
+    - `Incident Settings` - Parameters that control email notifications and incident table behavior
   - When using multiple categories, they should be ordered as above. `Policy Settings` should always be the first category and `Incident Settings` should always be the last. `Actions` should always come after `Filters`.
 
 - __label__

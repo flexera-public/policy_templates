@@ -8,7 +8,7 @@ severity "high"
 category "Security"
 default_frequency "daily"
 info(
-  version: "3.1.3",
+  version: "3.2.0",
   provider: "AWS",
   service: "KMS",
   policy_set: "CIS",
@@ -322,6 +322,9 @@ datasource "ds_describe_regions" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -349,6 +352,25 @@ script "js_regions", type:"javascript" do
     result = ds_describe_regions
   }
 EOS
+end
+
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["kms.", val(iter_item, 'region'), ".amazonaws.com"])
+    path "/"
+    query "Action", "ListKeys"
+    query "MaxItems", "5"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    ignore_status [400, 401, 403]
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
 end
 
 datasource "ds_regions_with_keys" do
@@ -434,6 +456,67 @@ script "js_keys_without_rotation", type:"javascript" do
 EOS
 end
 
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) { region_responses[item.region] = "OK" }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+  var forbidden_regions = []
+
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to list KMS keys in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'kms:ListKeys' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'kms:ListKeys' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions require explicit opt-in), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Customer Managed Keys (CMKs) Without Rotation Enabled"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -442,7 +525,7 @@ policy "pol_keys_without_rotation" do
   validate_each $ds_keys_without_rotation do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Customer Managed Keys (CMKs) Without Rotation Enabled Found"
     detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
-    check eq(val(item, "id"), "")
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     export do
       resource_level true
@@ -463,11 +546,36 @@ policy "pol_keys_without_rotation" do
       end
     end
   end
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve KMS key data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the AWS credential has the `kms:ListKeys` permission for all regions where the policy should execute.
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in).
+    3. Consider updating the **Allow/Deny Regions List** parameter to exclude regions that are not accessible or not relevant to your use case.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true
@@ -477,4 +585,78 @@ escalation "esc_email" do
     attach_export_table $param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
 end

@@ -42,7 +42,7 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 #### Algorithm
 
-- **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 × 4 × 1.5) = 3.
+- **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 x 4 x 1.5) = 3.
 - **Candidate instances** in the same region must satisfy all of the following compatibility constraints:
   - Current generation only (no previous-generation or bare-metal types)
   - Same CPU architecture (x86_64, arm64, etc.)
@@ -57,7 +57,7 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is resized or terminated.
 
-- The `Estimated Monthly Savings` for underutilized instances is calculated by multiplying the instance's CCO monthly cost by the ratio of the list price reduction: `cco_cost × (current_list_price − recommended_list_price) / current_list_price`.
+- The `Estimated Monthly Savings` for underutilized instances is calculated by multiplying the instance's CCO monthly cost by the ratio of the list price reduction: `cco_cost x (current_list_price - recommended_list_price) / current_list_price`.
 - The `Estimated Monthly Savings` for idle instances is the full CCO monthly cost of the instance (since termination eliminates 100% of the spend).
 - The CCO monthly cost is derived by multiplying one day's amortized cost from Flexera CCO by 30.44 (the average number of days per month).
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.

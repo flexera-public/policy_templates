@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.2",
+  version: "0.1.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -215,7 +215,7 @@ script "js_csv_file_selected", type: "javascript" do
 
     result = sorted[sorted.length - 1]
   } else {
-    // No files found matching the prefix — use empty name to trigger a
+    // No files found matching the prefix - use empty name to trigger a
     // graceful 404 on ds_csv_raw rather than an undefined crash.
     result = { blob_name: "__NO_FILES_FOUND__", last_modified: "", content_length: "0" }
   }
@@ -912,7 +912,7 @@ script "js_merged_rbds", type: "javascript" do
             mergedRules.push(rule)
           }
         } else {
-          // Inside old block — skip until end sentinel
+          // Inside old block - skip until end sentinel
           if (rule.condition && rule.condition.value === endBlockValue) {
             foundBlock = false
           }
@@ -1010,11 +1010,11 @@ end
 
 # Build incident summary for RBDs
 datasource "ds_incident_rbds" do
-  run_script $js_incident_rbds, $ds_merged_rbds, $ds_csv_validated, $ds_csv_parsed
+  run_script $js_incident_rbds, $ds_merged_rbds, $ds_csv_validated, $ds_csv_parsed, $ds_applied_policy
 end
 
 script "js_incident_rbds", type: "javascript" do
-  parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed"
+  parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed", "ds_applied_policy"
   result "result"
   code <<-'EOS'
   function deriveRbdName(rbdId) {
@@ -1046,6 +1046,10 @@ script "js_incident_rbds", type: "javascript" do
         status: rbd.verb === "POST" ? "created" : "updated"
       })
     })
+  }
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
   }
 EOS
 end
@@ -1096,7 +1100,7 @@ EOS
   end
 
   validate $ds_incident_rbds do
-    summary_template "Rule-Based Dimensions Updated/Created: {{ len data }}"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Rule-Based Dimensions Updated/Created: {{ len data }}"
     check eq(0, 1)
     export do
       field "id" do

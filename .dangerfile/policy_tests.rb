@@ -1288,6 +1288,7 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
   export_block = false
   field_block = false
   block_line_number = 0
+  validate_line = 0
   block_names = [ block_type ]
   block_id = ""
   policy_id = nil

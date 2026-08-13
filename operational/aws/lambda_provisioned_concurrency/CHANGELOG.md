@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve Lambda function data from one or more AWS regions due to permission or configuration errors.
+
 ## v0.2.7
 
 - Minor code formatting cleanup. No functional or user-facing changes.

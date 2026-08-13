@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+
 ## v0.2.8
 
 - Minor code formatting cleanup. No functional or user-facing changes.

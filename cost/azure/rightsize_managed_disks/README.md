@@ -8,7 +8,7 @@ Note: It is preferred to keep the disk LUN number constant when detaching and re
 
 Note: This policy template does not currently produce recommendations or reporting on used disk space. This is because disk space usage is not something that can easily be assessed for managed disks. Disk space usage is contextual based on how the disk is partitioned and used by an operating system and can't meaningfully be assessed outside of that context.
 
-### Policy Saving Details
+### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size. The `Estimated Monthly Savings` is calculated via the following:
 

@@ -35,10 +35,10 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 - *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
 - *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Databricks Workspace Allowed List* - Allowed Databricks Workspace. If empty, all workspaces will be checked
-- *Databricks Cluster Allowed List* - Allowed Databricks Clusters. Name or Cluster ID can be provided.  If empty, all clusters will be checked
+- *Databricks Cluster Allowed List* - Allowed Databricks Clusters. Name or Cluster ID can be provided. If empty, all clusters will be checked
 - *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1
 - *Threshold Statistic* - Statistic to use when determining if an instance is idle/underutilized.
-- *Statistic Interval* - Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period.  For more details please reference [Azure Docs](https://learn.microsoft.com/en-us/azure/azure-monitor/metrics/metrics-aggregation-explained)
+- *Statistic Interval* - Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period. For more details please reference [Azure Docs](https://learn.microsoft.com/en-us/azure/azure-monitor/metrics/metrics-aggregation-explained)
 - *Statistic Lookback Period* - How many days back to look at utilization metrics for compute resources. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Idle Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for deletion. Set to -1 to ignore CPU utilization for idle instance recommendations.
 - *Idle Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for deletion. Set to -1 to ignore memory utilization for idle instance recommendations.
@@ -86,7 +86,7 @@ This is the recommended method and enables a single Azure Service Principal to t
 
 1. Get Service Principal's Client ID
 
-   You can get this from the Azure Portal or via Flexera > Automation > Credentials and get the Client ID for the Azure RM Credential that is being used.  The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
+   You can get this from the Azure Portal or via Flexera > Automation > Credentials and get the Client ID for the Azure RM Credential that is being used. The Azure SP that is used for other Flexera Azure Policy Templates can be used for the Databricks Policy Templates.
 
 1. Add Service Principal to all DB Workspace using the Client ID
 

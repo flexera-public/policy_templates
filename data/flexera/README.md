@@ -6,7 +6,7 @@ This directory contains manually-maintained reference data for the Flexera platf
 
 ### iam_roles.json
 
-**Description:** A reference list of all Flexera platform IAM role definitions. Used by policy templates and tooling that need to validate, enumerate, or display Flexera IAM roles — for example, policies that audit IAM role assignments or generate permission reports.
+**Description:** A reference list of all Flexera platform IAM role definitions. Used by policy templates and tooling that need to validate, enumerate, or display Flexera IAM roles - for example, policies that audit IAM role assignments or generate permission reports.
 
 **Structure:** Array of IAM role objects.
 

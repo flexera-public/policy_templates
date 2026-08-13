@@ -2,9 +2,9 @@
 
 ## What It Does
 
-This policy template checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
+This policy template checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days. If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
 
-This policy template does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
+This policy template does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance. This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
 
 ```sh
 $ df -h
@@ -19,7 +19,7 @@ tmpfs             453M     0  453M   0% /tmp
 /dev/nvme0n1p128   10M  1.3M  8.7M  13% /boot/efi
 ```
 
-In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/nvme1`.  This information is provided by the `ec2:DescribeVolumes` API response, but we don't have a way to get the the mount point (`/data-backup`) without information from the OS.  The policy template does not attempt to map this information, but we are exploring this topic and hope to add recommendations for Storage Capacity Used % future releases.  Added complexity for disks that have multiple partitions, or mount points that span multiple volumes (RAID, LVM, etc..)
+In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/nvme1`.  This information is provided by the `ec2:DescribeVolumes` API response, but we don't have a way to get the the mount point (`/data-backup`) without information from the OS. The policy template does not attempt to map this information, but we are exploring this topic and hope to add recommendations for Storage Capacity Used % future releases. Added complexity for disks that have multiple partitions, or mount points that span multiple volumes (RAID, LVM, etc..)
 
 ## How It Works
 
@@ -36,7 +36,7 @@ In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/
 
 The policy estimates savings for idle volumes to be 100% of the monthly volume cost
 
-The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity.  For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
+The policy estimates savings for underutilized volumes to be the difference based on recommended % change in Provisioned IOPS or Capacity. For example, if downsize IOPS by 50%, then estimated savings is 50% of the cost of the original volume.
 
 ## Input Parameters
 

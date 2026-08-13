@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added a region error-reporting check that surfaces a clear incident when the policy is unable to access one or more AWS regions, instead of silently omitting data from those regions.
+
 ## v0.2.8
 
 - Minor code formatting cleanup. No functional or user-facing changes.
