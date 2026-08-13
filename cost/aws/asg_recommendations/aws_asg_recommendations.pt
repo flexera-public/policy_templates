@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.4",
+  version: "0.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Auto Scaling Recommendations",
@@ -471,7 +471,11 @@ datasource "ds_aws_asgs_raw" do
       field "launchTemplateId", xpath(col_item, "LaunchTemplate/LaunchTemplateId")
       field "launchTemplateName", xpath(col_item, "LaunchTemplate/LaunchTemplateName")
       field "launchTemplateVersion", xpath(col_item, "LaunchTemplate/Version")
-      field "mixedInstanceType", xpath(col_item, "MixedInstancesPolicy/LaunchTemplate/Overrides/member/InstanceType")
+      field "mixedInstanceTypes" do
+        collect xpath(col_item, "MixedInstancesPolicy/LaunchTemplate/Overrides/member", "array") do
+          field "instanceType", xpath(col_item, "InstanceType")
+        end
+      end
       field "availabilityZones" do
         collect xpath(col_item, "AvailabilityZones/member", "array") do
           field "az", xpath(col_item, ".")
@@ -1095,7 +1099,9 @@ script "js_asg_processed", type: "javascript" do
     if (asg['instances'] && asg['instances'].length > 0) {
       instance_type = asg['instances'][0]['instanceType']
     }
-    if (!instance_type && asg['mixedInstanceType']) { instance_type = asg['mixedInstanceType'] }
+    if (!instance_type && asg['mixedInstanceTypes'] && asg['mixedInstanceTypes'].length > 0) {
+      instance_type = _.pluck(asg['mixedInstanceTypes'], 'instanceType').join(', ')
+    }
 
     // On-demand-equivalent per-instance daily cost from CCO list-price
     list_daily_per_instance = null

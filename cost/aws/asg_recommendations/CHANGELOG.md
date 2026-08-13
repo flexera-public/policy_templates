@@ -1,7 +1,9 @@
 # Changelog
 
-## v0.1.4
+## v0.2.0
 
+- Fixed a bug where the policy would fail entirely for any Auto Scaling Group using a `MixedInstancesPolicy` with more than one instance type override. The policy now correctly captures all configured instance types for mixed-instance ASGs instead of assuming there is only one.
+- When an Auto Scaling Group has no running instances, the reported "Instance Size" for mixed-instance ASGs now lists all configured instance type overrides (instead of only the first), giving a more complete picture of the resource's actual cost and configuration exposure.
 - Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
 
 ## v0.1.3
