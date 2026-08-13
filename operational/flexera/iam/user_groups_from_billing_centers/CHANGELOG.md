@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Renamed the internal `policyName` field to `policy_name` for consistency with the standard convention used across other policy templates. No functional changes.
+
 ## v0.2.2
 
 - Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
