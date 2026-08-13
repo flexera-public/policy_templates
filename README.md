@@ -787,9 +787,9 @@ Some policies require external data sets to function. These data sets are stored
 ## How To Upload
 
 * Files with the extension `.pt` are policy templates that can be used in Flexera One.
-* Select the desired policy template, click on the "Raw" button, and then right-click and choose "Save As" to save the file to your computer.
+* Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 * To upload the template to your account, navigate to the **Automation** section in [Flexera One](https://app.flexera.com). Ensure you have the role to access policy management in Flexera One. Learn More about [Policy Access Control](https://docs.flexera.com/flexera-one/automation/).
-* Click the "Upload Policy Template" button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
+* Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## Policy Template Documentation
 
