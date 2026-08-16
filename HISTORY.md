@@ -6,6 +6,66 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4783](https://github.com/flexera-public/policy_templates/pull/4783): POL-1820 General Policy/Repo Cleanup
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Several broad changes made to clean things up:
+> - Bug fixes and improvements to the `AWS Auto Scaling Group Recommendation` policy template.
+> - Non-ASCII characters that do not render correctly in the Flexera One UI have been removed from PTs and md files.
+> - AWS region error reporting added to several policy templates that were missing the functionality.
+> - Meta parent generation enabled for several policy templates where meta parents existed but were not being updated. Manually maintained meta parents had their version numbers updated to match their associated child policies.
+> - `hash_exclude` added to several policy incidents to avoid raising multiple incidents for the same resource/problem
+> - Various typos and small errors fixed in README files.
+> - Dangerfile warnings fixed in various policy templates.
+> - Dangerfile policy code block test fixed to show actual line numbers as intended.
+>
+> All remaining Dangerfile warnings are false positives or not concerning.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4783) for these details.
+- **Merged At**: 2026-08-13 14:03:23 UTC
+
+---
+
+### PR [#4779](https://github.com/flexera-public/policy_templates/pull/4779): POL-1819 Code Normalization
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> - Moves canonical code examples from `.github/agents/policy-dev.agent.md` to a new file `data/agent/code_examples.txt` that the agent is instead instructed to reference.
+> - Expanded the canonical code examples.
+> - Updated several policy templates to use the canonical version of the relevant code.
+>   - Fixed a few minor bugs and Dangerfile issues with some of the touched policy templates along the way.
+> - Updated Dangerfile tests to trigger fewer false positives
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4779) for these details.
+- **Merged At**: 2026-08-11 19:39:58 UTC
+
+---
+
+### PR [#4767](https://github.com/flexera-public/policy_templates/pull/4767): POL-1812 Region Check Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes issue in several AWS policy templates where the region check would cause policy execution to fail if a 400 response is returned by AWS.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4767) for these details.
+- **Merged At**: 2026-08-10 12:06:55 UTC
+
+---
+
 ### PR [#4764](https://github.com/flexera-public/policy_templates/pull/4764): POL-1811 Flexera Test Support
 
 *Unpublished, Minor Update*
@@ -1813,58 +1873,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md)
 - **Merged At**: 2026-02-19 13:05:39 UTC
-
----
-
-### PR [#4046](https://github.com/flexera-public/policy_templates/pull/4046): POL-1695 Azure Long Stopped Compute Instances Fix
-
-#### Description
-
-> Fixes issue with the `Azure Long Stopped Compute Instances` policy template where resources in a state of "starting" were reported as stopped.
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
-- **Merged At**: 2026-02-19 13:05:31 UTC
-
----
-
-### PR [#4023](https://github.com/flexera-public/policy_templates/pull/4023): POL-1720 Meta Policy Fix
-
-*New Policy Template*
-
-#### Description
-
-> Fixes issue where meta parents aren't being generated due to non-existent policy templates being listed in the YAML file.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4023) for these details.
-- **Merged At**: 2026-02-05 14:51:16 UTC
-
----
-
-### PR [#4018](https://github.com/flexera-public/policy_templates/pull/4018): POL-1708 Azure Long Stopped Compute Instances - Fix for "Start time cannot be more than 90 days in the past" error
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change prevents intermittent failures when querying Azure Activity Logs caused by `start_date` exceeding Azure's strict 90-day limit.
->
-> The fix removes timestamp rounding and adds a small safety buffer (+5 minutes) after subtracting 90 days, ensuring all iterative API calls stay within the allowed window.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
-- **Merged At**: 2026-02-05 14:17:00 UTC
 
 ---
 
