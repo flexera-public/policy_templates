@@ -26,7 +26,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Account Number* - Leave blank; this is for automated use with Meta Policies. See README for more details.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 0.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1.
 - *Statistic Lookback Period* - How many days back to look at CloudWatch invocation data. Minimum: 1, Maximum: 90. Default: 30.
 - *Minimum Invocations Threshold* - Endpoints with total invocations at or below this number over the lookback period are considered idle. Set to 0 (default) to report only endpoints with zero invocations. Increase this value to also capture near-zero usage endpoints.
 - *Allow/Deny Regions* - Allow or Deny entered regions. See the README for more details.
