@@ -6,7 +6,7 @@
 - Results are now sorted by descending estimated monthly savings
 - Added a summary line to the incident message reporting how many disks were analyzed and how many were recommended for a downgrade
 - Fixed a bug where the incident detail's `Potential Monthly Savings` value displayed an incorrect currency format for non-USD organizations
-- Fixed a bug where `hash_exclude` referenced incorrect field names, preventing savings and tag changes from being properly excluded from incident deduplication
+- Fixed a bug where incident deduplication would sometimes not occur, causing the same resource to appear as different incidents if raised during multiple executions
 
 ## v2.9.2
 

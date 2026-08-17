@@ -2,35 +2,38 @@
 
 ## What It Does
 
-This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a look back period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
+This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on IOPS and/or throughput utilization over a user-specified lookback period. If a disk's utilization is at or below the specified thresholds, and a cheaper disk type or size still satisfies its current size and usage, then a disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
 
 Note: It is preferred to keep the disk LUN number constant when detaching and re-attaching a data disk to a virtual machine. LUN number is used to retrieve disk performance metrics (IOPS and throughput).
 
 Note: This policy template does not currently produce recommendations or reporting on used disk space. This is because disk space usage is not something that can easily be assessed for managed disks. Disk space usage is contextual based on how the disk is partitioned and used by an operating system and can't meaningfully be assessed outside of that context.
 
+## How It Works
+
+- The policy checks each managed data disk's IOPS and throughput utilization over the specified lookback period using Azure Monitor metrics.
+- Disks whose utilization is at or below the specified IOPS and/or throughput thresholds are considered underutilized.
+- Ultra Disks and Premium SSDs are first evaluated for a downgrade to Premium SSD v2, since its size, IOPS, and throughput can be independently provisioned to closely match actual usage at a lower cost.
+- If Premium SSD v2 is not a cheaper fit, the policy looks for the smallest disk size and tier (Premium SSD, Standard SSD, or Standard HDD) that still satisfies the disk's current size and usage requirements. Standard HDD is only considered when the `Recommend HDD tier` parameter is set to `Yes`.
+- Recommendations are sorted by estimated monthly savings, from highest to lowest.
+
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size. The `Estimated Monthly Savings` is calculated via the following:
+The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is downgraded to the suggested disk type. The `Estimated Monthly Savings` is calculated via the following:
 
 - The `monthly list price` of the current disk type obtained via the Azure Pricing API.
 - The `real monthly cost of the disk` is calculated by multiplying the amortized cost of the disk for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - The percentage difference between the two is calculated by dividing the `real monthly cost of the disk` by the `monthly list price` of the current disk type.
 - The `monthly list price of the new disk type` is multiplied by the above percentage to get an `estimated real monthly cost of the new disk` type under the assumption that any discounts or other changes from list price that applied to the old disk type will also apply to the new one.
 - The savings is then calculated by subtracting the `estimated real monthly cost of the new disk type` from the `real monthly cost of the disk`.
+- If the disk cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
-  - `Key` - Filter all resources with the specified tag key.
-  - `Key==Value` - Filter all resources with the specified tag key:value pair.
-  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
-  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
-  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
-- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
@@ -38,13 +41,20 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Resource Groups* - Whether to allow or deny filtering by the resource groups specified in the `Allow/Deny Resource Groups List` parameter.
 - *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *SKU Ignore List* - A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add `Standard_LRS` and `Standard_ZRS` to this list. Leave blank to produce recommendations for all SKUs.
-- *IOPS Threshold (%)* - The IOPS threshold percentage at which to consider a managed disk to be underutilized.
+- *IOPS Threshold (%)* - The IOPS threshold percentage at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter.
 - *IOPS Threshold Statistic* - Statistic to use for IOPS when determining if a managed disk is underutilized.
-- *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized.
+- *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter.
 - *Throughput Threshold Statistic* - Statistic to use for throughput when determining if a managed disk is underutilized.
-- *Statistic Interval* - The interval to use when gathering Azure metrics data.
+- *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
-- *Recommend HDD tier* - Sometimes the user does not want the policy to recommend changing a disk tier to HDD, with this parameter user can decide if he wants HDD tier recommendations.
+- *Recommend HDD tier* - When this value is set to Yes, the policy will consider the Standard HDD tier for making recommendations.
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
