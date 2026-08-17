@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.0
+
+- Added a `Recommendation` field to the incident export, describing the recommended disk downgrade action for each resource
+- Results are now sorted by descending estimated monthly savings
+- Added a summary line to the incident message reporting how many disks were analyzed and how many were recommended for a downgrade
+- Fixed a bug where the incident detail's `Potential Monthly Savings` value displayed an incorrect currency format for non-USD organizations
+- Fixed a bug where `hash_exclude` referenced incorrect field names, preventing savings and tag changes from being properly excluded from incident deduplication
+
 ## v2.9.2
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
