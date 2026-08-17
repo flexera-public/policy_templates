@@ -1288,6 +1288,7 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
   export_block = false
   field_block = false
   block_line_number = 0
+  validate_line = 0
   block_names = [ block_type ]
   block_id = ""
   policy_id = nil
@@ -1642,12 +1643,19 @@ def policy_bad_comma_spacing?(file, file_lines)
     # Skip image charts stuff
     next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=") || line.include?("chf=")
 
+    # Skip JS regex literals (e.g. /([A-Za-z,]*)/.test(str)) since commas inside character
+    # classes and quantifiers are pattern syntax, not natural-language list items.
+    next if line.match?(/\/[^\/]*,[^\/]*\/\.(test|match|exec|replace)\(/)
+
     # Strip content inside quotation marks to avoid false positives from comma-separated
     # API parameter strings (e.g. metricnames, aggregation) and other string literal values.
     # Lines starting with a quote are included so that JSON-style key-value pairs like
     # `"metricnames": "Percentage CPU,Memory"` have their string values stripped correctly.
-    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
-    parts = line.split("'") if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
+    # A limit of -1 is passed to split so that a trailing empty string is preserved when the
+    # line ends exactly on a closing quote (Ruby's split otherwise silently drops it, which
+    # previously caused the stripping logic below to be skipped for these lines).
+    parts = line.split("\"", -1) if line.include?("\"") && !line.include?("'")
+    parts = line.split("'", -1) if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
 
     if parts.length > 2
       test_parts = []

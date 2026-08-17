@@ -4,7 +4,7 @@
 
 This policy template reports Azure virtual machines running end-of-life operating systems. By default, all detected end-of-life resources are reported, including those still under Microsoft's Extended Security Updates (ESU) program. Optionally, results can be filtered to only include resources that are no longer receiving any security updates at all. These resources are outdated and running on unsupported software, representing a security risk to the organization. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
 
-> **Note:** Microsoft provides Extended Security Updates at no additional charge for virtual machines hosted in Azure. This policy is therefore categorized as a Security policy rather than a Cost policy — the goal is to identify outdated resources for remediation, not to report costs.
+> **Note:** Microsoft provides Extended Security Updates at no additional charge for virtual machines hosted in Azure. This policy is therefore categorized as a Security policy rather than a Cost policy - the goal is to identify outdated resources for remediation, not to report costs.
 
 ## How It Works
 

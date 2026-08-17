@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.5
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v4.0.4
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

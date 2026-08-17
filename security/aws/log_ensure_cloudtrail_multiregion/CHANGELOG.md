@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.2.0
+
+- Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.
+
+## v3.1.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v3.1.2
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

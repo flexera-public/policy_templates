@@ -3,8 +3,13 @@
 # Generates the active policy list JSON consumed by the Public Policy Catalog.
 # Scans all policy template (.pt) files in the repository and builds a JSON
 # catalog of every published, versioned policy template. For each template it
-# fetches the date of the most recent commit from the GitHub API and records it
-# alongside the template's metadata.
+# fetches the most recent commit touching the file from the GitHub API, then
+# resolves that commit to the pull request that merged it into master and
+# records the PR's merge date alongside the template's metadata. This avoids
+# recording the date a change was authored/pushed on a feature branch, which
+# can differ significantly from when it actually landed on master. Falls back
+# to the commit's own date if no merged pull request can be found (e.g. a
+# commit pushed directly to master).
 # Output is written to dist/active-policy-list.json (relative to the repo root).
 # The CI workflow copies this to data/active_policy_list/active_policy_list.json.
 
@@ -66,9 +71,21 @@ Dir['**/*.pt'].each do |file|
   if !version || version == '0.0' || !publish
     puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
   else
-    # Fetch the date of the most recent commit touching this file
+    # Fetch the most recent commit touching this file. Path-scoped commit history can surface
+    # the original feature-branch commit rather than the actual merge/squash commit that landed
+    # it on master, so its own date may reflect when the change was authored/pushed rather than
+    # merged. Resolve the commit to its originating pull request and use the PR's merge date
+    # instead, falling back to the commit's own date if no merged pull request is found.
     commits = github_client.commits(repo_name, branch, path: file)
-    updated_at = (commits.first.commit.committer&.date || commits.first.commit.author&.date).utc.iso8601 unless commits.empty?
+    unless commits.empty?
+      commit_sha = commits.first.sha
+      merged_pulls = github_client.commit_pulls(repo_name, commit_sha).select(&:merged_at)
+      updated_at = if merged_pulls.any?
+        merged_pulls.min_by(&:merged_at).merged_at.utc.iso8601
+      else
+        (commits.first.commit.committer&.date || commits.first.commit.author&.date).utc.iso8601
+      end
+    end
 
     generally_recommended = generally_recommended_template_names.include?(pp.parsed_name) && !deprecated
 

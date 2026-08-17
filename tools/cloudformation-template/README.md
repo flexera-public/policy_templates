@@ -57,7 +57,7 @@ As you follow the official docs, you can use the recommended configurations belo
    >
    > For example, if *IAM Role Name* parameter is `FlexeraAutomationPolicies-Org12345`, then the recommended StackSet name is `FlexeraAutomationPolicies-Org12345`.
 
- - On the **Configure StackSet options** page, under **Tags**, specify any tags to apply to resources in your stack.  This is optional. The resources created by the template do not have any cost associated and so the need for tags may only apply for certain use-cases.
+ - On the **Configure StackSet options** page, under **Tags**, specify any tags to apply to resources in your stack. This is optional. The resources created by the template do not have any cost associated and so the need for tags may only apply for certain use-cases.
 
  - For **Execution configuration**, choose **Active** so that StackSets performs non-conflicting operations concurrently and queues conflicting operations.
 
@@ -71,7 +71,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
    We recommend to use the same region the CloudFormation StackSet is deployed to.
 
-   *This template creates IAM Role and IAM Policy resources, which are "Global" resources.  If this CloudFormation Template is deployed to more than 1 region using the same "IAM Role Name" and "IAM Role Path" parameter value, there will be a conflict trying to create IAM Roles that have the same name.*
+   *This template creates IAM Role and IAM Policy resources, which are "Global" resources. If this CloudFormation Template is deployed to more than 1 region using the same "IAM Role Name" and "IAM Role Path" parameter value, there will be a conflict trying to create IAM Roles that have the same name.*
 
  - On the **Deployment options**
    - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.
@@ -91,7 +91,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
     This acknowledgment is required because AWS CloudFormation will create an IAM Role and an IAM Policy (as expected).
 
-  - Allow Stack instances to deploy and get to *"Current"* Status.  If any fail, you can review the details of the failed Stack instances and take action as needed.
+  - Allow Stack instances to deploy and get to *"Current"* Status. If any fail, you can review the details of the failed Stack instances and take action as needed.
 
   - Construct **IAM Role ARN** for AWS STS Credential Setup in Flexera Automation
 

@@ -92,7 +92,7 @@ def general_bad_markdown?(file)
   when "README.md"
     mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   when "README_META_POLICIES.md"
-    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024","~MD033" #{file}`
   when "tools/cloudformation-template/README.md"
     mdl = `mdl -r "~MD007","~MD013","~MD033","~MD034" #{file}`
   when ".github/PULL_REQUEST_TEMPLATE.md"
@@ -107,6 +107,26 @@ def general_bad_markdown?(file)
 end
 
 ### Bad URL test
+# Perform an HTTP GET, retrying a small number of times if a transient-looking error
+# code is returned (e.g. 403/429/5xx from bot or rate-limit protection at the
+# destination). This avoids failing a PR due to a flaky response from a third-party
+# host rather than an actually broken URL.
+def general_bad_urls_fetch(url)
+  retryable_codes = ['403', '429', '500', '502', '503', '504']
+  max_attempts = 3
+  retry_delay = 2
+
+  response = Net::HTTP.get_response(url)
+  attempts = 1
+  while retryable_codes.include?(response.code) && attempts < max_attempts
+    sleep retry_delay
+    response = Net::HTTP.get_response(url)
+    attempts += 1
+  end
+
+  response
+end
+
 # Return false if no invalid URLs are found.
 def general_bad_urls?(file, file_diff)
   return false if file.start_with?(".github/agents/")
@@ -131,6 +151,7 @@ def general_bad_urls?(file, file_diff)
     'ec2.amazonaws.com',
     'storage.azure.com', # Not a legitimate URL but used in request headers for generating Azure tokens
     'contoso.sharepoint.com', # Not legitimate URL but used in Microsoft Graph API docs/examples
+    'docs.flexera.com', # Consistently blocks automated requests (403) despite being a valid, reachable URL
   ]
 
   regex = /(^\+)/
@@ -163,7 +184,7 @@ def general_bad_urls?(file, file_diff)
           next if url.host !~ /(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/
 
           # Make HTTP request to URL
-          response = Net::HTTP.get_response(url)
+          response = general_bad_urls_fetch(url)
 
           # Test again when the file isn't found and the URL points to this repo.
           # URLs referencing /master/ may legitimately 404 before the PR is merged
@@ -176,7 +197,7 @@ def general_bad_urls?(file, file_diff)
             url = URI(url_string)
 
             # Make HTTP request to URL again
-            response = Net::HTTP.get_response(url)
+            response = general_bad_urls_fetch(url)
           end
 
           # Return error details if a proper response code was not received

@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve RDS instance data from one or more AWS regions due to permission or configuration errors.
+- The region-accessibility probe now uses the RDS `DescribeDBInstances` API (the same permission the policy already requires) instead of an unrelated ElastiCache API call, so no additional permissions are needed.
+
+## v3.1.7
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v3.1.6
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

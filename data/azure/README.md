@@ -170,7 +170,7 @@ For **SUSE**, each product maps a vCPU tier range string to a USD hourly price. 
 | `maxShares` | number | Maximum number of VMs that can share the disk; `-1` = not supported |
 | `maxBurstIOPS` | number | Maximum burst IOPS; `-1` = no burst support |
 | `maxBurstThroughput` | number | Maximum burst throughput in MB/s; `-1` = no burst support |
-| `downgrades` | object | `{ "tier": <tier_name_or_null>, "size": <sku_or_null> }` — the recommended smaller SKU within the same tier, if one exists |
+| `downgrades` | object | `{ "tier": <tier_name_or_null>, "size": <sku_or_null> }` - the recommended smaller SKU within the same tier, if one exists |
 
 **Example:**
 
@@ -195,13 +195,13 @@ For **SUSE**, each product maps a vCPU tier range string to a USD hourly price. 
 
 **Workflow:** [Generate Azure SQL License Pricing JSON](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-sql-license-pricing-json.yaml)
 
-**Description:** Hourly SQL Server license prices per vCPU (USD), sourced from the `Virtual Machines Licenses` service in the Azure Retail Prices API. Covers the four standard SQL Server editions: `Enterprise`, `Standard`, `Web`, and `Developer`. These are global prices (not region-specific). The pricing is perfectly linear — the total cost for any vCPU count equals `price_per_vcpu × vcpu_count` — so a single per-vCPU rate is stored for each edition. Used by policy templates that calculate estimated savings from enabling Azure Hybrid Use Benefit on SQL Server resources.
+**Description:** Hourly SQL Server license prices per vCPU (USD), sourced from the `Virtual Machines Licenses` service in the Azure Retail Prices API. Covers the four standard SQL Server editions: `Enterprise`, `Standard`, `Web`, and `Developer`. These are global prices (not region-specific). The pricing is perfectly linear - the total cost for any vCPU count equals `price_per_vcpu x vcpu_count` - so a single per-vCPU rate is stored for each edition. Used by policy templates that calculate estimated savings from enabling Azure Hybrid Use Benefit on SQL Server resources.
 
 **Structure:** Flat object mapping SQL Server edition name to USD hourly price per vCPU.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `Developer` | number | Per-vCPU hourly license price for Developer edition (always 0 — free) |
+| `Developer` | number | Per-vCPU hourly license price for Developer edition (always 0 - free) |
 | `Enterprise` | number | Per-vCPU hourly license price for Enterprise edition |
 | `Standard` | number | Per-vCPU hourly license price for Standard edition |
 | `Web` | number | Per-vCPU hourly license price for Web edition |

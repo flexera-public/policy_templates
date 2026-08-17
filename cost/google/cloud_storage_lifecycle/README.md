@@ -41,7 +41,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
+Additionally, this policy template requires that the following APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
 - [Cloud Storage API](https://console.cloud.google.com/flows/enableapi?apiid=storage.googleapis.com)

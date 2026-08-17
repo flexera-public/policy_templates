@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reallocates AWS Support costs (`OCBPremiumSupport`, `AWSEnterpriseSupport`, `AWSSupportBusiness`, `AWSSupportEnterprise`) to the AWS Linked Accounts within the AWS Organization.  Costs are allocated to each AWS Linked Account based on the percentage of total that account consumed in the bill period.
+This policy template reallocates AWS Support costs (`OCBPremiumSupport`, `AWSEnterpriseSupport`, `AWSSupportBusiness`, `AWSSupportEnterprise`) to the AWS Linked Accounts within the AWS Organization. Costs are allocated to each AWS Linked Account based on the percentage of total that account consumed in the bill period.
 
 To reallocate the costs, the policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original cost allocated to the AWS Master Payer Account with negative cost line items, and write the reallocated portions of costs as new line items.
 
@@ -47,7 +47,7 @@ The reallocated costs would be:
 - *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists.
 - *Billing Period* - Billing Period this applied policy will update. Allowed values: *"Previous Month"*, *"Current Month"*, *"Specific Month"*. If *"Specific Month"* is selected, use the *"Billing Period - Specific Month"* parameter to specify the month in \"YYYY-MM\" format.
 - *Billing Period - Specific Month* - If *"Specific Month"* is selected for Billing Period, use this parameter to specify the month in `YYYY-MM` format. Example: 2024-01.  This is intended to be used for backfilling/reprocessing reallocation for previous months.
-- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred.  For some extremely large environments, you may need to change this to "Month" to prevent Policy Engine timeouts.
+- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred. For some extremely large environments, you may need to change this to "Month" to prevent Policy Engine timeouts.
 
 ## Policy Actions
 
@@ -67,7 +67,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `csm_bill_upload_admin`
   - `org_owner`*
 
-  \* The `org_owner` role is only required if the Bill Connect does not already exist.  If the Bill Connect already exists, the `org_owner` role is not required.
+  \* The `org_owner` role is only required if the Bill Connect does not already exist. If the Bill Connect already exists, the `org_owner` role is not required.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

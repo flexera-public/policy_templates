@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.3.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+
+## v5.2.8
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v5.2.7
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

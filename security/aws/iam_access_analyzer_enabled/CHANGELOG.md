@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.2.0
+
+- Added logic required for 'Meta Policy' use-cases.
+- Added a region-error-reporting incident that alerts if the policy is unable to check IAM Access Analyzer status in one or more AWS regions due to permission or configuration errors.
+
+## v4.1.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v4.1.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

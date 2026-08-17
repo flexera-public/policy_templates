@@ -1,6 +1,6 @@
 # Using GitHub Copilot CLI to Build Policy Templates
 
-This guide explains how to use GitHub Copilot CLI together with the `policy-dev` agent to create, edit, and review Flexera policy templates in this repository. GitHub Copilot CLI is an AI-powered terminal assistant that brings Copilot's agentic coding capabilities directly to your command line. It can read and write files, run shell commands, search the codebase, and carry on a multi-turn conversation — all without leaving your terminal.
+This guide explains how to use GitHub Copilot CLI together with the `policy-dev` agent to create, edit, and review Flexera policy templates in this repository. GitHub Copilot CLI is an AI-powered terminal assistant that brings Copilot's agentic coding capabilities directly to your command line. It can read and write files, run shell commands, search the codebase, and carry on a multi-turn conversation - all without leaving your terminal.
 
 ## Installation
 
@@ -167,7 +167,7 @@ The agent will update `tools/meta_parent_policy_compiler/default_template_files.
 | `/undo` | Revert the last turn's file changes |
 | `/model` | Switch AI models (e.g. Claude Sonnet, GPT-5) |
 
-Use **Plan mode** (`Shift+Tab` until you see `[plan]`) for larger tasks — Copilot will outline its approach and wait for your approval before touching any files.
+Use **Plan mode** (`Shift+Tab` until you see `[plan]`) for larger tasks - Copilot will outline its approach and wait for your approval before touching any files.
 
 ---
 
@@ -198,8 +198,8 @@ Below is the recommended end-to-end flow for adding a new template to the catalo
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branch, PR, and merge workflow |
 | [`README.md`](README.md) | Catalog overview and template list |
 | [`README_META_POLICIES.md`](README_META_POLICIES.md) | Meta policy architecture and usage |
-| [`tools/policy_master_permission_generation/`](tools/policy_master_permission_generation/) | Permission scraping — add new template paths here |
-| [`tools/meta_parent_policy_compiler/`](tools/meta_parent_policy_compiler/) | Meta parent compiler — add meta-enabled template paths here |
+| [`tools/policy_master_permission_generation/`](tools/policy_master_permission_generation/) | Permission scraping - add new template paths here |
+| [`tools/meta_parent_policy_compiler/`](tools/meta_parent_policy_compiler/) | Meta parent compiler - add meta-enabled template paths here |
 | [Flexera Automation Docs](https://docs.flexera.com/flexera-one/automation/) | Official policy template language reference |
 | [policy_sdk (fpt)](https://github.com/flexera-public/policy_sdk) | CLI tool for syntax checking and live testing |
 
@@ -208,13 +208,13 @@ Below is the recommended end-to-end flow for adding a new template to the catalo
 ## Frequently Asked Questions
 
 **Q: Do I need Flexera credentials to use the agent?**
-A: No — the agent can write, review, and search files without credentials. You only need `~/.fpt.yml` credentials when you want to run `fpt check` (syntax validation) or `fpt run` (live testing). The agent will alert you before issuing those commands.
+A: No - the agent can write, review, and search files without credentials. You only need `~/.fpt.yml` credentials when you want to run `fpt check` (syntax validation) or `fpt run` (live testing). The agent will alert you before issuing those commands.
 
 **Q: Will the agent commit or push my changes automatically?**
 A: No. The agent creates and edits files locally, but all `git` operations (commit, push, PR creation) remain under your control unless you explicitly ask the agent to run those commands.
 
 **Q: What if the agent produces code that fails `fpt check`?**
-A: Show the agent the error output and ask it to fix the issues. The policy template DSL has strict syntax requirements; the agent is tuned for them but occasionally needs a correction loop. Example: `@policy-dev fpt check returned the following error — please fix it: [paste error]`
+A: Show the agent the error output and ask it to fix the issues. The policy template DSL has strict syntax requirements; the agent is tuned for them but occasionally needs a correction loop. Example: `@policy-dev fpt check returned the following error - please fix it: [paste error]`
 
 **Q: Can I use Copilot CLI to work on non-catalog (private or internal) templates?**
 A: Yes. The `policy-dev` agent is useful for any `.pt` file regardless of whether it is destined for the public catalog. Just omit the catalog-specific steps (automation YAML updates, Dangerfile label requirements) from your workflow.

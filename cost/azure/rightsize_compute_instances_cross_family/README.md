@@ -18,18 +18,18 @@ For each running Azure virtual machine, the policy collects CPU, memory, disk, a
 **Compatibility gates applied to every candidate instance:**
 
 1. Must be available in the VM's subscription and region (via the Azure Resource SKUs API; SKUs with `NotAvailableForSubscription` restrictions are excluded)
-1. Must share the same CPU architecture (x86_64 or Arm64) — never cross architecture families
+1. Must share the same CPU architecture (x86_64 or Arm64) - never cross architecture families
 1. Intel/AMD vendor match enforced by default (configurable via `Allow Intel/AMD Recommendations`)
-1. Must meet the required vCPU count (p95 usage × safety factor, rounded up)
-1. Must meet the required memory (p95 usage × safety factor; current memory used as minimum when memory data unavailable)
+1. Must meet the required vCPU count (p95 usage x safety factor, rounded up)
+1. Must meet the required memory (p95 usage x safety factor; current memory used as minimum when memory data unavailable)
 1. Must support all Hyper-V generations supported by the current instance
 1. Premium storage support preserved (if current instance supports Premium IO, candidate must too)
 1. Local/temporary disk preserved (if current instance has local disk, candidate must too)
 1. Data disk capacity preserved (candidate must support at least as many data disks as currently attached)
 1. NIC count preserved (candidate must support at least as many NICs as currently attached)
 1. Accelerated networking preserved (if current instance has accelerated networking, candidate must too)
-1. Disk throughput preserved (candidate `UncachedDiskBytesPerSecond` must meet peak observed throughput × safety factor)
-1. Disk IOPS preserved (candidate `UncachedDiskIOPS` must meet peak observed IOPS × safety factor)
+1. Disk throughput preserved (candidate `UncachedDiskBytesPerSecond` must meet peak observed throughput x safety factor)
+1. Disk IOPS preserved (candidate `UncachedDiskIOPS` must meet peak observed IOPS x safety factor)
 
 ### Policy Savings Details
 

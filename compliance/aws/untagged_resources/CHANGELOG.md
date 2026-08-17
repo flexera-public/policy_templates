@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.0.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v6.0.2
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
 ## v6.0.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

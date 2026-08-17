@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.2.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to check the EBS default encryption setting in one or more AWS regions due to permission or configuration errors.
+
+## v4.1.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v4.1.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

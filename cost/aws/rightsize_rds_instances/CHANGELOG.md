@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.11.4
+
+- Fixed the region-accessibility probe to use the correct `MaxRecords` query parameter (instead of `MaxResults`) for the RDS `DescribeDBInstances` API call, ensuring the probe works reliably across all regions.
+
+## v5.11.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v5.11.2
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
 ## v5.11.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

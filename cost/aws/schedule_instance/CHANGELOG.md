@@ -1,5 +1,13 @@
 # Changelog
 
+## v8.1.0
+
+- Added a region error-reporting check that surfaces a clear incident when the policy is unable to access one or more AWS regions, instead of silently omitting data from those regions.
+
+## v8.0.12
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v8.0.11
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

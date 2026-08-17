@@ -367,25 +367,7 @@ Directory structure for Flexera-product templates:
 
 Every policy template must begin with the following header block. All fields are required unless noted:
 
-```
-name "Provider Example Policy"
-rs_pt_ver 20180301
-type "policy"
-short_description "Does X and Y. See the [README](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
-long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME"
-category "Cost"          # Must match the top-level directory: Cost, Compliance, Operational, Security, SaaS, Automation
-severity "low"           # low, medium, high, critical
-default_frequency "weekly"  # valid values: "15 minutes", "hourly", "daily", "weekly", "monthly"
-info(
-  version: "0.1.0",
-  provider: "AWS",           # e.g. AWS, Azure, Google, Flexera, etc.
-  service: "Storage",        # The provider service this policy targets
-  policy_set: "",            # Grouping label for recommendations; must be non-blank for recommendation templates
-  recommendation_type: "Usage Reduction",  # Required for recommendation templates: "Usage Reduction" or "Rate Reduction"; omit for non-cost templates
-  hide_skip_approvals: "true"  # Required for recommendation templates; hides "Skip Approval" UI button
-)
-```
+**Example:** See "Policy Template Anatomy - Header Block" in `data/agent/code_examples.txt`.
 
 The `short_description` must always end with links to the README and Flexera Automation docs using the exact pattern shown above.
 
@@ -395,238 +377,68 @@ The `short_description` must always end with links to the README and Flexera Aut
 
 All catalog templates follow a fixed section order, with each section preceded by a standardized divider comment. Always structure `.pt` files in this order:
 
-```
-###############################################################################
-# Parameters
-###############################################################################
-
-###############################################################################
-# Authentication
-###############################################################################
-
-###############################################################################
-# Pagination
-###############################################################################
-
-###############################################################################
-# Datasources & Scripts
-###############################################################################
-
-###############################################################################
-# Policy
-###############################################################################
-
-###############################################################################
-# Escalations
-###############################################################################
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-```
+**Example:** See "Policy Template Structure - Section Divider Skeleton" in `data/agent/code_examples.txt`.
 
 "Authentication" = `credentials` blocks. "Datasources & Scripts" = both `datasource` and `script` blocks. "Cloud Workflow" = `define` blocks. Omit sections that aren't needed.
 
 ## DSL Quick Reference
 
+All canonical code examples for the patterns described in this section (and in
+"Standard Parameter Conventions" below) live in `data/agent/code_examples.txt`,
+organized under headers that match the subsections here. This section explains
+when and why to use each pattern; consult that file for the exact code to copy.
+
 ### Credentials
 
-```
-credentials "auth_aws" do
-  schemes "aws", "aws_sts"
-  label "AWS"
-  description "Select the AWS Credential from the list"
-  tags "provider=aws"
-  aws_account_number $param_aws_account_number  # for Meta Policy cross-account support
-end
-
-credentials "auth_azure" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
-end
-
-credentials "auth_google" do
-  schemes "oauth2"
-  label "Google"
-  description "Select the Google Cloud Credential from the list."
-  tags "provider=gce"
-end
-
-credentials "auth_flexera" do
-  schemes "oauth2"
-  label "Flexera"
-  description "Select Flexera One OAuth2 credentials"
-  tags "provider=flexera"
-end
-
-credentials "auth_oracle" do
-  schemes "oracle"
-  label "Oracle"
-  description "Select the Oracle Cloud (OCI) Credential from the list."
-  tags "provider=oracle"
-end
-```
+**Example:** See "Credentials" in `data/agent/code_examples.txt`.
 
 Correct `tags` values by provider: `provider=aws`, `provider=azure_rm` (Azure), `provider=gce` (Google), `provider=flexera`, `provider=oracle` (Oracle OCI).
 
 ### Pagination
 
-```
-pagination "pagination_aws" do
-  get_page_marker do
-    body_path jmes_path(response, "NextToken")      # where to read the cursor from the response
-  end
-  set_page_marker do
-    body_field "NextToken"                           # where to write the cursor in the next request
-  end
-end
-```
+**Example:** See "Pagination" in `data/agent/code_examples.txt`.
 
 Use `query "NextToken"` instead of `body_field` when the cursor must be sent as a query parameter. Use `body_path "//XPath/Expression"` for XML APIs.
 
 Azure APIs return `nextLink` as a **complete URL** for the next page. Use `uri true` so the engine uses it directly instead of inserting it as a parameter:
 
-```
-pagination "pagination_azure" do
-  get_page_marker do
-    body_path "nextLink"
-  end
-  set_page_marker do
-    uri true    # nextLink IS the full URL for the next page — do not append as a parameter
-  end
-end
-```
+**Example:** See "Pagination" in `data/agent/code_examples.txt`.
 
 Google APIs return a `nextPageToken` in the response body and expect it back as a `pageToken` query parameter:
 
-```
-pagination "pagination_google" do
-  get_page_marker do
-    body_path "nextPageToken"
-  end
-  set_page_marker do
-    query "pageToken"
-  end
-end
-```
+**Example:** See "Pagination" in `data/agent/code_examples.txt`.
 
 ### Datasource — REST Request
 
-```
-datasource "ds_example" do
-  request do
-    auth $auth_aws
-    pagination $pagination_aws   # omit if the endpoint is not paginated
-    host "ec2.amazonaws.com"
-    path "/some/endpoint"
-    query "param", "value"
-    header "Accept", "application/json"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", jmes_path(col_item, "Id")
-      field "name", jmes_path(col_item, "Name")
-    end
-  end
-end
-```
+**Example:** See "Datasource - REST Request" in `data/agent/code_examples.txt`.
 
 For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"` and XPath expressions instead of JMESPath:
 
-```
-  result do
-    encoding "xml"
-    collect xpath(response, "//item") do
-      field "id", xpath(col_item, "snapshotId/text()")
-      field "size", xpath(col_item, "volumeSize/text()")
-    end
-  end
-```
+**Example:** See "Datasource - REST Request" in `data/agent/code_examples.txt`.
 
 Use `encoding "text"` for raw text responses (e.g. CSV). The entire response body becomes the datasource value — no `field` declarations needed:
 
-```
-  result do
-    encoding "text"    # entire response body is the datasource value (a string)
-  end
-```
+**Example:** See "Datasource - REST Request" in `data/agent/code_examples.txt`.
 
 To iterate a datasource over a list (e.g. one request per region):
 
-```
-datasource "ds_per_region" do
-  iterate $ds_regions
-  request do
-    auth $auth_aws
-    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/some/endpoint"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Items[*]") do
-      field "id", jmes_path(col_item, "Id")
-      field "region", val(iter_item, "region")
-    end
-  end
-end
-```
+**Example:** See "Datasource - REST Request" in `data/agent/code_examples.txt`.
 
 Add `ignore_status [403, 404]` inside any `request do` block to suppress specific HTTP error codes instead of failing. Use this when an API returns 404 for missing resources, 403 for inaccessible regions, etc.
 
 **`collect` vs no `collect`:** Use `collect` when the response (or a sub-expression) is an **array** — each element becomes a datasource row. Omit `collect` when the response is a **single object** (as in `ds_applied_policy` above):
 
-```
-# Single-object response — no collect
-result do
-  encoding "json"
-  field "id", jmes_path(response, "id")
-  field "name", jmes_path(response, "name")
-end
-```
+**Example:** See "Datasource - REST Request" in `data/agent/code_examples.txt`.
 
 ### Datasource — Static POST / PUT / DELETE Request
 
 For POST (or any non-GET) requests where the body is static or can be built from DSL expressions, use `verb`, `body_field`, and/or `body` directly in the `request do` block — no JavaScript script required. Use the dynamic `run_script` pattern only when the body needs conditional logic or complex data transformation.
 
-```
-datasource "ds_create_items" do
-  iterate $ds_items_to_create
-  request do
-    auth $auth_flexera
-    verb "POST"                                           # override the default GET verb
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/some/api/v1/orgs/", rs_org_id, "/items"])
-    header "User-Agent", "RS Policies"
-    body_field "name", val(iter_item, "name")    # individual JSON body fields
-    body_field "params", val(iter_item, "params")  # repeat for each field
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-  end
-end
-```
+**Example:** See "Datasource - Static POST / PUT / DELETE Request" in `data/agent/code_examples.txt`.
 
 For APIs that expect a raw string body (CSV, XML, empty JSON object, etc.) use `body` instead of `body_field`:
 
-```
-datasource "ds_post_raw" do
-  request do
-    auth $auth_aws
-    verb "POST"
-    host "some-aws-api.amazonaws.com"
-    path "/some/endpoint"
-    body "{}"    # send an empty JSON object body; can also be val(...) or join([...]) expressions
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-  end
-end
-```
+**Example:** See "Datasource - Static POST / PUT / DELETE Request" in `data/agent/code_examples.txt`.
 
 `body_field` and `body` are mutually exclusive — use one or the other per request block, not both.
 
@@ -634,68 +446,13 @@ end
 
 Use `request do { run_script }` when the request URL, verb, or body must be constructed dynamically (e.g. POST requests to Flexera billing APIs). The script must return a `request` object — note that `result` must be named `"request"`, and credentials are passed as a **string** name, not a `$variable`:
 
-```
-datasource "ds_billing_data" do
-  request do
-    run_script $js_billing_request, $ds_billing_centers, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "account_id", jmes_path(col_item, "dimensions.vendor_account")
-      field "account_name", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-    end
-  end
-end
-
-script "js_billing_request", type: "javascript" do
-  parameters "billing_centers", "rs_org_id", "rs_optima_host"
-  result "request"   # MUST be named "request" when used inside request do
-  code <<-'EOS'
-    var end_date = new Date(); end_date.setDate(end_date.getDate() - 1)
-    var start_date = new Date(); start_date.setDate(start_date.getDate() - 30)
-
-    request = {
-      auth: "auth_flexera",    // credential name as a string, NOT a $variable
-      host: rs_optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
-      body_fields: {
-        dimensions: ["vendor_account", "vendor_account_name"],
-        granularity: "day",
-        start_at: start_date.toISOString().split("T")[0],
-        end_at: end_date.toISOString().split("T")[0],
-        metrics: ["cost_amortized_unblended_adj"],
-        billing_center_ids: _.pluck(billing_centers, "id")
-      },
-      headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
-      ignore_status: [400]
-    }
-EOS
-end
-```
+**Example:** See "Datasource - Dynamic / POST Request" in `data/agent/code_examples.txt`.
 
 ### Datasource — JavaScript Transform
 
 Use `run_script` at the datasource top level to transform or combine data with JavaScript:
 
-```
-datasource "ds_filtered" do
-  run_script $js_filter_items, $ds_raw_items, $param_threshold
-end
-
-script "js_filter_items", type: "javascript" do
-  parameters "items", "threshold"
-  result "result"
-  code <<-'EOS'
-    // Underscore.js (_) is available for use in all script blocks
-    result = _.filter(items, function(item) {
-      return item.value > threshold
-    })
-EOS
-end
-```
+**Example:** See "Datasource - JavaScript Transform" in `data/agent/code_examples.txt`.
 
 **Datasource structure rules:**
 - A datasource can have EITHER `iterate` OR top-level `run_script`, not both
@@ -722,85 +479,17 @@ The `param_exclusion_tags` + `param_exclusion_tags_boolean` parameter pair is fi
 - **AWS:** `resource['tags']` is an array of `{ key: "k", value: "v" }` — iterate to build a flat map
 - **Azure/GCP:** `resource['tags']` is already a flat `{ Key: Value }` object
 
-```
-script "js_filter_resources", type: "javascript" do
-  parameters "resources", "param_exclusion_tags", "param_exclusion_tags_boolean"
-  result "result"
-  code <<-'EOS'
-    comparators = _.map(param_exclusion_tags, function(item) {
-      if (item.indexOf('==') != -1) {
-        return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
-      }
-      if (item.indexOf('!=') != -1) {
-        return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
-      }
-      if (item.indexOf('=~') != -1) {
-        value = item.split('=~')[1]
-        regex = new RegExp(value.slice(1, value.length - 1))
-        return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
-      }
-      if (item.indexOf('!~') != -1) {
-        value = item.split('!~')[1]
-        regex = new RegExp(value.slice(1, value.length - 1))
-        return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
-      }
-      return { comparison: 'key', key: item, value: null, string: item }
-    })
-
-    result = _.reject(resources, function(resource) {
-      resource_tags = {}
-      // AWS: tags are [{key: "k", value: "v"}, ...] — adjust for Azure/GCP as needed
-      if (typeof(resource['tags']) == 'object') {
-        _.each(resource['tags'], function(tag) { resource_tags[tag['key']] = tag['value'] })
-      }
-
-      found_tags = []
-      _.each(comparators, function(comparator) {
-        resource_tag = resource_tags[comparator['key']]
-        if (comparator['comparison'] == 'key' && resource_tag != undefined)                                          { found_tags.push(comparator['string']) }
-        if (comparator['comparison'] == '==' && resource_tag == comparator['value'])                                 { found_tags.push(comparator['string']) }
-        if (comparator['comparison'] == '!=' && resource_tag != comparator['value'])                                 { found_tags.push(comparator['string']) }
-        if (comparator['comparison'] == '=~' && resource_tag != undefined && comparator['value'].test(resource_tag)) { found_tags.push(comparator['string']) }
-        if (comparator['comparison'] == '!~' && (resource_tag == undefined || !comparator['value'].test(resource_tag))) { found_tags.push(comparator['string']) }
-      })
-
-      if (param_exclusion_tags.length == 0) { return false }
-      if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
-      return found_tags.length == comparators.length  // 'All'
-    })
-EOS
-end
-```
+**Example:** See "Common JavaScript Patterns - Tag Filtering" in `data/agent/code_examples.txt`.
 
 ### Common JavaScript Patterns — Region Filtering
 
 The `param_regions_allow_or_deny` + `param_regions_list` parameter pair is applied in JavaScript using this standard pattern. An empty list means "no filter — include all regions":
 
-```
-script "js_filter_regions", type: "javascript" do
-  parameters "regions", "param_regions_list", "param_regions_allow_or_deny"
-  result "result"
-  code <<-'EOS'
-    allow_deny_test = { "Allow": true, "Deny": false }
-
-    if (param_regions_list.length > 0) {
-      result = _.filter(regions, function(item) {
-        return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
-      })
-    } else {
-      result = regions  // empty list = no filter; include all regions
-    }
-EOS
-end
-```
+**Example:** See "Common JavaScript Patterns - Region Filtering" in `data/agent/code_examples.txt`.
 
 Wrap in a companion datasource:
 
-```
-datasource "ds_regions" do
-  run_script $js_regions, $ds_describe_regions, $param_regions_allow_or_deny, $param_regions_list
-end
-```
+**Example:** See "Common JavaScript Patterns - Region Filtering" in `data/agent/code_examples.txt`.
 
 Downstream datasources use `iterate $ds_regions`. Adapt field name as needed (`item['location']` for Azure, `item['name']` for Google).
 
@@ -808,72 +497,21 @@ Downstream datasources use `iterate $ds_regions`. Adapt field name as needed (`i
 
 The `param_subscriptions_allow_or_deny` + `param_subscriptions_list` parameter pair is applied in JavaScript using this standard pattern. It matches by either subscription **ID or name** to be user-friendly. An empty list means no filter:
 
-```
-script "js_filter_subscriptions", type: "javascript" do
-  parameters "subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
-  result "result"
-  code <<-'EOS'
-    if (param_subscriptions_list.length > 0) {
-      result = _.filter(subscriptions, function(subscription) {
-        include_subscription = _.contains(param_subscriptions_list, subscription['id']) ||
-                               _.contains(param_subscriptions_list, subscription['name'])
-
-        if (param_subscriptions_allow_or_deny == "Deny") {
-          include_subscription = !include_subscription
-        }
-
-        return include_subscription
-      })
-    } else {
-      result = subscriptions  // empty list = no filter; include all subscriptions
-    }
-EOS
-end
-```
+**Example:** See "Common JavaScript Patterns - Azure Subscription Filtering" in `data/agent/code_examples.txt`.
 
 Wrap in a companion datasource; downstream datasources use `iterate $ds_azure_subscriptions_filtered`:
 
-```
-datasource "ds_azure_subscriptions_filtered" do
-  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
-end
-```
+**Example:** See "Common JavaScript Patterns - Azure Subscription Filtering" in `data/agent/code_examples.txt`.
 
 ### Common JavaScript Patterns — Google Project Filtering
 
 The `param_projects_allow_or_deny` + `param_projects_list` parameter pair is applied in JavaScript using this standard pattern. It matches by project **ID, name, or number** (Google projects have all three identifiers). An empty list means no filter:
 
-```
-script "js_filter_projects", type: "javascript" do
-  parameters "projects", "param_projects_allow_or_deny", "param_projects_list"
-  result "result"
-  code <<-'EOS'
-    if (param_projects_list.length > 0) {
-      result = _.filter(projects, function(project) {
-        include_project = _.contains(param_projects_list, project['id']) ||
-                          _.contains(param_projects_list, project['name']) ||
-                          _.contains(param_projects_list, project['number'])
-
-        if (param_projects_allow_or_deny == "Deny") {
-          include_project = !include_project
-        }
-
-        return include_project
-      })
-    } else {
-      result = projects  // empty list = no filter; include all projects
-    }
-EOS
-end
-```
+**Example:** See "Common JavaScript Patterns - Google Project Filtering" in `data/agent/code_examples.txt`.
 
 Wrap in a companion datasource; downstream datasources use `iterate $ds_google_projects_filtered`:
 
-```
-datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
-end
-```
+**Example:** See "Common JavaScript Patterns - Google Project Filtering" in `data/agent/code_examples.txt`.
 
 ### Policy Block
 
@@ -887,51 +525,7 @@ end
 
 `{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle empty datasources.
 
-```
-policy "pol_example" do
-  validate_each $ds_items do
-    # IMPORTANT: 'check' fires the incident when it evaluates to FALSE (not true).
-    # Use logic_or with $ds_parent_policy_terminated ONLY in Meta Policy-compatible templates
-    # (i.e. templates that iterate through AWS accounts, Azure subscriptions, or Google projects).
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Items Found"
-    detail_template <<-'EOS'
-    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
-    EOS
-    escalate $esc_email
-    escalate $esc_delete
-    hash_exclude "tags", "savings"  # exclude volatile fields that would cause spurious incident re-triggers
-    export do
-      resource_level true  # set true when each row represents a distinct cloud resource
-      field "id" do label "Resource ID" end
-      field "name" do label "Resource Name" end
-      field "region" do label "Region" end
-      field "display_id" do  # use 'path' to alias a field to a different source field
-        label "ID"
-        path "id"
-      end
-      field "console_link" do       # 'format "link-external"' renders the value as a clickable URL
-        label "Console Link"
-        format "link-external"
-      end
-    end
-  end
-
-  # Error-check pattern: validate (NOT validate_each) checks the whole datasource at once.
-  # check eq(size(data), 0) passes when there are zero errors and fires an incident when any exist.
-  validate $ds_identify_errors do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
-    detail_template <<-'EOS'
-    **Error Details:**
-    {{ range data -}}
-      - {{ .error }}
-    {{ end -}}
-    EOS
-    check eq(size(data), 0)
-    escalate $esc_email_errors_identified
-  end
-end
-```
+**Example:** See "Policy Block" in `data/agent/code_examples.txt`.
 
 **`validate` vs `validate_each`:** The main incident block uses `validate_each` (checks each row individually). The region-error block uses `validate` (without `_each`) — it evaluates `check` once against the entire datasource. Use `validate` when you want a single incident that fires if the datasource is non-empty, not a per-row check.
 
@@ -947,114 +541,7 @@ end
 
 **Probe endpoint selection:** The `ds_region_check` probe must use an API endpoint whose result-limit parameter accepts small values (e.g. `MaxResults=5`). **Do not probe RDS `DescribeDBInstances`** — that action uses `MaxRecords` (not `MaxResults`), which requires a minimum value of 20 and returns an API error for smaller values. When the template's primary service uses a restrictive API (e.g. RDS), probe a different service such as ElastiCache (`DescribeCacheClusters`) or EC2 (`DescribeNatGateways`) instead, since both accept `MaxResults` with values as small as 5. The convention across existing catalog templates is `query "MaxResults", "5"`.
 
-```
-# 1. Probe each region for accessibility
-datasource "ds_region_check" do
-  iterate $ds_regions
-  request do
-    auth $auth_aws
-    host join(["lambda.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/2015-03-31/functions/"
-    query "MaxItems", "1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403, 401]
-  end
-  result do
-    encoding "xml"
-    field "region", val(iter_item, "region")
-    field "status", "OK"
-  end
-end
-
-# 2. Identify inaccessible regions
-datasource "ds_identify_errors" do
-  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
-end
-
-script "js_identify_errors", type: "javascript" do
-  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
-  result "errors"
-  code <<-'EOS'
-  var errors = []
-
-  var region_responses = {}
-  _.each(ds_region_check, function(item) {
-    if (item.region) { region_responses[item.region] = "OK" }
-  })
-
-  var allowed_regions = _.keys(region_responses)
-  var forbidden_regions = []
-
-  _.each(ds_regions, function(region_obj) {
-    if (!_.contains(allowed_regions, region_obj.region)) {
-      forbidden_regions.push(region_obj.region)
-    }
-  })
-
-  if (forbidden_regions.length > 0) {
-    var regions_string = forbidden_regions.sort().join(", ")
-    var successful_regions = allowed_regions.sort().join(", ")
-    var filter_guidance = ""
-
-    if (param_regions_list.length > 0) {
-      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
-      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
-    } else {
-      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions."
-    }
-
-    errors.push(
-      "HTTP error received when attempting to list [resources] in some AWS region(s).\n" +
-      "\n - Failed Regions: " + regions_string +
-      "\n - Successful Regions: " + successful_regions +
-      "\n\nThis typically indicates that the AWS credential does not have the required " +
-      "'[service]:[Action]' permission for these regions, or these regions may not be enabled." +
-      " To resolve: (1) Verify the credential has the required permission, " +
-      "(2) Ensure these regions are opted-in in your account, or " +
-      "(3) Exclude these regions using the region filter parameters." +
-      filter_guidance
-    )
-  }
-
-  errors = _.uniq(errors)
-  errors = _.map(errors, function(err) { return { "error": err } })
-
-  if (errors.length > 0) {
-    var policy_name = "AWS Policy"
-    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
-    errors[0].policy_name = policy_name
-  }
-EOS
-end
-
-# 3. In the policy block — use 'validate' (not validate_each) for the error datasource
-  validate $ds_identify_errors do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
-    detail_template <<-'EOS'
-    The policy was unable to access one or more AWS regions due to permission or configuration errors.
-
-    **Error Details:**
-    {{ range data -}}
-      - {{ .error }}
-    {{ end -}}
-
-    **Recommended Actions:**
-    1. Verify the AWS credential has the required permissions for all policy regions.
-    2. Ensure any opt-in regions are enabled in your AWS account.
-    3. Use the Allow/Deny Regions List parameter to exclude inaccessible regions.
-    EOS
-    check eq(size(data), 0)
-    escalate $esc_email_errors_identified
-  end
-
-# 4. In escalations — simple email with no table attachment
-escalation "esc_email_errors_identified" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-```
+**Example:** See "AWS Region Error-Reporting Pattern" in `data/agent/code_examples.txt`.
 
 **`check` semantics:** Incident fires when `check` evaluates to `false`, `0`, empty string, empty array, or empty object. Multiple `check` statements evaluate in order, stopping at first failure. `eq(val(item, "id"), "")` is the standard sentinel for "no incident when datasource is empty".
 
@@ -1073,11 +560,7 @@ The last datasource in every template is typically a JavaScript transform (`run_
 
 **Standard fields set on `result[0]`** (the first item in the result array):
 
-```javascript
-result[0]['policy_name'] = ds_applied_policy['name']  // always — feeds {{ .policy_name }} in summary_template
-result[0]['message']     = "Multi-line markdown string..."  // feeds {{ .message }} in detail_template
-result[0]['total_savings'] = "Total Estimated Monthly Savings: " + currency_symbol + total  // cost templates only
-```
+**Example:** See "Common JavaScript Patterns - Final Transform / Cost Template Conventions" in `data/agent/code_examples.txt`.
 
 **Standard per-row fields for cost recommendation templates:**
 
@@ -1128,95 +611,17 @@ The Flexera platform scrapes incident export data to populate the Total Potentia
 
 **Standard field order in the export block** (follow this order — resource-specific fields fill in between region and savings):
 
-```
-accountID → accountName → resourceID → resourceName → tags → recommendationDetails →
-region → [resource-specific fields] → savings → savingsCurrency →
-[lookbackPeriod, threshold, metric fields] → service → resourceARN → id
-```
+**Example:** See "Common JavaScript Patterns - Final Transform / Cost Template Conventions" in `data/agent/code_examples.txt`.
 
 **Canonical export block example:**
 
-```
-export do
-  resource_level true
-  field "accountID" do
-    label "Account ID"
-  end
-  field "accountName" do
-    label "Account Name"
-  end
-  field "resourceID" do
-    label "Resource ID"
-  end
-  field "resourceName" do
-    label "Resource Name"
-  end
-  field "tags" do
-    label "Resource Tags"
-  end
-  field "recommendationDetails" do
-    label "Recommendation"
-  end
-  field "region" do
-    label "Region"
-  end
-  field "state" do
-    label "State"
-  end
-  field "resourceType" do
-    label "Resource Type"
-    path "runtime"    # use 'path' to alias a data field to a standard name
-  end
-  field "savings" do
-    label "Estimated Monthly Savings"
-  end
-  field "savingsCurrency" do
-    label "Savings Currency"
-  end
-  field "lookbackPeriod" do
-    label "Look Back Period (Days)"
-  end
-  field "service" do
-    label "Service"
-  end
-  field "resourceARN" do
-    label "Resource ARN"
-  end
-  field "id" do
-    label "ID"
-    path "resourceID"
-  end
-end
-```
+**Example:** See "Common JavaScript Patterns - Final Transform / Cost Template Conventions" in `data/agent/code_examples.txt`.
 
 **`hash_exclude` minimum** — always exclude volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields. **Only include field names that are actually declared in the `export` block** — `hash_exclude` has no effect on fields that are not exported. The fields `message`, `policy_name`, and `total_savings` are metadata set on `result[0]` for use in `summary_template` / `detail_template`; only add them to `hash_exclude` if they are explicitly declared in the `export` block:
 
-```
-hash_exclude "tags", "savings", "savingsCurrency"
-```
+**Example:** See "Common JavaScript Patterns - Final Transform / Cost Template Conventions" in `data/agent/code_examples.txt`.
 
-```javascript
-result.push({
-  // Account info
-  accountID: ds_aws_account['id'],              // required — note capital ID
-  accountName: ds_aws_account['name'],
-  // Resource identity
-  resourceID: resource['id'],                   // required
-  resourceName: resource['name'],
-  // Metadata
-  tags: tags.join(', '),                        // required — joined display string, NOT a raw array
-  recommendationDetails: recommendationDetails,
-  region: region,
-  // Resource-specific fields here ...
-  // Financial
-  savings: parseFloat(item_savings.toFixed(3)), // required — number
-  savingsCurrency: ds_currency['symbol'],
-  // Contextual
-  lookbackPeriod: param_lookback_days,          // bare number (days), NOT a string with units
-  service: "EC2",
-  resourceARN: resource['arn'],                 // full ARN for audit trail
-})
-```
+**Example:** See "Common JavaScript Patterns - Final Transform / Cost Template Conventions" in `data/agent/code_examples.txt`.
 
 Always add `"savings"`, `"savingsCurrency"`, and `"tags"` to `hash_exclude` in the `validate_each` block so that savings recalculations don't trigger spurious incident re-opens. If `"message"` or `"total_savings"` are declared as fields in the `export` block, add them too — but do **not** add them if they are not exported, as `hash_exclude` only operates on exported fields.
 
@@ -1226,190 +631,53 @@ For cost templates, the `ds_currency` datasource (fetched from the Flexera billi
 
 A single `esc_email` escalation block is shared across **all** `validate_each` (and `validate`) blocks in the policy that report on cloud resources. Only specialty incidents — such as the AWS region-error `validate $ds_identify_errors` block — use their own dedicated escalation (e.g. `esc_email_errors_identified`) because those incidents have different email behaviour (no table attachment, no CSV, etc.). Do **not** create duplicate `esc_email_*` blocks that are structurally identical; reference the same `$esc_email` escalation from every standard incident block.
 
-```
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email do
-    attach_export_table $param_incident_csv      # attach CSV export of incident data; use "false" to disable
-    body_table_max_rows $param_incident_table_size  # cap inline table rows to avoid oversized emails
-  end
-end
-
-# Automated action — runs without approval when param contains the action name
-escalation "esc_delete" do
-  automatic contains($param_automatic_action, "Delete Items")
-  label "Delete Items"
-  description "Approval to delete all selected items"
-  run "delete_items", data, $param_some_option
-  # 'data' is a DSL reserved word — it refers to the incident's violation rows (the items
-  # that failed 'check'). The same list is passed as the first argument to the Cloud Workflow
-  # 'define' that handles the action (e.g. $data in 'define delete_items($data, ...)').
-end
-
-# Optional: auto-close the incident after the escalation finishes.
-# Place 'resolve_incident' inside any escalation block to automatically resolve the
-# incident once the escalation (action) has completed successfully.
-escalation "esc_create_and_resolve" do
-  automatic true
-  label "Create Items"
-  description "Creates the listed items and closes the incident"
-  run "create_items", data
-  resolve_incident
-end
-```
+**Example:** See "Escalations" in `data/agent/code_examples.txt`.
 
 ### Cloud Workflow (Actions)
 
 **Variable scoping:** `$variable` is local to the current `define` block. `$$variable` is global and shared across all `define` calls in the same execution. Use `$$` for any state that must survive across `call` boundaries (accumulated results, error lists).
 
-```
-define delete_items($data, $param_some_option) return $all_responses do
-  $$all_responses = []
-  $$errors = []
-
-  foreach $item in $data do
-    sub on_error: handle_error() do
-      call delete_one_item($item) retrieve $response
-    end
-    $$all_responses << $response
-  end
-
-  # Raise all collected errors at the end
-  if size($$errors) > 0
-    raise join($$errors, "\n")
-  end
-end
-
-# Pattern A — AWS/Oracle: http_request with split host/href and explicit https: flag
-# Choose ONE pattern that matches your provider; do NOT use both in the same template.
-define delete_one_item_aws($item) return $response do
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "delete",
-    host: "example.com",
-    href: join(["/items/", $item["id"]]),
-    headers: { "Accept": "application/json" }
-  )
-end
-
-# Pattern B — Google/Azure: shorthand method with a single full URL; no https: flag needed
-define delete_one_item_azure($item) return $response do
-  $response = http_delete(
-    auth: $$auth_google,
-    url: join(["https://example.com/items/", $item["id"]]),
-    headers: { "Accept": "application/json" }
-  )
-end
-
-define handle_error() do
-  if !$$errors
-    $$errors = []
-  end
-  $$errors << $_error["type"] + ": " + $_error["message"]
-  $_error_behavior = "skip"  # prevents the sub block from re-raising
-end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`$_error` object:** In `sub on_error:` handlers: `$_error["type"]` (e.g. `"http"`, `"general"`) and `$_error["message"]`. Set `$_error_behavior = "skip"` to suppress re-raising.
 
 **`call` and `retrieve`:** Use `retrieve` to capture return values; omit when not needed:
 
-```
-  call delete_one_item($item) retrieve $response   # captures return value
-  call log_event($item)                            # fire-and-forget; no return value needed
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`task_label(msg)`:** Log HTTP operations to the execution audit trail. Pass HTTP verb + URL for easy failure diagnosis:
 
-```
-define delete_one_item($item) return $response do
-  $url = "https://example.com/items/" + $item["id"]
-  task_label("DELETE " + $url)
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "delete",
-    host: "example.com",
-    href: join(["/items/", $item["id"]])
-  )
-  task_label("DELETE " + $url + " response: " + to_json($response))
-end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`to_json($obj)`:** Serialize to JSON string. Use in `task_label` calls and error messages.
 
 **`inspect($$var)`:** Returns `"null"` when unset. Idiomatic null-check: `inspect($$errors) != "null"`:
 
-```
-  if inspect($$errors) != "null"
-    raise "\n" + join($$errors, "\n") + "\n"
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`concurrent foreach`:** Use for independent iterations that can run in parallel. Individual `sub on_error:` handlers still work per-iteration:
 
-```
-  concurrent foreach $instance in $data do
-    sub on_error: handle_error() do
-      call stop_one_instance($instance)
-    end
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **Response code validation:** Check `$response["code"]` and `raise` on unexpected values. Success codes: `200`, `201`, `202`, `204`:
 
-```
-  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
-    raise "Unexpected response deleting item " + $item["id"] + ": " + to_json($response)
-  else
-    task_label("Successfully deleted item: " + $item["id"])
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`sleep($seconds)`:** Pause execution. Use in polling loops:
 
-```
-  while $instance_state != "running" do
-    call get_instance_state($instance) retrieve $instance_state
-    sleep(10)
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`while` loops:** Combine with `sleep()` and `sub timeout:` for polling:
 
-```
-  sub timeout: 5m, on_timeout: skip do
-    while $state != "RUNNING" do
-      call get_state($item) retrieve $state
-      sleep(5)
-    end
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **`sub timeout:` with `on_timeout:`:** Use `skip` to silently continue, or call a handler `define`:
 
-```
-  sub timeout: 5m, on_timeout: handle_timeout() do
-    while $state == null do
-      call get_state($item) retrieve $state
-      sleep(10)
-    end
-  end
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 **HTTP shorthand functions:** `http_get`, `http_post`, `http_patch`, `http_delete` take a single `url` parameter. Use for Google/Azure:
 
-```
-  $response = http_post(
-    auth: $$auth_google,
-    url: $url,
-    headers: { "content-type": "application/json" },
-    body: { "labels": $new_labels }
-  )
-```
+**Example:** See "Cloud Workflow (Actions)" in `data/agent/code_examples.txt`.
 
 ### Built-in Runtime Variables
 
@@ -1472,89 +740,21 @@ Commonly used built-in DSL functions for use in `check`, `request`, and `result`
 
 Any template that calls a Flexera API must include `ds_flexera_api_hosts` to route requests to the correct regional endpoint. Include it at the top of the Datasources section:
 
-```
-datasource "ds_flexera_api_hosts" do
-  run_script $js_flexera_api_hosts, rs_optima_host
-end
-
-script "js_flexera_api_hosts", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-'EOS'
-    host_table = {
-      "api.optima.flexeraeng.com": { flexera: "api.flexera.com", optima: "api.optima.flexeraeng.com" },
-      "api.optima-eu.flexeraeng.com": { flexera: "api.flexera.eu", optima: "api.optima-eu.flexeraeng.com" },
-      "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au", optima: "api.optima-apac.flexeraeng.com" }
-    }
-    result = host_table[rs_optima_host]
-EOS
-end
-```
+**Example:** See "Flexera API Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 Use `val($ds_flexera_api_hosts, "flexera")` as `host` in Flexera API requests. For FSM/GRS APIs, copy the full boilerplate (including `fsm`, `grs`, `api`, `ui`, `tld` keys) from an existing template.
 
 Include `ds_applied_policy` in templates that reference `{{ .policy_name }}` in `summary_template`:
 
-```
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-    field "name", jmes_path(response, "name")
-  end
-end
-```
+**Example:** See "Flexera API Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 Include `ds_billing_centers` in cost templates that query billing data:
 
-```
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host     # use rs_optima_host directly, NOT val($ds_flexera_api_hosts, ...)
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    query "view", "allocation_table"
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-```
+**Example:** See "Flexera API Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 Include `ds_cloud_vendor_accounts` to display account/subscription names. The `id` field path differs by provider:
 
-```
-datasource "ds_cloud_vendor_accounts" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
-    header "Api-Version", "1.0"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "values[*]") do
-      field "id", jmes_path(col_item, "aws.accountId")  # use azure.subscriptionId, gcp.projectId etc. for other providers
-      field "name", jmes_path(col_item, "name")
-      field "tags", jmes_path(col_item, "tags")
-    end
-  end
-end
-```
+**Example:** See "Flexera API Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 **When to add Meta Policy support:** Meta Policies work by deploying one child policy per cloud account. This only makes sense for templates that iterate through and make API calls to individual AWS accounts, Azure subscriptions, or Google projects. **Do not add Meta Policy support to:**
 - Pure CCO/billing templates (templates that only query Flexera APIs — no cloud provider credential needed)
@@ -1567,43 +767,7 @@ For Meta Policy support, the complete Meta Policy block **must be placed at the 
 
 The canonical Meta Policy section (copy verbatim):
 
-```
-###############################################################################
-# Meta Policy [alpha]
-# Not intended to be modified or used by policy developers
-###############################################################################
-
-# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
-# if it is set we will look for the parent policy.
-datasource "ds_get_parent_policy" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-  end
-end
-
-# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
-# This information is used in two places:
-# - determining whether or not we make a delete call
-# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-datasource "ds_parent_policy_terminated" do
-  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
-end
-
-script "js_parent_policy_terminated", type: "javascript" do
-  parameters "ds_get_parent_policy", "meta_parent_policy_id"
-  result "result"
-  code <<-'EOS'
-  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
-EOS
-end
-```
+**Example:** See "Meta Policy Canonical Block" in `data/agent/code_examples.txt`.
 
 Use `$ds_parent_policy_terminated` in every `check` line in the `# Policy` section.
 
@@ -1613,263 +777,25 @@ Multi-region/subscription/project templates start with a datasource listing all 
 
 **AWS — `ds_describe_regions`:** Pass through region allow/deny filter before iterating:
 
-```
-datasource "ds_describe_regions" do
-  request do
-    auth $auth_aws
-    host "ec2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeRegions"
-    query "Version", "2016-11-15"
-    query "Filter.1.Name", "opt-in-status"
-    query "Filter.1.Value.1", "opt-in-not-required"
-    query "Filter.1.Value.2", "opted-in"
-    header "Meta-Flexera", val($ds_is_deleted, "path")
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
-      field "region", xpath(col_item, "regionName")
-    end
-  end
-end
-```
+**Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 **Azure — `ds_azure_subscriptions`:** Use `$param_azure_endpoint` as host to support Azure China:
 
-```
-datasource "ds_azure_subscriptions" do
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version", "2020-01-01"
-    header "User-Agent", "RS Policies"
-    header "Meta-Flexera", val($ds_is_deleted, "path")
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "subscriptionId")
-      field "name", jmes_path(col_item, "displayName")
-      field "state", jmes_path(col_item, "state")
-    end
-  end
-end
-```
+**Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 **Google — `ds_google_projects`:**
 
-```
-datasource "ds_google_projects" do
-  request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    header "Meta-Flexera", val($ds_is_deleted, "path")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
-      field "id", jmes_path(col_item, "projectId")
-      field "name", jmes_path(col_item, "name")
-    end
-  end
-end
-```
+**Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 **`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order. These belong in the `# Meta Policy [alpha]` section at the bottom of the file:
 
-```
-# Two potentials ways to set this up:
-# - this way and make a unneeded 'get' request when not deleting
-# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-datasource "ds_terminate_self" do
-  request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
-  end
-end
-
-script "js_make_terminate_request", type: "javascript" do
-  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
-  result "request"
-  code <<-'EOS'
-  var request = {
-    auth: "auth_flexera",
-    host: ds_flexera_api_hosts["flexera"],
-    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
-    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
-  }
-EOS
-end
-
-# This is just a way to have the check delete request connect to the farthest leaf from policy.
-# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
-# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
-# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
-# would not have access to self-terminate
-# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-datasource "ds_is_deleted" do
-  run_script $js_is_deleted, $ds_terminate_self
-end
-
-script "js_is_deleted", type: "javascript" do
-  parameters "ds_terminate_self"
-  result "result"
-  code 'result = { path: "/"}'
-end
-```
+**Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
 ## Standard Parameter Conventions
 
 Use exact labels/descriptions for UI consistency:
 
-```
-# Always first — recipient list for incident emails
-parameter "param_email" do
-  type "list"
-  category "Policy Settings"
-  label "Email Addresses"
-  description "A list of email addresses to notify."
-  default []
-end
-
-# Required for Meta Policy support — leave blank for normal use
-parameter "param_aws_account_number" do
-  type "string"
-  category "Policy Settings"
-  label "Account Number"
-  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
-  default ""
-end
-
-# Optional automated action — default [] means manual approval required
-parameter "param_automatic_action" do
-  type "list"
-  category "Actions"
-  label "Automatic Actions"
-  description "When set, the policy will automatically take the selected action(s)."
-  allowed_values ["Delete Items"]
-  default []
-end
-
-# Cost recommendation policies — skip low-value findings
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
-  min_value 0
-  default 0
-end
-
-# Region/subscription/resource-group filter pair (use together)
-parameter "param_regions_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Regions List"
-  description "A list of allowed or denied regions. See the README for more details."
-  default []
-end
-
-# Azure subscription filter pair — use in all Azure templates (analogous to region filter for Azure)
-parameter "param_subscriptions_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Subscriptions"
-  description "Allow or Deny entered subscriptions. See the README for more details."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_subscriptions_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Subscriptions List"
-  description "A list of allowed or denied subscription IDs/names. See the README for more details."
-  default []
-end
-
-# Google project filter pair — use in all Google templates (analogous to region filter for Google)
-parameter "param_projects_allow_or_deny" do
-  type "string"
-  category "Filters"
-  label "Allow/Deny Projects"
-  description "Allow or Deny entered Projects. See the README for more details."
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_projects_list" do
-  type "list"
-  category "Filters"
-  label "Allow/Deny Projects List"
-  description "A list of allowed or denied project IDs/names. See the README for more details."
-  default []
-end
-
-# Azure endpoint — include in all Azure templates; allows targeting Azure China cloud
-parameter "param_azure_endpoint" do
-  type "string"
-  category "Policy Settings"
-  label "Azure Endpoint"
-  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
-# Tag-based exclusion — common across all providers
-parameter "param_exclusion_tags" do
-  type "list"
-  category "Filters"
-  label "Exclusion Tags"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
-  default []
-end
-
-parameter "param_exclusion_tags_boolean" do
-  type "string"
-  category "Filters"
-  label "Exclusion Tags: Any / All"
-  description "Whether to filter resources containing any of the specified tags or only those that contain all of them."
-  allowed_values "Any", "All"
-  default "Any"
-end
-
-# Incident output controls — include in templates that send large incident tables
-parameter "param_incident_table_size" do
-  type "number"
-  category "Policy Settings"
-  label "Incident Table Size"
-  description "Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues."
-  min_value 1
-  max_value 500
-  default 20
-end
-
-parameter "param_incident_csv" do
-  type "string"
-  category "Policy Settings"
-  label "Attach Incident CSV"
-  description "Whether or not to attach a CSV of the incident data to the incident email."
-  allowed_values "true", "false"
-  default "true"
-end
-```
+**Example:** See "Standard Parameter Conventions" in `data/agent/code_examples.txt`.
 
 Other useful parameter fields (beyond `type`, `label`, `description`, `default`, `allowed_values`, `min_value`/`max_value`, `min_length`/`max_length`):
 
@@ -1898,17 +824,7 @@ Key rules:
 - **Description** must mention the CloudWatch 90-day retention ceiling: *"This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."*
 - The export field label for the lookback in the incident output should remain `"Look Back Period (Days)"` (the Flexera scraping standard) — the `category`/`label` change is only for the parameter UI.
 
-```
-parameter "param_stats_lookback" do
-  type "number"
-  category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at CloudWatch data when assessing resources. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
-  min_value 1
-  max_value 90
-  default 30
-end
-```
+**Example:** See "Statistics Category Parameters" in `data/agent/code_examples.txt`.
 
 ## Style Rules
 

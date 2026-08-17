@@ -14,7 +14,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is calculated from the function's code storage size: `code size (bytes) / (1024³) × $0.09/GB-month`.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is calculated from the function's code storage size: `code size (bytes) / (1024³) x $0.09/GB-month`.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 

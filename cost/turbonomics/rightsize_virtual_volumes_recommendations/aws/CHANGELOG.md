@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.9
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
+## v0.4.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+
 ## v0.4.7
 
 - Updated documentation link in policy description. Functionality unchanged.
