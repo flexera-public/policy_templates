@@ -79,7 +79,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Set to 0 to report all findings.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1. Set to 0 to report all findings regardless of savings.
 - *Allow Intel/AMD Recommendations* - Whether to allow recommendations that switch between Intel and AMD processors (both x86_64). Set to `Yes` to allow cross-manufacturer recommendations; `No` (default) to keep the same CPU manufacturer.
 - *Statistic Lookback Period* - How many days back to look at CPU and memory data for instances. Maximum is 90 days (AWS CloudWatch data retention limit).
 - *Rightsizing Safety Factor* - A multiplier applied to peak utilization when computing required resources for a rightsized instance. Default is 1.5 (50% headroom). Set higher for more conservative recommendations.

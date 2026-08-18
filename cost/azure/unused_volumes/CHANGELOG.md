@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
 ## v8.5.2
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

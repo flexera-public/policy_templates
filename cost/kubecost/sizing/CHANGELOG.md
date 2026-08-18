@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
 ## v0.5.4
 
 - Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.

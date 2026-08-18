@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
 ## v0.4.10
 
 - Minor code formatting cleanup. No functional or user-facing changes.
