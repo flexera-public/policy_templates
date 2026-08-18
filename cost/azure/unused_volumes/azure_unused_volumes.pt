@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "8.5.2",
+  version: "8.5.3",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -1377,24 +1377,31 @@ define delete_unattached_disk($disk_id, $param_azure_endpoint) do
   )
   $$all_responses << to_json({"req":"DELETE "+ $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Delete Disk response: '+to_json($response["body"]))
-  if $response["code"] != 202
-    $error_code = $response["body"]["error"]["code"]
+  # Azure returns 200 when the disk is deleted synchronously, 202 when the delete is accepted asynchronously, and 204 when the disk does not exist.
+  # All three mean the desired end state is met, so only anything else is treated as a failure.
+  # Note: do not read $response["body"] as a hash here. A 204 has an empty body, which is a string, and indexing a string with a key is parsed as a slice by Cloud Workflow Language.
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
     task_label('Delete Disk unexpected response: '+$disk_id+' '+to_json($response))
     raise 'Delete Disk unexpected response: '+$disk_id+' '+to_json($response)
   else
-    # 202 Response means the delete was accepted
+    task_label('Delete Disk accepted with code '+to_s($response["code"])+': '+$disk_id)
 
-    # explicitly reset response["code"]... it should be 202 though from check above so this is not needed
-    $response = { "code": 0 }
-    # wait until disk is deleted
-    # TODO: add retry limit with backoff timer
-    # we expect a 404 response when the disk is deleted
-    while $response["code"] != 404 do
-      task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
-      call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
-      sleep(1)
+    if $response["code"] == 204
+      # The disk was already gone before this action ran, so there is nothing to poll for.
+      task_label('Delete Disk already absent, nothing to do: '+$disk_id)
+    else
+      # explicitly reset response["code"] so the poll below always runs at least once
+      $response = { "code": 0 }
+      # wait until disk is deleted
+      # TODO: add retry limit with backoff timer
+      # we expect a 404 response when the disk is deleted
+      while $response["code"] != 404 do
+        task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
+        call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
+        sleep(1)
+      end
+      task_label('Delete Disk successful: '+$disk_id)
     end
-    task_label('Delete Disk successful: '+$disk_id)
   end
 end
 
