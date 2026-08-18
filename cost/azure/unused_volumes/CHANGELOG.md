@@ -1,5 +1,10 @@
 # Changelog
 
+## v8.6.1
+
+- Fixed bug where the `Delete Volumes` action would fail if the volume had already been deleted. The action now treats a volume that no longer exists as a successful deletion.
+- Fixed bug where unexpected responses from the Azure API during volume deletion raised an internal Cloud Workflow error instead of reporting the actual API response.
+
 ## v8.6.0
 
 - Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
