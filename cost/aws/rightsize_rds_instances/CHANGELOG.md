@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.12.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
 ## v5.11.4
 
 - Fixed the region-accessibility probe to use the correct `MaxRecords` query parameter (instead of `MaxResults`) for the RDS `DescribeDBInstances` API call, ensuring the probe works reliably across all regions.
