@@ -7,6 +7,7 @@
 - Added a summary line to the incident message reporting how many disks were analyzed and how many were recommended for a downgrade
 - Fixed a bug where the incident detail's `Potential Monthly Savings` value displayed an incorrect currency format for non-USD organizations
 - Fixed a bug where incident deduplication would sometimes not occur, causing the same resource to appear as different incidents if raised during multiple executions
+- Text-based parameters, such as the allowed/denied subscriptions, resource groups, and regions lists, exclusion tags, and SKU ignore list, are now automatically trimmed of leading/trailing whitespace so accidental extra spaces no longer cause filters to silently not match
 
 ## v2.9.2
 
