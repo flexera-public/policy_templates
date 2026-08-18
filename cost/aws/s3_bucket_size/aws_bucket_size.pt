@@ -117,6 +117,19 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
@@ -629,8 +642,14 @@ script "js_cloudwatch_metrics_by_bucket", type: "javascript" do
     if (!storage_type || !storage_type.value) return
     storage_type_name = storage_type.value
 
-    // Composite Key of Bucket Name and Storage Type (as one bucket can have multiple associated storage types)
-    result[bucket_name + "::" + storage_type_name] = {
+    // Metrics are indexed by bucket name and then by storage type (as one bucket
+    // can have multiple associated storage types) so that a bucket's metrics can
+    // be looked up by exact name later on. A partial or substring match would
+    // incorrectly return metrics belonging to other buckets whose names happen to
+    // contain the name of the bucket being looked up.
+    if (result[bucket_name] == undefined) { result[bucket_name] = {} }
+
+    result[bucket_name][storage_type_name] = {
       namespace: metric.namespace,
       metricName: metric.metricName,
       dimensions: metric.dimensions
@@ -650,70 +669,59 @@ script "js_cloudwatch_queries", type: "javascript" do
   // Create the various queries we're going to send to CloudWatch for each instance
   result = {}
 
+  // CloudWatch requires the Id of every metric query to begin with a lowercase
+  // letter, to contain only letters, numbers, and underscores, and to be unique
+  // within a single request. Bucket names can contain characters that are not
+  // valid in an Id, such as dots, and two different bucket names can produce the
+  // same Id once those characters are replaced. Every Id therefore begins with a
+  // counter that makes it unique regardless of the bucket name it was built from.
+  // $ds_cloudwatch_id_map is used to tie each Id back to its bucket afterwards.
+  query_index = 0
+
+  build_query_id = function(bucket_name, storage_type) {
+    query_index += 1
+    query_id = "id" + query_index + "_" + bucket_name + "_" + storage_type
+    return query_id.replace(/[^a-zA-Z0-9_]/g, "_")
+  }
+
   _.each(ds_aws_buckets_tag_filtered, function(bucket) {
     // Make sure the queries object has an array for the region to push items to
     if (result[bucket['region']] == undefined || result[bucket['region']] == null) {
       result[bucket['region']] = []
     }
 
-    // Find dimensions
-    metric_details = []
+    // Find dimensions. The bucket name is matched exactly; matching on a substring
+    // would produce queries for other buckets whose names contain this bucket's name.
+    bucket_metrics = ds_cloudwatch_metrics_by_bucket[bucket['name']]
+    metric_details = bucket_metrics == undefined ? [] : _.values(bucket_metrics)
 
-    matched_keys = _.filter( _.keys(ds_cloudwatch_metrics_by_bucket), function(key) {
-      return key.indexOf(bucket['name']) !== -1
-    })
-
-    if (matched_keys) {
-      _.each(matched_keys, function(key) {
-        metric_details.push(
-          ds_cloudwatch_metrics_by_bucket[key]
-        )
-      })
+    if (metric_details.length == 0) {
+      // Fallback - Else assume these are the dimensions
+      metric_details = [{
+        metricName: "BucketSizeBytes",
+        dimensions: [
+          { name: "BucketName", value: bucket['name'] },
+          { name: "StorageType", value: "StandardStorage" }
+        ]
+      }]
     }
 
-    if (metric_details != null) {
-      _.each(metric_details, function(metric_detail) {
+    _.each(metric_details, function(metric_detail) {
+      // Custom metric taken from ListMetrics API response
+      metric_name = metric_detail["metricName"]
 
-        // Custom metric taken from ListMetrics API response
-        metric_name = metric_detail["metricName"]
-
-        dimensions = _.map(metric_detail['dimensions'], function (dim) {
-          return {
-            "Name": dim["name"],
-            "Value": dim["value"]
-          }
-        })
-
-        storage_type_found = _.find(dimensions, function(dim) { return dim["Name"] == "StorageType" })
-        storage_type_name = (typeof storage_type_found === "undefined") ? "" : storage_type_found["Value"]
-
-        result[bucket['region']].push({
-          "Id": bucket['name'].replace(/-/g, "_") + "_" + storage_type_name
-          "MetricStat": {
-            "Metric": {
-              "Namespace": "AWS/S3",
-              "MetricName": metric_name,
-              "Dimensions": dimensions
-            },
-            "Period": 2592000,
-            "Stat": "Average",
-            "Unit": "Bytes"
-          },
-          "ReturnData": true
-        })
+      dimensions = _.map(metric_detail['dimensions'], function (dim) {
+        return {
+          "Name": dim["name"],
+          "Value": dim["value"]
+        }
       })
 
-    } else {
-      // Fallback - Else assume these are the dimensions
-      metric_name = "BucketSizeBytes"
-
-      dimensions = [
-        { "Name": "BucketName", "Value": bucket['name'] },
-        { "Name": "StorageType", "Value": "StandardStorage" }
-      ]
+      storage_type_found = _.find(dimensions, function(dim) { return dim["Name"] == "StorageType" })
+      storage_type_name = (typeof storage_type_found === "undefined") ? "" : storage_type_found["Value"]
 
       result[bucket['region']].push({
-        "Id": bucket['name'].replace(/-/g, "_") + "_" + "StandardStorage",
+        "Id": build_query_id(bucket['name'], storage_type_name),
         "MetricStat": {
           "Metric": {
             "Namespace": "AWS/S3",
@@ -726,7 +734,39 @@ script "js_cloudwatch_queries", type: "javascript" do
         },
         "ReturnData": true
       })
-    }
+    })
+  })
+EOS
+end
+
+# Map the Id of every CloudWatch query back to the bucket it was generated for
+datasource "ds_cloudwatch_id_map" do
+  run_script $js_cloudwatch_id_map, $ds_cloudwatch_queries
+end
+
+script "js_cloudwatch_id_map", type: "javascript" do
+  parameters "ds_cloudwatch_queries"
+  result "result"
+  code <<-'EOS'
+  // The Id of a CloudWatch query is a sanitized value that cannot be used to
+  // determine which bucket and storage type it was generated for, so the bucket
+  // name and storage type are taken from the dimensions of the query itself and
+  // stored here for use once the CloudWatch results come back.
+  result = {}
+
+  _.each(_.keys(ds_cloudwatch_queries), function(region) {
+    _.each(ds_cloudwatch_queries[region], function(query) {
+      dimensions = query['MetricStat']['Metric']['Dimensions']
+
+      bucket_dimension = _.find(dimensions, function(dim) { return dim['Name'] == "BucketName" })
+      storage_dimension = _.find(dimensions, function(dim) { return dim['Name'] == "StorageType" })
+
+      result[query['Id']] = {
+        region: region,
+        name: bucket_dimension == undefined ? "" : bucket_dimension['Value'],
+        storage_type: storage_dimension == undefined ? "" : storage_dimension['Value']
+      }
+    })
   })
 EOS
 end
@@ -810,7 +850,7 @@ script "js_cloudwatch_data", type: "javascript" do
       "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
       "Accept": "application/json",
       "Content-Encoding": "amz-1.0"
-    }
+    },
     query_params: {
       'Version': '2010-08-01'
     },
@@ -820,28 +860,40 @@ EOS
 end
 
 datasource "ds_cloudwatch_data_sorted" do
-  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data, $ds_cloudwatch_id_map
 end
 
 script "js_cloudwatch_data_sorted", type: "javascript" do
-  parameters "ds_cloudwatch_data"
+  parameters "ds_cloudwatch_data", "ds_cloudwatch_id_map"
   result "result"
   code <<-'EOS'
-  // Sort the CloudWatch data into an object with keys for regions and instance names.
-  // This eliminates the need to "double loop" later on to match it with our instances list.
+  // Sort the CloudWatch data into an object with keys for regions, bucket names, and
+  // storage types. This eliminates the need to "double loop" later on to match it with
+  // our buckets list. The bucket name and storage type for each result are taken from
+  // the Id map rather than from the returned label, which is not guaranteed to be
+  // formatted in any particular way.
   result = {}
 
   _.each(ds_cloudwatch_data, function(item) {
     region = item['region']
-    name = item['label']
+    id_details = ds_cloudwatch_id_map[item['id']]
+    values = item['values']
+
+    // Skip any result that cannot be tied back to a bucket or that has no data
+    if (id_details == undefined) { return }
+    if (values == undefined || values.length == 0) { return }
+
+    name = id_details['name']
+    storage_type = id_details['storage_type']
 
     // Grabbing index 0 SHOULD be safe because we should only get one result.
     // Just in case AWS slices the data weirdly and returns 2 results, we make
     // sure we grab the last item every time, which contains the actual data we need.
-    value = item['values'][item['values'].length - 1]
+    value = values[values.length - 1]
 
     if (result[region] == undefined) { result[region] = {} }
-    result[region][name] = value
+    if (result[region][name] == undefined) { result[region][name] = {} }
+    result[region][name][storage_type] = value
   })
 EOS
 end
@@ -861,32 +913,25 @@ script "js_aws_oversized_buckets", type: "javascript" do
 
   oversized_buckets = []
   _.each(ds_aws_buckets_tag_filtered, function(bucket) {
-    oversized = false
     name = bucket['name']
     region = bucket['region']
 
-    if (ds_cloudwatch_data_sorted[region]) {
+    // Sizes for the bucket, keyed by storage type, as one bucket can have multiple
+    // associated storage types
+    bucket_sizes = {}
 
-      matched_keys = _.filter( _.keys(ds_cloudwatch_data_sorted[region]), function(key) {
-        return key.indexOf(name) !== -1
-      })
-
-      if (_.size(matched_keys) > 0) {
-        _.each(matched_keys, function(key) {
-          current_bucket = _.clone(bucket)
-          oversized = ds_cloudwatch_data_sorted[region][key] > size_threshold
-
-          if (oversized) {
-            storage_type = key.split(" ")[1]
-            label = key
-
-            current_bucket["storage_type"] = storage_type
-            current_bucket["label"] = label
-            oversized_buckets.push(current_bucket)
-          }
-        })
-      }
+    if (ds_cloudwatch_data_sorted[region] != undefined && ds_cloudwatch_data_sorted[region][name] != undefined) {
+      bucket_sizes = ds_cloudwatch_data_sorted[region][name]
     }
+
+    _.each(_.keys(bucket_sizes), function(storage_type) {
+      if (bucket_sizes[storage_type] > size_threshold) {
+        current_bucket = _.clone(bucket)
+        current_bucket["storage_type"] = storage_type
+        current_bucket["size_bytes"] = bucket_sizes[storage_type]
+        oversized_buckets.push(current_bucket)
+      }
+    })
   })
 
   result = _.map(oversized_buckets, function(bucket) {
@@ -898,8 +943,6 @@ script "js_aws_oversized_buckets", type: "javascript" do
 
     name = bucket['name']
     region = bucket['region']
-    bucket_storage_type = bucket['storage_type']
-    bucket_label = bucket['label']
 
     return {
       resourceID: name,
@@ -909,8 +952,8 @@ script "js_aws_oversized_buckets", type: "javascript" do
       creation_date: new Date(bucket['creation_date']).toISOString(),
       threshold: param_size_threshold,
       // Convert size from bytes to GiB
-      size: Math.round(ds_cloudwatch_data_sorted[region][bucket_label] / 1073741824 * 100) / 100,
-      storageType: bucket_storage_type,
+      size: Math.round(bucket['size_bytes'] / 1073741824 * 100) / 100,
+      storageType: bucket['storage_type'],
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
       policy_name: ds_applied_policy['name'],
