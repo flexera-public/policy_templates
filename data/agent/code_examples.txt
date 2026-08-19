@@ -308,27 +308,23 @@ end
 # ($ds_param_x) everywhere the raw parameter ($param_x) would otherwise have been used,
 # including as an argument to other `run_script` calls.
 
-datasource "ds_param_azure_endpoint" do
-  run_script $js_param_azure_endpoint, $param_azure_endpoint
+# Case 2: the parameter is referenced directly by DSL (a datasource `request` block as
+# `host`/`path`/`query`, or an `escalation` block) instead of being processed by a script.
+# Wrap it in a dedicated datasource that trims the value, then reference the datasource
+# ($ds_param_x) everywhere the raw parameter ($param_x) would otherwise have been used,
+# including as an argument to other `run_script` calls. Only do this for genuinely
+# free-text parameters; never wrap a parameter that has `allowed_values`/`allowed_pattern`
+# (see exception below).
+
+datasource "ds_param_cbi_endpoint" do
+  run_script $js_param_cbi_endpoint, $param_cbi_endpoint
 end
 
-script "js_param_azure_endpoint", type: "javascript" do
-  parameters "param_azure_endpoint"
+script "js_param_cbi_endpoint", type: "javascript" do
+  parameters "param_cbi_endpoint"
   result "result"
   code <<-'EOS'
-  result = param_azure_endpoint.trim()
-EOS
-end
-
-datasource "ds_param_incident_csv" do
-  run_script $js_param_incident_csv, $param_incident_csv
-end
-
-script "js_param_incident_csv", type: "javascript" do
-  parameters "param_incident_csv"
-  result "result"
-  code <<-'EOS'
-  result = param_incident_csv.trim()
+  result = param_cbi_endpoint.trim()
 EOS
 end
 
@@ -1125,7 +1121,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $ds_param_azure_endpoint     # sanitized (trimmed) version of $param_azure_endpoint, see Parameter Sanitization
+    host $param_azure_endpoint     # not sanitized: has allowed_values, see Parameter Sanitization exclusion
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
