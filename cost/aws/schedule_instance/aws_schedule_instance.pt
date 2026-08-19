@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "8.1.0",
+  version: "8.1.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Schedule Instance",
@@ -140,6 +140,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_tag_schedule" do
+  run_script $js_tag_schedule, $param_tag_schedule
+end
+
+script "js_tag_schedule", type: "javascript" do
+  parameters "param_tag_schedule"
+  result "result"
+  code <<-'EOS'
+  result = param_tag_schedule.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -696,7 +708,7 @@ datasource "ds_instance_sets" do
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query "Filter.1.Name", "tag-key"
-    query "Filter.1.Value.1", $param_tag_schedule
+    query "Filter.1.Value.1", $ds_tag_schedule
     header 'User-Agent', 'RS Policies'
     header 'Content-Type', 'text/xml'
   end
@@ -733,6 +745,8 @@ script "js_instances", type: "javascript" do
   parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -813,11 +827,11 @@ EOS
 end
 
 datasource "ds_instances_with_schedule" do
-  run_script $js_instances_with_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_tag_schedule
+  run_script $js_instances_with_schedule, $ds_instances, $ds_aws_account, $ds_applied_policy, $ds_tag_schedule
 end
 
 script "js_instances_with_schedule", type: "javascript" do
-  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_tag_schedule"
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "ds_tag_schedule"
   result "result"
   code <<-'EOS'
   result = []
@@ -841,7 +855,7 @@ script "js_instances_with_schedule", type: "javascript" do
         tags.push(item['key'] + '=' + item['value'])
 
         if (item['key'].toLowerCase() == 'name') { resourceName = item['value'] }
-        if (item['key'] == param_tag_schedule)   { schedule = item['value']     }
+        if (item['key'] == ds_tag_schedule)   { schedule = item['value']     }
       })
     }
 
@@ -977,6 +991,8 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tag_schedule_action = param_tag_schedule_action.trim()
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -1049,6 +1065,8 @@ script "js_instances_schedule_result_action_stop", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tag_schedule_action = param_tag_schedule_action.trim()
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -1445,7 +1463,7 @@ The following AWS Instances are scheduled to stop now:
     detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
-The following AWS Scheduled Instances have tag `{{ parameters.param_tag_schedule }}` and will be automatically started and stopped on a schedule.
+The following AWS Scheduled Instances have tag `{{ parameters.ds_tag_schedule }}` and will be automatically started and stopped on a schedule.
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
