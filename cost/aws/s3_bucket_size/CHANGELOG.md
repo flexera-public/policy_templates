@@ -2,10 +2,9 @@
 
 ## v4.0.6
 
-- Fixed issue where the policy would fail to gather bucket sizes when a bucket name contained a period or any other character that AWS CloudWatch does not accept
-- Fixed issue where buckets whose names contained the name of another bucket could be reported with the size of that other bucket
-- Fixed issue where bucket sizes were not gathered for buckets that AWS CloudWatch did not report metrics for
-- Fixed issue where results beyond the first page of AWS CloudWatch data were not gathered
+- Fixed issue where the policy would fail if bucket name contains dots (.).
+- Fixed issue where the policy would produce incorrect result for certain bucket name combinations.
+- Fixed issue where the policy only gather partial AWS CloudWatch data.
 
 ## v4.0.6
 
