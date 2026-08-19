@@ -8,7 +8,7 @@ category "SaaS Management"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "Okta",
   service: "",
   policy_set: "",
@@ -93,6 +93,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_okta_org_name" do
+  run_script $js_okta_org_name, $param_okta_org_name
+end
+
+script "js_okta_org_name", type: "javascript" do
+  parameters "param_okta_org_name"
+  result "result"
+  code <<-'EOS'
+  result = param_okta_org_name.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -153,7 +165,7 @@ end
 datasource "ds_okta_users" do
   request do
     auth $auth_okta
-    host join([$param_okta_org_name, ".okta.com"])
+    host join([$ds_okta_org_name, ".okta.com"])
     path "/api/v1/users"
     query "filter", 'status eq "ACTIVE"'
     query "limit", "200"
@@ -175,11 +187,11 @@ datasource "ds_okta_users" do
 end
 
 datasource "ds_bad_users" do
-  run_script $js_bad_users, $ds_okta_users, $ds_applied_policy, $param_days, $param_okta_org_name, $param_incident_csv
+  run_script $js_bad_users, $ds_okta_users, $ds_applied_policy, $param_days, $ds_okta_org_name, $param_incident_csv
 end
 
 script "js_bad_users", type: "javascript" do
-  parameters "ds_okta_users", "ds_applied_policy", "param_days", "param_okta_org_name", "param_incident_csv"
+  parameters "ds_okta_users", "ds_applied_policy", "param_days", "ds_okta_org_name", "param_incident_csv"
   result "result"
   code <<-'EOS'
   target_date = new Date()
@@ -199,7 +211,7 @@ script "js_bad_users", type: "javascript" do
       firstName: user['firstName'],
       lastName: user['lastName'],
       email: user['email'],
-      org: param_okta_org_name,
+      org: ds_okta_org_name,
       lookback: param_days,
       policy_name: ds_applied_policy['name']
     }
