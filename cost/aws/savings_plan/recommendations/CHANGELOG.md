@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v4.1.0
 
 - Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.

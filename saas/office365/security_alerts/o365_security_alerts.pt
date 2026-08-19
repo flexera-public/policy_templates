@@ -8,7 +8,7 @@ category "SaaS Management"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "Microsoft",
   service: "Office 365",
   policy_set: "",
@@ -75,6 +75,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -158,6 +170,8 @@ script "js_alerts", type: "javascript" do
   parameters "param_alert_severity"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_alert_severity = _.compact(_.map(param_alert_severity, function(item) { return item.trim() }))
   vendors = [ "Office 365 Security and Compliance", "Office 365" ]
   vendor_filter = _.map(vendors, function(item) { return "vendorInformation/provider eq '" + item + "'"})
   sev_filter = _.map(param_alert_severity, function(item) { return "Severity eq '" + item.toLowerCase() + "'"})
@@ -174,14 +188,14 @@ EOS
 end
 
 datasource "ds_alerts_incident" do
-  run_script $js_alerts_incident, $ds_alerts, $ds_applied_policy, $param_incident_csv
+  run_script $js_alerts_incident, $ds_alerts, $ds_applied_policy, $ds_param_incident_csv
 end
 
 script "js_alerts_incident", type: "javascript" do
-  parameters "ds_alerts", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_alerts", "ds_applied_policy", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = _.map(ds_alerts, function(alert) {
     return {
@@ -259,7 +273,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

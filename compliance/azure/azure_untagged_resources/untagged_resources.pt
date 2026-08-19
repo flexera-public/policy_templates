@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0.2",
+  version: "5.0.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -192,6 +192,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -280,7 +304,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -308,6 +332,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -348,7 +375,7 @@ datasource "ds_azure_subscriptions_with_tags" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
     query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
@@ -398,7 +425,7 @@ datasource "ds_azure_resources" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
     query "api-version", "2020-06-01"
     header "User-Agent", "RS Policies"
@@ -430,6 +457,9 @@ script "js_azure_resources_region_filtered", type: "javascript" do
   parameters "ds_azure_resources", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_resources, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -450,6 +480,9 @@ script "js_azure_resources_type_filtered", type: "javascript" do
   parameters "ds_azure_resources_region_filtered", "ds_azure_resource_types", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resourcetypes_allow_or_deny = param_resourcetypes_allow_or_deny.trim()
+  param_resourcetypes_list = _.compact(_.map(param_resourcetypes_list, function(item) { return item.trim() }))
   if (param_resourcetypes_list.length > 0) {
     result = _.filter(ds_azure_resources_region_filtered, function(resource) {
       resourcetypes_list = _.map(param_resourcetypes_list, function(type) {
@@ -476,6 +509,9 @@ script "js_azure_resources_rg_filtered", type: "javascript" do
   parameters "ds_azure_resources_type_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_resources_type_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -506,6 +542,11 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_rg_filtered", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_report_types", "param_consider_tag_dimensions"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
+  param_tags_boolean = param_tags_boolean.trim()
+  param_report_types = _.compact(_.map(param_report_types, function(item) { return item.trim() }))
+  param_consider_tag_dimensions = param_consider_tag_dimensions.trim()
   result = []
 
   comparators = _.map(param_tags, function(item) {
@@ -603,7 +644,7 @@ end
 
 datasource "ds_azure_providers" do
   request do
-    run_script $js_azure_providers, $ds_azure_subscriptions_filtered, $param_azure_endpoint
+    run_script $js_azure_providers, $ds_azure_subscriptions_filtered, $ds_param_azure_endpoint
   end
   result do
     encoding "json"
@@ -616,13 +657,13 @@ datasource "ds_azure_providers" do
 end
 
 script "js_azure_providers", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
+  parameters "ds_azure_subscriptions_filtered", "ds_param_azure_endpoint"
   result "request"
   code <<-'EOS'
   request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     path: ["/subscriptions/", ds_azure_subscriptions_filtered[0]['id'], "/providers"].join(''),
     query_params: { "api-version": "2021-04-01" }
   }
@@ -649,14 +690,17 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean, $param_incident_csv
+  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean, $ds_param_incident_csv
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean", "param_incident_csv"
+  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
+  param_tags_boolean = param_tags_boolean.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = _.map(ds_azure_resources_missing_tags, function(resource) {
     resource_tags = []
@@ -819,7 +863,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

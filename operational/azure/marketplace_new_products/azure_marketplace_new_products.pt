@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.6.5",
+  version: "0.6.6",
   provider: "Azure",
   service: "Marketplace",
   policy_set: "New Marketplace Products",
@@ -77,6 +77,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -617,14 +629,14 @@ EOS
 end
 
 datasource "ds_new_products" do
-  run_script $js_new_products, $ds_current_products, $ds_previous_products, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_incident_csv
+  run_script $js_new_products, $ds_current_products, $ds_previous_products, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $ds_param_incident_csv
 end
 
 script "js_new_products", type: "javascript" do
-  parameters "ds_current_products", "ds_previous_products", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_incident_csv"
+  parameters "ds_current_products", "ds_previous_products", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -751,7 +763,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

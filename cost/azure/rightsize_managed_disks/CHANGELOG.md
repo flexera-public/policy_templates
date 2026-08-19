@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v3.0.0
 
 - Added a `Recommendation` field to the incident export, describing the recommended disk downgrade action for each resource

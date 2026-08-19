@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.3.1",
   provider: "AWS",
   service: "Storage",
   policy_set: "Unused Storage",
@@ -152,6 +152,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -487,6 +499,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -559,6 +574,9 @@ script "js_aws_fsx_instances_tag_filtered", type: "javascript" do
   parameters "ds_aws_fsx_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   // Normalize tags so they aren't awkwardly stored the way AWS stores them
   fsx_instances = _.map(ds_aws_fsx_instances, function(item) {
     new_item = {}
@@ -881,14 +899,14 @@ EOS
 end
 
 datasource "ds_aws_idle_fsx_instances" do
-  run_script $js_aws_idle_fsx_instances, $ds_aws_fsx_instances_with_stats, $ds_fsx_costs_grouped, $ds_applied_policy, $ds_currency, $param_stats_lookback, $param_min_savings, $param_incident_csv
+  run_script $js_aws_idle_fsx_instances, $ds_aws_fsx_instances_with_stats, $ds_fsx_costs_grouped, $ds_applied_policy, $ds_currency, $param_stats_lookback, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_aws_idle_fsx_instances", type: "javascript" do
-  parameters "ds_aws_fsx_instances_with_stats", "ds_fsx_costs_grouped", "ds_applied_policy", "ds_currency", "param_stats_lookback", "param_min_savings", "param_incident_csv"
+  parameters "ds_aws_fsx_instances_with_stats", "ds_fsx_costs_grouped", "ds_applied_policy", "ds_currency", "param_stats_lookback", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1003,6 +1021,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   // Build a map of regions to their response status
@@ -1176,7 +1197,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

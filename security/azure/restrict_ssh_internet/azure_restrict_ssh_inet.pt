@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "3.3.1",
+  version: "3.3.2",
   provider: "Azure",
   service: "Network Security Group",
   policy_set: "CIS",
@@ -145,6 +145,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -206,7 +230,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -234,6 +258,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -274,7 +301,7 @@ datasource "ds_azure_netsecgroups" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Network/networkSecurityGroups"])
     query "api-version", "2021-05-01"
     header "User-Agent", "RS Policies"
@@ -311,6 +338,9 @@ script "js_azure_netsecgroups_region_filtered", type: "javascript" do
   parameters "ds_azure_netsecgroups", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_netsecgroups, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -335,6 +365,9 @@ script "js_azure_netsecgroups_rg_filtered", type: "javascript" do
   parameters "ds_azure_netsecgroups_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+  param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
   if (param_resource_groups_list.length > 0) {
     result = _.filter(ds_azure_netsecgroups_region_filtered, function(resource) {
       rg = resource['resourceGroup']
@@ -358,14 +391,14 @@ EOS
 end
 
 datasource "ds_bad_azure_netsecgroups" do
-  run_script $js_bad_azure_netsecgroups, $ds_azure_netsecgroups_rg_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_bad_azure_netsecgroups, $ds_azure_netsecgroups_rg_filtered, $ds_applied_policy, $ds_param_incident_csv
 end
 
 script "js_bad_azure_netsecgroups", type: "javascript" do
-  parameters "ds_azure_netsecgroups_rg_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_azure_netsecgroups_rg_filtered", "ds_applied_policy", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -501,7 +534,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

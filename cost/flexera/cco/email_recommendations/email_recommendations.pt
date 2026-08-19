@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.10.1",
+  version: "0.10.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -137,6 +137,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 datasource "ds_recommendation_types" do
   run_script $js_recommendation_types
@@ -433,6 +445,8 @@ script "js_recommendations_filtered_status", type: "javascript" do
   parameters "ds_recommendations", "param_status"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_status = param_status.trim()
   result = _.filter(ds_recommendations, function(recommendation) {
     return param_status == "All Recommendations" || recommendation["status"] == "active"
   })
@@ -447,6 +461,8 @@ script "js_recommendations_filtered_vendor", type: "javascript" do
   parameters "ds_recommendations_filtered_status", "param_vendor_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_vendor_list = _.compact(_.map(param_vendor_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_status, function(recommendation) {
     include_recommendation = true
 
@@ -474,6 +490,9 @@ script "js_recommendations_filtered_account", type: "javascript" do
   parameters "ds_recommendations_filtered_vendor", "param_accounts_allow_or_deny", "param_accounts_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_accounts_allow_or_deny = param_accounts_allow_or_deny.trim()
+  param_accounts_list = _.compact(_.map(param_accounts_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_vendor, function(recommendation) {
     include_recommendation = true
 
@@ -495,6 +514,8 @@ script "js_recommendations_filtered_dimension", type: "javascript" do
   parameters "ds_recommendations_filtered_account", "ds_dimensions_table", "param_dimension_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimension_list = _.compact(_.map(param_dimension_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_account, function(recommendation) {
     include_recommendation = true
 
@@ -530,6 +551,8 @@ script "js_recommendations_filtered_bc", type: "javascript" do
   parameters "ds_recommendations_filtered_dimension", "ds_billing_centers_table", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_dimension, function(recommendation) {
     include_recommendation = true
 
@@ -571,6 +594,8 @@ script "js_recommendations_filtered_reclist", type: "javascript" do
   parameters "ds_recommendations_filtered_bc", "ds_recommendation_types", "param_recommendation_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_recommendation_list = _.compact(_.map(param_recommendation_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_bc, function(recommendation) {
     include_recommendation = true
 
@@ -594,6 +619,8 @@ script "js_recommendations_filtered_pollist", type: "javascript" do
   parameters "ds_recommendations_filtered_reclist", "param_policy_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_policy_list = _.compact(_.map(param_policy_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_reclist, function(recommendation) {
     include_recommendation = true
 
@@ -611,10 +638,12 @@ datasource "ds_recommendations_organized" do
 end
 
 script "js_recommendations_organized", type: "javascript" do
-  parameters "ds_recommendations_filtered_pollist", "ds_currency", "ds_billing_centers_table", "param_always_send_incident", "param_incident_csv"
+  parameters "ds_recommendations_filtered_pollist", "ds_currency", "ds_billing_centers_table", "param_always_send_incident", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_always_send_incident = param_always_send_incident.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -879,7 +908,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

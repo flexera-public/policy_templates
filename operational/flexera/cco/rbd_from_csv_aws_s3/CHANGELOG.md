@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v0.1.4
 
 - Updated the "Rule-Based Dimensions Updated/Created" incident summary to include the policy name for easier identification when multiple instances of this policy are applied.

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "15 minutes"
 info(
-  version: "7.2.2",
+  version: "7.2.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Schedule Instance",
@@ -183,6 +183,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_tag_schedule" do
+  run_script $js_param_tag_schedule, $param_tag_schedule
+end
+
+script "js_param_tag_schedule", type: "javascript" do
+  parameters "param_tag_schedule"
+  result "result"
+  code <<-'EOS'
+  result = param_tag_schedule.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -237,7 +261,7 @@ end
 datasource "ds_azure_directory" do
   request do
     auth $auth_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/tenants"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -443,7 +467,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -471,6 +495,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -511,7 +538,7 @@ datasource "ds_azure_instances" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
@@ -536,13 +563,16 @@ datasource "ds_azure_instances" do
 end
 
 datasource "ds_azure_instances_tag_filtered" do
-  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_tag_schedule
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean, $ds_param_tag_schedule
 end
 
 script "js_azure_instances_tag_filtered", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_tag_schedule"
+  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean", "ds_param_tag_schedule"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -614,7 +644,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
     tag_keys = []
     if (typeof(vm['tags']) == 'object') { tag_keys = _.keys(vm['tags']) }
 
-    return _.contains(tag_keys, param_tag_schedule)
+    return _.contains(tag_keys, ds_param_tag_schedule)
   })
 EOS
 end
@@ -627,6 +657,9 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -651,6 +684,9 @@ script "js_azure_instances_rg_filtered", type: "javascript" do
   parameters "ds_azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_instances_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -678,7 +714,7 @@ datasource "ds_azure_instances_with_status" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join([val(iter_item, "resourceID"), '/instanceView'])
     query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
@@ -702,11 +738,11 @@ datasource "ds_azure_instances_with_status" do
 end
 
 datasource "ds_instances_with_schedule" do
-  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $ds_azure_directory, $param_tag_schedule
+  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $ds_azure_directory, $ds_param_tag_schedule
 end
 
 script "js_instances_with_schedule", type: "javascript" do
-  parameters "ds_azure_instances_with_status", "ds_applied_policy", "ds_azure_directory", "param_tag_schedule"
+  parameters "ds_azure_instances_with_status", "ds_applied_policy", "ds_azure_directory", "ds_param_tag_schedule"
   result "result"
   code <<-'EOS'
   result = []
@@ -729,7 +765,7 @@ script "js_instances_with_schedule", type: "javascript" do
         tags.push(key + '=' + value)
 
         // If tag is the schedule tag, set schedule var for parsing
-        if (key == param_tag_schedule) { schedule = value }
+        if (key == ds_param_tag_schedule) { schedule = value }
       })
     }
 
@@ -887,6 +923,9 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_enforce_schedules = param_enforce_schedules.trim()
+  param_tag_schedule_action = param_tag_schedule_action.trim()
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -959,6 +998,9 @@ script "js_instances_schedule_result_action_stop", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_enforce_schedules = param_enforce_schedules.trim()
+  param_tag_schedule_action = param_tag_schedule_action.trim()
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -1424,7 +1466,7 @@ The following Azure Instances are scheduled to stop now:
     detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
-The following Azure Scheduled Instances have tag `{{ parameters.param_tag_schedule }}` and will be automatically started and stopped on a schedule.
+The following Azure Scheduled Instances have tag `{{ parameters.ds_param_tag_schedule }}` and will be automatically started and stopped on a schedule.
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))

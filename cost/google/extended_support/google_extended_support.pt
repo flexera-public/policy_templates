@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.3.1",
   provider: "Google",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -168,6 +168,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -326,6 +338,9 @@ script "js_google_projects", type: "javascript" do
   parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_ignore_sys = param_projects_ignore_sys.trim()
+  param_projects_ignore_app = param_projects_ignore_app.trim()
   var query = ["state:ACTIVE"]
   if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
   if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
@@ -349,6 +364,9 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       var include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -386,6 +404,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_google_projects_filtered", "ds_project_check", "ds_applied_policy", "param_projects_allow_or_deny", "param_projects_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   var errors = []
 
   if (ds_google_projects_filtered.length > 0) {
@@ -485,6 +506,9 @@ script "js_gke_clusters_filtered", type: "javascript" do
   parameters "ds_gke_clusters", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var today_ms = today.getTime()
@@ -572,6 +596,9 @@ script "js_cloudsql_instances_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var today_ms = today.getTime()
@@ -634,6 +661,9 @@ script "js_all_extended_support_resources", type: "javascript" do
   parameters "ds_gke_clusters_filtered", "ds_cloudsql_instances_filtered", "ds_google_extended_support_dates", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   result = []
 
   var today = new Date()
@@ -858,14 +888,14 @@ EOS
 end
 
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_all_extended_support_resources, $ds_applied_policy, $ds_currency, $param_min_savings, $param_incident_csv
+  run_script $js_extended_support_resources, $ds_all_extended_support_resources, $ds_applied_policy, $ds_currency, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_all_extended_support_resources", "ds_applied_policy", "ds_currency", "param_min_savings", "param_incident_csv"
+  parameters "ds_all_extended_support_resources", "ds_applied_policy", "ds_currency", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1032,7 +1062,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

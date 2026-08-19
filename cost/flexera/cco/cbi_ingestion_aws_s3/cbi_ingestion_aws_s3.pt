@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.6",
+  version: "0.2.7",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -120,6 +120,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_cbi_endpoint" do
+  run_script $js_param_cbi_endpoint, $param_cbi_endpoint
+end
+
+script "js_param_cbi_endpoint", type: "javascript" do
+  parameters "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_cbi_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_s3_hostname" do
+  run_script $js_param_s3_hostname, $param_s3_hostname
+end
+
+script "js_param_s3_hostname", type: "javascript" do
+  parameters "param_s3_hostname"
+  result "result"
+  code <<-'EOS'
+  result = param_s3_hostname.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -185,6 +209,9 @@ script "js_dates", type: "javascript" do
   parameters "param_month_billing", "param_month_specific"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_month_billing = param_month_billing.trim()
+  param_month_specific = param_month_specific.trim()
   result = { period: param_month_specific }
 
   if (param_month_billing != 'Specific Month') {
@@ -206,16 +233,19 @@ EOS
 end
 
 datasource "ds_cbi_endpoint_id" do
-  run_script $js_cbi_endpoint_id, $param_cbi_endpoint, $param_cbi_cloud_vendor, $param_cbi_type
+  run_script $js_cbi_endpoint_id, $ds_param_cbi_endpoint, $param_cbi_cloud_vendor, $param_cbi_type
 end
 
 script "js_cbi_endpoint_id", type: "javascript" do
-  parameters "param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
+  parameters "ds_param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-'EOS'
-  result = param_cbi_endpoint
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
+  param_cbi_type = param_cbi_type.trim()
+  result = ds_param_cbi_endpoint
 
-  if (param_cbi_endpoint == "") {
+  if (ds_param_cbi_endpoint == "") {
     prefix = "cbi-oi-optima-"
     if (param_cbi_type == "FOCUS") { prefix = "cbi-oi-focus-" }
 
@@ -258,6 +288,9 @@ script "js_to_create_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
+  param_cbi_type = param_cbi_type.trim()
   result = []
 
   existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
@@ -430,6 +463,9 @@ script "js_cost_object_names", type: "javascript" do
   parameters "ds_dates", "param_s3_prefix", "param_granularity"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_s3_prefix = param_s3_prefix.trim()
+  param_granularity = param_granularity.trim()
   result = []
 
   if (param_granularity == "Monthly") {
@@ -453,7 +489,7 @@ datasource "ds_cost_objects" do
   iterate $ds_cost_object_names
   request do
     auth $auth_aws
-    host $param_s3_hostname
+    host $ds_param_s3_hostname
     path val(iter_item, "object")
     header "User-Agent", "RS Policies"
     ignore_status [404] # Ignore dates that have no associated file instead of failing completely
@@ -546,13 +582,15 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $param_s3_hostname, $param_s3_prefix
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $ds_param_s3_hostname, $param_s3_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "param_s3_hostname", "param_s3_prefix"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "ds_param_s3_hostname", "param_s3_prefix"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_s3_prefix = param_s3_prefix.trim()
   result = [{
     policy_name: ds_applied_policy['name'],
     id: ds_cbi_commit_bill_upload['id'],
@@ -561,7 +599,7 @@ script "js_incident", type: "javascript" do
     updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    s3_hostname: param_s3_hostname
+    s3_hostname: ds_param_s3_hostname
   }]
 EOS
 end

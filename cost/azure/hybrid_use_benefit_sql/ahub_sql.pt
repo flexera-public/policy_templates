@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.9.0",
+  version: "4.9.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit",
@@ -194,6 +194,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -362,7 +386,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
@@ -391,6 +415,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -452,7 +479,7 @@ datasource "ds_sql_virtualmachines" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
     query "api-version", "2023-10-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -485,6 +512,9 @@ script "js_sql_virtualmachines_type_filtered", type: "javascript" do
   parameters "ds_sql_virtualmachines", "param_vm_imageskus", "param_resource_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_vm_imageskus = _.compact(_.map(param_vm_imageskus, function(item) { return item.trim() }))
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   result = _.filter(ds_sql_virtualmachines, function(vm) {
     return vm['licenseType'] != 'AHUB' && _.contains(param_vm_imageskus, vm['imageSku']) && _.contains(param_resource_types, "SQL Virtual Machines")
   })
@@ -497,7 +527,7 @@ datasource "ds_sql_dbserver" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
     query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -523,7 +553,7 @@ datasource "ds_sql_elastic_pools" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/elasticPools"])
     query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -558,6 +588,8 @@ script "js_sql_elastic_pools_type_filtered", type: "javascript" do
   parameters "ds_sql_elastic_pools", "param_resource_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   result = _.filter(ds_sql_elastic_pools, function(pool) {
     return pool['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Elastic Pools")
   })
@@ -569,7 +601,7 @@ datasource "ds_sql_databases" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/databases"])
     query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -605,6 +637,8 @@ script "js_sql_databases_type_filtered", type: "javascript" do
   parameters "ds_sql_databases", "param_resource_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   result = _.filter(ds_sql_databases, function(db) {
     not_system = db['kind'].split(',')[3] != "serverless" && db['skuTier'] != "System"
     not_elastic = db['elasticPoolId'] == null || db['elasticPoolId'] == undefined || db['elasticPoolId'] == ""
@@ -618,7 +652,7 @@ datasource "ds_sql_managed_instances" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/managedInstances"])
     query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -653,6 +687,8 @@ script "js_sql_managed_instances_type_filtered", type: "javascript" do
   parameters "ds_sql_managed_instances", "param_resource_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   result = _.filter(ds_sql_managed_instances, function(db) {
     return db['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Managed Instances")
   })
@@ -667,6 +703,9 @@ script "js_resources_tag_filtered", type: "javascript" do
   parameters "ds_sql_virtualmachines_type_filtered", "ds_sql_elastic_pools_type_filtered", "ds_sql_databases_type_filtered", "ds_sql_managed_instances_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -757,6 +796,9 @@ script "js_resources_region_filtered", type: "javascript" do
   parameters "ds_resources_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   function region_filter_resources(resource_list, regions_allow_or_deny, regions_list) {
     return _.filter(resource_list, function(resource) {
       include_resource = _.contains(regions_list, resource['region'])
@@ -795,6 +837,9 @@ script "js_resources_rg_filtered", type: "javascript" do
   parameters "ds_resources_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_resources_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -830,7 +875,7 @@ datasource "ds_azure_vms" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2023-03-01"
     ignore_status [400, 403, 404]
@@ -1022,14 +1067,14 @@ EOS
 end
 
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_resources_rg_filtered, $ds_azure_sql_license_pricing, $ds_azure_vms_map, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_resources_rg_filtered, $ds_azure_sql_license_pricing, $ds_azure_vms_map, $ds_currency, $ds_applied_policy, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_instance_costs_grouped", "ds_resources_rg_filtered", "ds_azure_sql_license_pricing", "ds_azure_vms_map", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_instance_costs_grouped", "ds_resources_rg_filtered", "ds_azure_sql_license_pricing", "ds_azure_vms_map", "ds_currency", "ds_applied_policy", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1358,7 +1403,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

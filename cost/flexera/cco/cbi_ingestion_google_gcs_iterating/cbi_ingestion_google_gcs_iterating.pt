@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "0.1.0",
+  version: "0.1.1",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -118,6 +118,42 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_cbi_endpoint" do
+  run_script $js_param_cbi_endpoint, $param_cbi_endpoint
+end
+
+script "js_param_cbi_endpoint", type: "javascript" do
+  parameters "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_cbi_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_gcs_bucket" do
+  run_script $js_param_gcs_bucket, $param_gcs_bucket
+end
+
+script "js_param_gcs_bucket", type: "javascript" do
+  parameters "param_gcs_bucket"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_bucket.trim()
+EOS
+end
+
+datasource "ds_param_gcs_prefix" do
+  run_script $js_param_gcs_prefix, $param_gcs_prefix
+end
+
+script "js_param_gcs_prefix", type: "javascript" do
+  parameters "param_gcs_prefix"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_prefix.trim()
+EOS
+end
+
 datasource "ds_dates" do
   run_script $js_dates, $param_billing_period, $param_specific_period
 end
@@ -126,6 +162,9 @@ script "js_dates", type: "javascript" do
   parameters "param_billing_period", "param_specific_period"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_billing_period = param_billing_period.trim()
+  param_specific_period = param_specific_period.trim()
   result = { period: param_specific_period }
 
   if (param_billing_period != 'Specific Month') {
@@ -149,7 +188,7 @@ datasource "ds_existing_bill_uploads" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    query "billConnectId", $param_cbi_endpoint
+    query "billConnectId", $ds_param_cbi_endpoint
     query "billingPeriod", val($ds_dates, 'period')
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
@@ -252,7 +291,7 @@ datasource "ds_create_bill_upload" do
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
-    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billConnectId", $ds_param_cbi_endpoint
     body_field "billingPeriod", val($ds_dates, 'period')
   end
   result do
@@ -295,8 +334,8 @@ datasource "ds_objects" do
     auth $auth_google
     pagination $pagination_google_gcs
     host "storage.googleapis.com"
-    path join(["/storage/v1/b/", $param_gcs_bucket, "/o"])
-    query "prefix", $param_gcs_prefix
+    path join(["/storage/v1/b/", $ds_param_gcs_bucket, "/o"])
+    query "prefix", $ds_param_gcs_prefix
     header "User-Agent", "RS Policies"
   end
   result do
@@ -349,7 +388,7 @@ datasource "ds_cost_objects" do
   request do
     auth $auth_google
     host "storage.googleapis.com"
-    path join(["/", $param_gcs_bucket, "/", val(iter_item, "key")])
+    path join(["/", $ds_param_gcs_bucket, "/", val(iter_item, "key")])
     header "User-Agent", "RS Policies"
     ignore_status [404] # Ignore missing files instead of failing completely
   end
@@ -471,11 +510,11 @@ EOS
 end
 
 datasource "ds_status" do
-  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_keys, $ds_cost_object_keys_sliced, $ds_dates, $param_commit_delay, $param_cbi_endpoint
+  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_keys, $ds_cost_object_keys_sliced, $ds_dates, $param_commit_delay, $ds_param_cbi_endpoint
 end
 
 script "js_status", type: "javascript" do
-  parameters "ds_create_bill_upload", "ds_commit_bill_upload", "ds_bill_upload", "ds_cost_object_keys", "ds_cost_object_keys_sliced", "ds_dates", "param_commit_delay", "param_cbi_endpoint"
+  parameters "ds_create_bill_upload", "ds_commit_bill_upload", "ds_bill_upload", "ds_cost_object_keys", "ds_cost_object_keys_sliced", "ds_dates", "param_commit_delay", "ds_param_cbi_endpoint"
   result "result"
   code <<-'EOS'
   result = {
@@ -504,17 +543,17 @@ script "js_status", type: "javascript" do
 
   if (ds_commit_bill_upload.length != 0) {
     message.push('Bill Upload was committed. Cycle will restart with next execution.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: Bill Upload Committed'
+    result['title'] = ds_param_cbi_endpoint + ' Bill Ingestion: Bill Upload Committed'
   }
 
   if (ds_commit_bill_upload.length == 0 && files_remaining == 0) {
     message.push('All files uploaded. Bill Upload will be committed on next execution if ', param_commit_delay, ' hour(s) have passed since previous commit.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: All Files Uploaded'
+    result['title'] = ds_param_cbi_endpoint + ' Bill Ingestion: All Files Uploaded'
   }
 
   if (ds_commit_bill_upload.length == 0 && files_remaining != 0) {
     message.push('Additional files still need to be uploaded. More files will be uploaded on next execution.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: Some Files Uploaded. More Files Remain.'
+    result['title'] = ds_param_cbi_endpoint + ' Bill Ingestion: Some Files Uploaded. More Files Remain.'
   }
 
   result['message'] = message.join('')

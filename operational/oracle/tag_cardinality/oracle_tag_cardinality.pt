@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.2",
   provider: "Oracle",
   service: "Tags",
   policy_set: "Tag Cardinality",
@@ -108,13 +108,49 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
+datasource "ds_param_primary_region" do
+  run_script $js_param_primary_region, $param_primary_region
+end
+
+script "js_param_primary_region", type: "javascript" do
+  parameters "param_primary_region"
+  result "result"
+  code <<-'EOS'
+  result = param_primary_region.trim()
+EOS
+end
+
+datasource "ds_param_root_compartment" do
+  run_script $js_param_root_compartment, $param_root_compartment
+end
+
+script "js_param_root_compartment", type: "javascript" do
+  parameters "param_root_compartment"
+  result "result"
+  code <<-'EOS'
+  result = param_root_compartment.trim()
+EOS
+end
+
 datasource "ds_oci_compartments" do
   request do
     auth $auth_oracle
     pagination $pagination_oracle_identity
-    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    host join(["identity.", $ds_param_primary_region, ".oci.oraclecloud.com"])
     path "/20160918/compartments"
-    query "compartmentId", $param_root_compartment
+    query "compartmentId", $ds_param_root_compartment
     query "compartmentIdInSubtree", "true"
     query "limit", "1000"
     header "User-Agent", "RS Policies"
@@ -139,9 +175,9 @@ datasource "ds_oci_tag_namespaces" do
   request do
     auth $auth_oracle
     pagination $pagination_oracle_identity
-    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    host join(["identity.", $ds_param_primary_region, ".oci.oraclecloud.com"])
     path "/20160918/tagNamespaces"
-    query "compartmentId", $param_root_compartment
+    query "compartmentId", $ds_param_root_compartment
     query "compartmentIdInSubtree", "true"
     query "limit", "1000"
     header "User-Agent", "RS Policies"
@@ -173,8 +209,8 @@ datasource "ds_oci_regions" do
   request do
     auth $auth_oracle
     pagination $pagination_oracle_identity
-    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
-    path join(["/20160918/tenancies/", $param_root_compartment, "/regionSubscriptions"])
+    host join(["identity.", $ds_param_primary_region, ".oci.oraclecloud.com"])
+    path join(["/20160918/tenancies/", $ds_param_root_compartment, "/regionSubscriptions"])
     header "User-Agent", "RS Policies"
   end
   result do
@@ -211,6 +247,8 @@ script "js_oci_resources", type: "javascript" do
   parameters "region", "ds_oci_tag_namespaces_filtered", "param_resource_types"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   namespaces = _.map(ds_oci_tag_namespaces_filtered, function(ns) { return "'" + ns + "'" }).join(",")
 
   resource_types = _.filter(param_resource_types, function(type) { return type != "compartment" })
@@ -235,20 +273,22 @@ EOS
 end
 
 datasource "ds_oci_compartments_tag_list" do
-  run_script $js_tag_lister, $ds_oci_compartments, $param_incident_csv, $param_resource_types, "Compartment"
+  run_script $js_tag_lister, $ds_oci_compartments, $ds_param_incident_csv, $param_resource_types, "Compartment"
 end
 
 datasource "ds_oci_resources_tag_list" do
-  run_script $js_tag_lister, $ds_oci_resources, $param_incident_csv, $param_resource_types, "Resource"
+  run_script $js_tag_lister, $ds_oci_resources, $ds_param_incident_csv, $param_resource_types, "Resource"
 end
 
 script "js_tag_lister", type: "javascript" do
-  parameters "tagged_list", "param_incident_csv", "param_resource_types", "tag_type"
+  parameters "tagged_list", "ds_param_incident_csv", "param_resource_types", "tag_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   resource_types = param_resource_types.length == 0 ? "all" : param_resource_types.join(", ")
   message = "The following resource types were included in the report: " + resource_types + ".\n\n"
-  message += param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  message += ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   tags = {}
   result = []
@@ -332,7 +372,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.0",
+  version: "0.4.1",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -244,6 +244,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Table to derive region from zone
 datasource "ds_zone_to_region" do
@@ -521,6 +533,9 @@ script "js_google_projects", type: "javascript" do
   parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_ignore_sys = param_projects_ignore_sys.trim()
+  param_projects_ignore_app = param_projects_ignore_app.trim()
   query = []
   if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
   if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
@@ -548,6 +563,9 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -651,6 +669,9 @@ script "js_google_vms_label_filtered", type: "javascript" do
   parameters "ds_google_vms", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_labels = _.compact(_.map(param_exclusion_labels, function(item) { return item.trim() }))
+  param_exclusion_labels_boolean = param_exclusion_labels_boolean.trim()
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -728,6 +749,9 @@ script "js_google_vms_region_filtered", type: "javascript" do
   parameters "ds_google_vms_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_google_vms_label_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -1029,14 +1053,17 @@ datasource "ds_google_instance_prices" do
 end
 
 datasource "ds_idle_vms" do
-  run_script $js_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_incident_csv
+  run_script $js_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_idle_vms", type:"javascript" do
-  parameters "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_incident_csv"
+  parameters "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_check_both = param_stats_check_both.trim()
+  param_stats_threshold = param_stats_threshold.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -1296,14 +1323,18 @@ EOS
 end
 
 datasource "ds_underutil_vms" do
-  run_script $js_underutil_vms, $ds_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_google_instance_prices, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family, $param_incident_csv
+  run_script $js_underutil_vms, $ds_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_google_instance_prices, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family, $ds_param_incident_csv
 end
 
 script "js_underutil_vms", type:"javascript" do
-  parameters "ds_idle_vms", "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_google_instance_prices", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family", "param_incident_csv"
+  parameters "ds_idle_vms", "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_google_instance_prices", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_check_both = param_stats_check_both.trim()
+  param_stats_threshold = param_stats_threshold.trim()
+  param_cross_family = param_cross_family.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -2031,7 +2062,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

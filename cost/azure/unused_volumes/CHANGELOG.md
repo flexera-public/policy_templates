@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.6.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v8.6.1
 
 - Fixed bug where the `Delete Volumes` action would fail if the volume had already been deleted. The action now treats a volume that no longer exists as a successful deletion.

@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "8.6.1",
+  version: "8.6.2",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -213,6 +213,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -366,7 +390,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -394,6 +418,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -434,7 +461,7 @@ datasource "ds_azure_disks" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/disks"])
     query "api-version", "2019-07-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -469,6 +496,8 @@ script "js_azure_disks_status_filtered", type: "javascript" do
   parameters "ds_azure_disks", "param_include_status"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_include_status = param_include_status.trim()
   // Note: We filter for osType == null to filter out OS disks that VMs need to boot
   // since these disks can't be detached/deleted without just deleting the VM itself
 
@@ -498,6 +527,9 @@ script "js_azure_disks_tag_filtered", type: "javascript" do
   parameters "ds_azure_disks_status_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -574,6 +606,9 @@ script "js_azure_disks_region_filtered", type: "javascript" do
   parameters "ds_azure_disks_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_disks_tag_filtered, function(disk) {
       include_disk = _.contains(param_regions_list, disk['region'])
@@ -598,6 +633,9 @@ script "js_azure_disks_rg_filtered", type: "javascript" do
   parameters "ds_azure_disks_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_disks_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -623,7 +661,7 @@ end
 datasource "ds_azure_disks_metrics" do
   iterate $ds_azure_disks_rg_filtered
   request do
-    run_script $js_azure_disks_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_unused_days
+    run_script $js_azure_disks_metrics, val(iter_item, "id"), $ds_param_azure_endpoint, $param_unused_days
   end
   result do
     encoding "json"
@@ -644,7 +682,7 @@ datasource "ds_azure_disks_metrics" do
 end
 
 script "js_azure_disks_metrics", type: "javascript" do
-  parameters "resourceId", "param_azure_endpoint", "param_unused_days"
+  parameters "resourceId", "ds_param_azure_endpoint", "param_unused_days"
   result "request"
   code <<-'EOS'
   end_date = new Date()
@@ -664,7 +702,7 @@ script "js_azure_disks_metrics", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     path: resourceId + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
@@ -690,6 +728,8 @@ script "js_unused_volumes", type: "javascript" do
   parameters "ds_azure_disks_metrics", "param_minimum_age", "param_include_status"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_include_status = param_include_status.trim()
   result = []
 
   _.each(ds_azure_disks_metrics, function(disk) {
@@ -880,14 +920,17 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_azure_disks_rg_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings, $param_include_status, $param_unused_days, $param_incident_csv
+  run_script $js_volume_cost_mapping, $ds_azure_disks_rg_filtered, $ds_unused_volumes, $ds_volume_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age, $param_take_snapshot, $param_min_savings, $param_include_status, $param_unused_days, $ds_param_incident_csv
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_azure_disks_rg_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings", "param_include_status", "param_unused_days", "param_incident_csv"
+  parameters "ds_azure_disks_rg_filtered", "ds_unused_volumes", "ds_volume_costs_grouped", "ds_applied_policy", "ds_currency", "param_minimum_age", "param_take_snapshot", "param_min_savings", "param_include_status", "param_unused_days", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_take_snapshot = param_take_snapshot.trim()
+  param_include_status = param_include_status.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1181,7 +1224,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

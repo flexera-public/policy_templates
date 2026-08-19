@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.12.0",
+  version: "5.12.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -207,6 +207,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -765,6 +777,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -906,6 +921,9 @@ script "js_rds_instances", type: "javascript" do
   parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -1042,6 +1060,8 @@ script "js_rds_instances_to_check", type: "javascript" do
   parameters "ds_rds_instances", "param_unused_or_underutilized"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_unused_or_underutilized = param_unused_or_underutilized.trim()
   result = []
   if (param_unused_or_underutilized != "Underutilized") { result = ds_rds_instances }
 EOS
@@ -1236,6 +1256,8 @@ script "js_rds_nonidle_instances", type: "javascript" do
   parameters "ds_rds_instances", "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_unused_or_underutilized = param_unused_or_underutilized.trim()
   result = []
 
   if (param_unused_or_underutilized == "Underutilized") {
@@ -1589,6 +1611,9 @@ script "js_rds_underutil_instances", type: "javascript" do
   parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "ds_aws_rds_engine_table", "ds_aws_rds_cost_map", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_threshold = param_stats_threshold.trim()
+  param_downsize_multiple = param_downsize_multiple.trim()
   result = []
 
   // Function to find the index of a resource type in a list
@@ -1786,14 +1811,14 @@ EOS
 end
 
 datasource "ds_rds_idle_incident" do
-  run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_incident_csv
+  run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_rds_idle_incident", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_idle_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_incident_csv"
+  parameters "ds_rds_instances", "ds_rds_idle_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -1919,14 +1944,16 @@ EOS
 end
 
 datasource "ds_rds_underutil_incident" do
-  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_incident_csv
+  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $ds_param_incident_csv
 end
 
 script "js_rds_underutil_incident", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_incident_csv"
+  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_threshold = param_stats_threshold.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -2084,6 +2111,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   // Build a map of regions to their response status
@@ -2419,7 +2449,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2.4",
+  version: "3.2.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -121,6 +121,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -263,6 +275,9 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_allow_or_deny = param_bc_allow_or_deny.trim()
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -313,6 +328,8 @@ script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimension = param_dimension.trim()
   if (param_dimension == "Billing Center") {
     result = { id: "billing_center_id", name: "Billing Center" }
   } else {
@@ -351,6 +368,8 @@ script "js_costs", type: "javascript" do
   parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_usage_days", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -387,14 +406,16 @@ EOS
 end
 
 datasource "ds_costs_sorted" do
-  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold, $param_incident_csv, rs_org_id, rs_optima_host
+  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold, $ds_param_incident_csv, rs_org_id, rs_optima_host
 end
 
 script "js_costs_sorted", type: "javascript" do
-  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold", "param_incident_csv", "rs_org_id", "rs_optima_host"
+  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold", "ds_param_incident_csv", "rs_org_id", "rs_optima_host"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
@@ -538,7 +559,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

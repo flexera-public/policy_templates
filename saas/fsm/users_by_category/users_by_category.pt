@@ -8,7 +8,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: "",
@@ -68,6 +68,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -167,6 +179,8 @@ script "js_managed_product_agents", type: "javascript" do
   parameters "appId", "ds_flexera_api_hosts", "param_category", "rs_org_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_category = param_category.trim()
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["fsm"],
@@ -178,14 +192,14 @@ EOS
 end
 
 datasource "ds_mp_agents_incident" do
-  run_script $js_mp_agents_incident, $ds_managed_product_agents, $ds_applied_policy, $param_incident_csv
+  run_script $js_mp_agents_incident, $ds_managed_product_agents, $ds_applied_policy, $ds_param_incident_csv
 end
 
 script "js_mp_agents_incident", type: "javascript" do
-  parameters "ds_managed_product_agents", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_managed_product_agents", "ds_applied_policy", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = ds_managed_product_agents
 
   if (result.length > 0) {
@@ -239,7 +253,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

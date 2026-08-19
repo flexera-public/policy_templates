@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.4",
+  version: "0.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -145,6 +145,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_effective_date" do
+  run_script $js_param_effective_date, $param_effective_date
+end
+
+script "js_param_effective_date", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -204,6 +216,10 @@ script "js_sharepoint_site", type: "javascript" do
   parameters "ds_flexera_api_hosts", "param_drive_id", "param_sharepoint_site_hostname", "param_sharepoint_site_path"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
+  param_sharepoint_site_hostname = param_sharepoint_site_hostname.trim()
+  param_sharepoint_site_path = param_sharepoint_site_path.trim()
   if (param_drive_id && param_drive_id.length > 0) {
     // Drive ID provided directly - make a harmless no-op request
     request = { auth: "auth_flexera", host: ds_flexera_api_hosts["flexera"], path: "/api/governance", headers: { "User-Agent": "RS Policies" }, ignore_status: [400, 403, 404] }
@@ -227,6 +243,8 @@ script "js_sharepoint_drives", type: "javascript" do
   parameters "ds_sharepoint_site", "ds_flexera_api_hosts", "param_drive_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
   if (param_drive_id && param_drive_id.length > 0) {
     // Drive ID provided directly - make a harmless no-op request
     request = { auth: "auth_flexera", host: ds_flexera_api_hosts["flexera"], path: "/api/governance", headers: { "User-Agent": "RS Policies" }, ignore_status: [400, 403, 404] }
@@ -251,6 +269,10 @@ script "js_drive_folder_path", type: "javascript" do
   parameters "ds_sharepoint_drives", "param_drive_id", "param_sharepoint_library", "param_folder_path"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
+  param_sharepoint_library = param_sharepoint_library.trim()
+  param_folder_path = param_folder_path.trim()
   var driveId = param_drive_id
 
   // If no direct drive ID, resolve from SharePoint drives list
@@ -316,6 +338,9 @@ script "js_csv_file_selected", type: "javascript" do
   parameters "ds_graph_list_files", "param_file_prefix", "param_file_override"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_file_prefix = param_file_prefix.trim()
+  param_file_override = param_file_override.trim()
   // Graph API /children doesn't support $filter with startswith on name,
   // so prefix filtering is done client-side.
   var files = _.filter(ds_graph_list_files, function(item) {
@@ -817,13 +842,17 @@ end
 
 # Build RBD rule objects from CSV data
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case, $param_effective_date
+  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case, $ds_param_effective_date
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
+  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "ds_param_effective_date"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_filter = _.compact(_.map(param_rbd_filter, function(item) { return item.trim() }))
+  param_rbd_name_map = _.compact(_.map(param_rbd_name_map, function(item) { return item.trim() }))
+  param_normalize_case = param_normalize_case.trim()
   result = []
 
   // If there are validation errors, output empty list to block RBD creation
@@ -913,7 +942,7 @@ script "js_rbds", type: "javascript" do
       result.push({
         id: rbdId,
         name: rbdName,
-        effective_at: param_effective_date,
+        effective_at: ds_param_effective_date,
         rules: rules,
         ruleCount: rules.length
       })
@@ -965,7 +994,7 @@ datasource "ds_existing_rbds_with_rules" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $ds_param_effective_date])
     header "User-Agent", "RS Policies"
     ignore_status [400, 401, 403, 404, 429]
   end

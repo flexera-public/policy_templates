@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.6.0",
+  version: "5.6.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
@@ -175,6 +175,30 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -344,7 +368,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -372,6 +396,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -412,7 +439,7 @@ datasource "ds_azure_instances" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2017-12-01"
     header "User-Agent", "RS Policies"
@@ -449,6 +476,9 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -525,6 +555,9 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -549,6 +582,9 @@ script "js_azure_instances_rg_filtered", type: "javascript" do
   parameters "azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(azure_instances_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -739,14 +775,14 @@ datasource "ds_azure_linux_license_pricing" do
 end
 
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_rg_filtered, $ds_azure_linux_license_pricing, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_rg_filtered, $ds_azure_linux_license_pricing, $ds_currency, $ds_applied_policy, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_instance_costs_grouped", "ds_azure_instances_rg_filtered", "ds_azure_linux_license_pricing", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_instance_costs_grouped", "ds_azure_instances_rg_filtered", "ds_azure_linux_license_pricing", "ds_currency", "ds_applied_policy", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1088,7 +1124,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

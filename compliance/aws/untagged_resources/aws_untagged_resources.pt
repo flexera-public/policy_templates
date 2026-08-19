@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.3",
+  version: "6.0.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -158,6 +158,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -403,6 +415,8 @@ script "js_include_savings", type: "javascript" do
   parameters "param_include_savings"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_include_savings = param_include_savings.trim()
   result = []
   if (param_include_savings == "Include Savings") { result = [1] }
 EOS
@@ -603,6 +617,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -640,6 +657,8 @@ script "js_aws_resources", type:"javascript" do
   parameters "region", "param_resource_types"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   var request = {
     auth: "auth_aws",
     pagination: "pagination_aws_tagging",
@@ -670,6 +689,11 @@ script "js_aws_resources_missing_tags", type:"javascript" do
   parameters "ds_aws_resources", "ds_aws_account", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions", "param_report_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
+  param_tags_boolean = param_tags_boolean.trim()
+  param_consider_tag_dimensions = param_consider_tag_dimensions.trim()
+  param_report_types = _.compact(_.map(param_report_types, function(item) { return item.trim() }))
   result = []
 
   comparators = _.map(param_tags, function(item) {
@@ -789,14 +813,18 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $ds_currency, $param_tags, $param_tags_boolean, $param_include_savings, $param_incident_csv
+  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $ds_currency, $param_tags, $param_tags_boolean, $param_include_savings, $ds_param_incident_csv
 end
 
 script "js_missing_tags_incident", type:"javascript" do
-  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings", "param_incident_csv"
+  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
+  param_tags_boolean = param_tags_boolean.trim()
+  param_include_savings = param_include_savings.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   recommendations_id = {}
   recommendations_resourceid = {}
@@ -911,6 +939,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   var region_responses = {};
@@ -1058,7 +1089,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

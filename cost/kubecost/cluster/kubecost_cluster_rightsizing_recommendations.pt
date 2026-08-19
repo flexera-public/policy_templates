@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.3",
+  version: "0.5.4",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -124,6 +124,42 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_allow_shared_core" do
+  run_script $js_param_allow_shared_core, $param_allow_shared_core
+end
+
+script "js_param_allow_shared_core", type: "javascript" do
+  parameters "param_allow_shared_core"
+  result "result"
+  code <<-'EOS'
+  result = param_allow_shared_core.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
+datasource "ds_param_kubecost_host" do
+  run_script $js_param_kubecost_host, $param_kubecost_host
+end
+
+script "js_param_kubecost_host", type: "javascript" do
+  parameters "param_kubecost_host"
+  result "result"
+  code <<-'EOS'
+  result = param_kubecost_host.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -183,7 +219,7 @@ end
 
 datasource "ds_kubecost_currency_code" do
   request do
-    host $param_kubecost_host
+    host $ds_param_kubecost_host
     path "/model/getConfigs"
   end
   result do
@@ -201,6 +237,8 @@ script "js_architecture", type: "javascript" do
   parameters "param_architecture"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_architecture = param_architecture.trim()
   if (param_architecture == "All Chipset Architectures"){
     result = { value: "" }
   } else {
@@ -331,12 +369,12 @@ end
 
 datasource "ds_clusters" do
   request do
-    host $param_kubecost_host
+    host $ds_param_kubecost_host
     path "/model/savings/clusterSizingETL"
     query "minNodeCount", to_s($param_min_nodes)
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
-    query "allowSharedCore", $param_allow_shared_core
+    query "allowSharedCore", $ds_param_allow_shared_core
     query "architecture", val($ds_architecture, "value")
     # Note: `includeOverhead` is explicitly set to `false` to ensure consistency between the recommendations and the Kube-cost UI.
     # Also, the field  `includeOverhead`  is not exposed as a configurable parameter because it is not part of the Cluster Right-Sizing Recommendation API specification.
@@ -374,14 +412,16 @@ script "js_cluster_sizing", type: "javascript" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util, $param_incident_csv
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util, $ds_param_incident_csv
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util", "param_incident_csv"
+  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_strategy = param_strategy.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
   // Function for formatting currency numbers later
@@ -579,7 +619,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

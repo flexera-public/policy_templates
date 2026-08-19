@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.4.3",
+  version: "4.4.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -120,6 +120,42 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_fnms_host" do
+  run_script $js_param_fnms_host, $param_fnms_host
+end
+
+script "js_param_fnms_host", type: "javascript" do
+  parameters "param_fnms_host"
+  result "result"
+  code <<-'EOS'
+  result = param_fnms_host.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
+datasource "ds_param_report_id" do
+  run_script $js_param_report_id, $param_report_id
+end
+
+script "js_param_report_id", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  result = param_report_id.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -201,6 +237,8 @@ script "js_regions", type:"javascript" do
   parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    user_entered_regions = _.compact(_.map(user_entered_regions, function(item) { return item.trim() }))
     if(_.isEmpty(user_entered_regions)){
       regions = all_regions;
     }else{
@@ -273,7 +311,7 @@ datasource "ds_fnms_report" do
     auth $auth_flexera
     verb "POST"
     scheme "https"
-    host $param_fnms_host
+    host $ds_param_fnms_host
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
@@ -281,7 +319,7 @@ datasource "ds_fnms_report" do
     '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">',
     '  <soap:Body>',
     '    <tem:GetCustomView>',
-    '      <tem:customViewID>', $param_report_id, '</tem:customViewID>',
+    '      <tem:customViewID>', $ds_param_report_id, '</tem:customViewID>',
     '      <tem:rowLimit>100000</tem:rowLimit>',
     '   </tem:GetCustomView>',
     '  </soap:Body>',
@@ -297,15 +335,17 @@ datasource "ds_fnms_report" do
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags, $param_incident_csv
+  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags, $ds_param_incident_csv
 end
 
 #Formatter script for the Instance data
 script "js_formatted_instances", type: "javascript" do
-  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags", "param_incident_csv"
+  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclude_tags = _.compact(_.map(param_exclude_tags, function(item) { return item.trim() }))
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   var result = [];
 
@@ -392,7 +432,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send Incident Email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v2.5.0
 
 - Added support for attaching CSV files to incident emails.

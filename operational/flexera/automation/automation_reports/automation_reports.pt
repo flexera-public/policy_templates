@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.1",
+  version: "0.2.2",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation",
@@ -87,6 +87,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -153,6 +165,8 @@ script "js_boolean_children", type: "javascript" do
   parameters "param_children"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_children = param_children.trim()
   result = { include_children: param_children == "Include Children" ? "true" : "false" }
 EOS
 end
@@ -200,6 +214,8 @@ script "js_applied_policies", type: "javascript" do
   parameters "ds_flexera_api_hosts", "param_children", "rs_org_id", "rs_project_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_children = param_children.trim()
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],
@@ -382,14 +398,17 @@ end
 
 # Create incidents for various reports
 datasource "ds_applied_policy_report" do
-  run_script $js_applied_policy_report, $ds_applied_policies_cleaned, $ds_applied_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_applied_policy_report, $ds_applied_policies_cleaned, $ds_applied_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, $ds_param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_applied_policy_report", type: "javascript" do
-  parameters "ds_applied_policies_cleaned", "ds_applied_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_applied_policies_cleaned", "ds_applied_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "ds_param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_reports = _.compact(_.map(param_reports, function(item) { return item.trim() }))
+  param_aggregates = param_aggregates.trim()
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -469,14 +488,16 @@ EOS
 end
 
 datasource "ds_policy_templates_report" do
-  run_script $js_policy_templates_report, $ds_policy_templates, $ds_applied_policy_report, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_policy_templates_report, $ds_policy_templates, $ds_applied_policy_report, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $ds_param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_policy_templates_report", type: "javascript" do
-  parameters "ds_policy_templates", "ds_applied_policy_report", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_policy_templates", "ds_applied_policy_report", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "ds_param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_reports = _.compact(_.map(param_reports, function(item) { return item.trim() }))
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -525,14 +546,17 @@ EOS
 end
 
 datasource "ds_incidents_report" do
-  run_script $js_incidents_report, $ds_incidents, $ds_incident_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_incidents_report, $ds_incidents, $ds_incident_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, $ds_param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_incidents_report", type: "javascript" do
-  parameters "ds_incidents", "ds_incident_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_incidents", "ds_incident_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "ds_param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_reports = _.compact(_.map(param_reports, function(item) { return item.trim() }))
+  param_aggregates = param_aggregates.trim()
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -799,7 +823,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

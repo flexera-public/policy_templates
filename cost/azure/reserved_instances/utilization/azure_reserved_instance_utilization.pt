@@ -8,7 +8,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "4.1.2",
+  version: "4.1.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -96,6 +96,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
@@ -133,6 +145,9 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_allow_or_deny = param_bc_allow_or_deny.trim()
+  param_billing_centers = _.compact(_.map(param_billing_centers, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_billing_centers.length > 0) {
@@ -292,14 +307,16 @@ EOS
 end
 
 datasource "ds_underutil_reservations" do
-  run_script $js_underutil_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_utilization, $param_util_metric, $param_incident_csv
+  run_script $js_underutil_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_utilization, $param_util_metric, $ds_param_incident_csv
 end
 
 script "js_underutil_reservations", type: "javascript" do
-  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_utilization", "param_util_metric", "param_incident_csv"
+  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_utilization", "param_util_metric", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_util_metric = param_util_metric.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   underutil_ris = _.filter(ds_filtered_azure_reservations, function(ri) {
     utilization = ri['util_max_percentage']
@@ -460,7 +477,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

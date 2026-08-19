@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.3.2",
+  version: "4.3.3",
   provider: "Azure",
   service: "PaaS",
   policy_set: "Expiring Certificates",
@@ -175,6 +175,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -236,7 +260,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -264,6 +288,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -304,7 +331,7 @@ datasource "ds_azure_certificates" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Web/certificates"])
     query "api-version", "2023-01-01"
     header "User-Agent", "RS Policies"
@@ -342,6 +369,9 @@ script "js_azure_certificates_tag_filtered", type: "javascript" do
   parameters "ds_azure_certificates", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -418,6 +448,9 @@ script "js_azure_certificates_region_filtered", type: "javascript" do
   parameters "ds_azure_certificates_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_certificates_tag_filtered, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -438,6 +471,9 @@ script "js_azure_certificates_rg_filtered", type: "javascript" do
   parameters "ds_azure_certificates_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+  param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
   if (param_resource_groups_list.length > 0) {
     result = _.filter(ds_azure_certificates_region_filtered, function(resource) {
       rg = resource['resourceGroup']
@@ -461,14 +497,14 @@ EOS
 end
 
 datasource "ds_azure_certificates_expiring" do
-  run_script $js_azure_certificates_expiring, $ds_azure_certificates_rg_filtered, $ds_applied_policy, $param_expiration_days, $param_incident_csv
+  run_script $js_azure_certificates_expiring, $ds_azure_certificates_rg_filtered, $ds_applied_policy, $param_expiration_days, $ds_param_incident_csv
 end
 
 script "js_azure_certificates_expiring", type: "javascript" do
-  parameters "ds_azure_certificates_rg_filtered", "ds_applied_policy", "param_expiration_days", "param_incident_csv"
+  parameters "ds_azure_certificates_rg_filtered", "ds_applied_policy", "param_expiration_days", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   today = new Date()
 
@@ -709,7 +745,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

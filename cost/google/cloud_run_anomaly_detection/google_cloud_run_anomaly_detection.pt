@@ -9,7 +9,7 @@ category "Cost"
 default_frequency "daily"
 info(
   publish: "false",
-  version: "0.4.0",
+  version: "0.4.1",
   provider: "Google",
   service: "Cloud Run",
   policy_set: "Anomaly Detection",
@@ -172,6 +172,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
+datasource "ds_param_threshold_metric_name" do
+  run_script $js_param_threshold_metric_name, $param_threshold_metric_name
+end
+
+script "js_param_threshold_metric_name", type: "javascript" do
+  parameters "param_threshold_metric_name"
+  result "result"
+  code <<-'EOS'
+  result = param_threshold_metric_name.trim()
+EOS
+end
+
 datasource "ds_param_values" do
   run_script $js_param_values, $param_metric_lookback_time, $param_metric_aggregation
 end
@@ -180,6 +204,9 @@ script "js_param_values", type: "javascript" do
   parameters "param_metric_lookback_time", "param_metric_aggregation"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_metric_lookback_time = param_metric_lookback_time.trim()
+  param_metric_aggregation = param_metric_aggregation.trim()
   var result = {}
 
   // Using param_metric_lookback_time, calculate the start and end time for the interval
@@ -288,6 +315,11 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
+  param_projects_ignore_sys = param_projects_ignore_sys.trim()
+  param_projects_ignore_app = param_projects_ignore_app.trim()
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -354,6 +386,9 @@ script "js_google_regions_filtered", type: "javascript" do
   parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_google_regions, function(region) {
       include_region = _.contains(param_regions_list, region['region'])
@@ -402,7 +437,7 @@ datasource "ds_cloud_run_utilization" do
     query "aggregation.crossSeriesReducer", "REDUCE_SUM"
     query "aggregation.groupByFields", 'resource.label."service_name"'
     query "aggregation.perSeriesAligner", "ALIGN_RATE"
-    query "filter", join(['metric.type="', $param_threshold_metric_name, '" resource.type="cloud_run_revision" resource.label."service_name"="', last(split(val(iter_item, "name"), "/services/")), '" AND resource.labels."location"="', val(iter_item, "region"), '" AND resource.labels."service_name"="', last(split(val(iter_item, "name"), "/services/")), '"'], "")
+    query "filter", join(['metric.type="', $ds_param_threshold_metric_name, '" resource.type="cloud_run_revision" resource.label."service_name"="', last(split(val(iter_item, "name"), "/services/")), '" AND resource.labels."location"="', val(iter_item, "region"), '" AND resource.labels."service_name"="', last(split(val(iter_item, "name"), "/services/")), '"'], "")
     query "interval.startTime", val($ds_param_values, "start_time")
     query "interval.endTime", val($ds_param_values, "end_time")
   end
@@ -418,20 +453,22 @@ datasource "ds_cloud_run_utilization" do
       field "points_avg", jq(col_item, "try([.points[].value.doubleValue] | add/length | if . != null then . else 0 end) catch 0")
       field "points_max", jq(col_item, "try([.points[].value.doubleValue] | max | if . != null then . else 0 end) catch 0")
       field "points_stddev", jq(col_item, "try([.points[].value.doubleValue] | (add / length) as $mean | (map(. - $mean | . * .) | add) / (length - 1) | sqrt | if . != null then . else 0 end) catch 0")
-      field "metric_type", $param_threshold_metric_name
+      field "metric_type", $ds_param_threshold_metric_name
     end
   end
 end
 
 datasource "ds_cloud_run_utilization_anomalies" do
-  run_script $js_cloud_run_utilization_anomalies, $ds_cloud_run_utilization, $param_threshold_zscore, $param_threshold_consequtive_anomalies, $param_metric_aggregation, $param_incident_csv
+  run_script $js_cloud_run_utilization_anomalies, $ds_cloud_run_utilization, $param_threshold_zscore, $param_threshold_consequtive_anomalies, $param_metric_aggregation, $ds_param_incident_csv
 end
 
 script "js_cloud_run_utilization_anomalies", type: "javascript" do
-  parameters "ds_cloud_run_utilization", "param_threshold_zscore", "param_threshold_consequtive_anomalies", "param_metric_aggregation", "param_incident_csv"
+  parameters "ds_cloud_run_utilization", "param_threshold_zscore", "param_threshold_consequtive_anomalies", "param_metric_aggregation", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_metric_aggregation = param_metric_aggregation.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
   _.each(ds_cloud_run_utilization, function(resource_utilization) {
@@ -495,7 +532,7 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_cloud_run_utilization_anomalies do
-    summary_template "Google Cloud Run Anomaly Detection: {{ len data }} Anomalies In {{ parameters.param_metric_lookback_time }} For {{ parameters.param_threshold_metric_name }} Metric"
+    summary_template "Google Cloud Run Anomaly Detection: {{ len data }} Anomalies In {{ parameters.param_metric_lookback_time }} For {{ parameters.ds_param_threshold_metric_name }} Metric"
     detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check lt(val(val(item, "value"), "consequtiveAnomalyIndex"), $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
     escalate $esc_email
@@ -587,7 +624,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.7.0",
+  version: "6.7.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Inefficient Disk Usage",
@@ -152,6 +152,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -218,6 +230,8 @@ script "js_aws_api_hosts", type: "javascript" do
   parameters "param_pricing_api_endpoint"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_pricing_api_endpoint = param_pricing_api_endpoint.trim()
   host_table = {
     "US East": "api.pricing.us-east-1.amazonaws.com",
     "EU Central": "api.pricing.eu-central-1.amazonaws.com",
@@ -559,6 +573,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -640,6 +657,9 @@ script "js_volumes_tag_filtered", type: "javascript" do
   parameters "ds_volumes", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   gp2_volumes = _.reject(ds_volumes, function(volume) {
     return volume['volumeType'] != 'gp2'
   })
@@ -1062,14 +1082,14 @@ EOS
 end
 
 datasource "ds_underutil_volumes" do
-  run_script $js_underutil_volumes, $ds_volumes_tag_filtered, $ds_volumes_with_prices, $ds_volume_costs_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_underutil_volumes, $ds_volumes_tag_filtered, $ds_volumes_with_prices, $ds_volume_costs_grouped, $ds_aws_account, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_underutil_volumes", type: "javascript" do
-  parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_volumes_tag_filtered", "ds_volumes_with_prices", "ds_volume_costs_grouped", "ds_aws_account", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -1236,6 +1256,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   // Build a map of regions to their response status
@@ -1424,7 +1447,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

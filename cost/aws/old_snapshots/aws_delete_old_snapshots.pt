@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.7.0",
+  version: "8.7.1",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -213,6 +213,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -548,6 +560,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -740,6 +755,12 @@ script "js_snapshots_combined", type: "javascript" do
   parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_exclusion_types", "param_exclusion_description", "param_exclusion_services"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
+  param_exclusion_types = _.compact(_.map(param_exclusion_types, function(item) { return item.trim() }))
+  param_exclusion_description = _.compact(_.map(param_exclusion_description, function(item) { return item.trim() }))
+  param_exclusion_services = _.compact(_.map(param_exclusion_services, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -916,6 +937,8 @@ script "js_filter_ami_snapshots", type: "javascript" do
   parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_aws_account", "param_snapshot_include_ami"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_snapshot_include_ami = param_snapshot_include_ami.trim()
   var result = []
 
   _.each(ds_filter_old_snapshots, function(snapshot) {
@@ -1070,13 +1093,15 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami, $param_incident_csv
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami, $ds_param_incident_csv
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami", "param_incident_csv"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_snapshot_include_ami = param_snapshot_include_ami.trim()
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1182,7 +1207,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
 
   rds_message = "Note: AWS RDS snapshots are incremental. To avoid reporting overinflated savings estimates, only the most recent snapshot of a given RDS instance is reported. The estimated savings will only be fully realized if all snapshots of a given RDS instance are deleted.\n\n"
 
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -1217,6 +1242,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   // Build a map of regions to their response status
@@ -1405,7 +1433,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ severity "critical"
 default_frequency "daily"
 category "Operational"
 info(
-  version: "0.1.6",
+  version: "0.1.7",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   category: "Operational",
@@ -125,6 +125,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_bill_connect_id" do
+  run_script $js_param_bill_connect_id, $param_bill_connect_id
+end
+
+script "js_param_bill_connect_id", type: "javascript" do
+  parameters "param_bill_connect_id"
+  result "result"
+  code <<-'EOS'
+  result = param_bill_connect_id.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -182,12 +194,12 @@ end
 
 datasource "ds_bill_connect" do
   request do
-    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $param_bill_connect_id, rs_org_id
+    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $ds_param_bill_connect_id, rs_org_id
   end
 end
 
 script "js_bill_connect", type: "javascript" do
-  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
+  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "ds_param_bill_connect_id", "rs_org_id"
   result "request"
   code <<-'EOS'
 
@@ -199,7 +211,7 @@ script "js_bill_connect", type: "javascript" do
     host: ds_flexera_api_hosts["flexera"],
     path:  "/finops-onboarding/v1/orgs/" + rs_org_id + "/bill-connects/cbi",
     body_fields: {
-      "billIdentifier": param_bill_connect_id.split('cbi-oi-optima-')[1],
+      "billIdentifier": ds_param_bill_connect_id.split('cbi-oi-optima-')[1],
       "integrationId": "cbi-oi-optima",
       "name": "Reallocated Costs",
       "params": {
@@ -212,14 +224,14 @@ script "js_bill_connect", type: "javascript" do
     }
   }
 
-  // Check if ds_existing_bill_connects contains bill connect matching param_bill_connect_id
+  // Check if ds_existing_bill_connects contains bill connect matching ds_param_bill_connect_id
   existing_bc = _.find(ds_existing_bill_connects, function(bc) {
-    return bc.id == param_bill_connect_id
+    return bc.id == ds_param_bill_connect_id
   })
   // If we did, override the POST which would create the BC with a GET instead to take no action
   if (_.isObject(existing_bc)) {
     request["verb"] = "GET"
-    request["path"] = request["path"] + "/" + param_bill_connect_id
+    request["path"] = request["path"] + "/" + ds_param_bill_connect_id
   }
 
 EOS
@@ -233,6 +245,10 @@ script "js_dates", type: "javascript" do
   parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_period = param_period.trim()
+    param_period_specific_month = param_period_specific_month.trim()
+    param_reallocation_granularity = param_reallocation_granularity.trim()
     var today = new Date()
 
     // Switch or case statement in javascript for param_period values
@@ -423,7 +439,7 @@ end
 
 datasource "ds_origin_cost" do
   request do
-    run_script $js_origin_cost, $ds_billing_centers, $ds_dates, $ds_dimensions, $param_bill_connect_id, $param_origin_filter, rs_org_id, rs_optima_host
+    run_script $js_origin_cost, $ds_billing_centers, $ds_dates, $ds_dimensions, $ds_param_bill_connect_id, $param_origin_filter, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -440,9 +456,11 @@ datasource "ds_origin_cost" do
 end
 
 script "js_origin_cost", type: "javascript" do
-  parameters "ds_billing_centers", "ds_dates", "ds_dimensions", "param_bill_connect_id", "param_origin_filter", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_dates", "ds_dimensions", "ds_param_bill_connect_id", "param_origin_filter", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_origin_filter = param_origin_filter.trim()
   // Get all billing center IDs from top-level billing centers
   var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc.parent_id == null
@@ -495,7 +513,7 @@ script "js_origin_cost", type: "javascript" do
           "expression": {
             "dimension":"bill_source",
             "type":"equal",
-            "value": param_bill_connect_id
+            "value": ds_param_bill_connect_id
           }
         }
       ]
@@ -543,7 +561,7 @@ end
 
 datasource "ds_destination_cost" do
   request do
-    run_script $js_destination_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $param_bill_connect_id, $param_origin_filter, $param_destination_filter, $param_destination_group, $param_destination_method, rs_org_id, rs_optima_host
+    run_script $js_destination_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $ds_param_bill_connect_id, $param_origin_filter, $param_destination_filter, $param_destination_group, $param_destination_method, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -560,9 +578,14 @@ datasource "ds_destination_cost" do
 end
 
 script "js_destination_cost", type: "javascript" do
-  parameters "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "param_origin_filter", "param_destination_filter", "param_destination_group", "param_destination_method", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "ds_param_bill_connect_id", "param_origin_filter", "param_destination_filter", "param_destination_group", "param_destination_method", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_origin_filter = param_origin_filter.trim()
+  param_destination_filter = param_destination_filter.trim()
+  param_destination_group = _.compact(_.map(param_destination_group, function(item) { return item.trim() }))
+  param_destination_method = param_destination_method.trim()
   // Get all billing center IDs from top-level billing centers
   var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc.parent_id == null
@@ -609,7 +632,7 @@ script "js_destination_cost", type: "javascript" do
           "expression": {
             "dimension":"bill_source",
             "type":"equal",
-            "value": param_bill_connect_id
+            "value": ds_param_bill_connect_id
           }
         }
       ]
@@ -757,6 +780,9 @@ script "js_calculated_proportions", type: "javascript" do
   parameters "ds_cleaned_costs", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules_tag_key", "param_destination_group", "param_destination_method"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_destination_group = _.compact(_.map(param_destination_group, function(item) { return item.trim() }))
+  param_destination_method = param_destination_method.trim()
   // function logSample() logs a sample to the console every 5 minutes
   // This is useful for debugging and monitoring the progress of the script
   // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
@@ -1179,12 +1205,12 @@ end
 
 datasource "ds_cbi_create_bill_upload" do
   request do
-    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $param_bill_connect_id, rs_org_id, rs_optima_host
+    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $ds_param_bill_connect_id, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_create_bill_upload", type: "javascript" do
-  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "ds_param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   // $ds_aborted_pending_bill_uploads_done not used in the request
@@ -1197,7 +1223,7 @@ script "js_cbi_create_bill_upload", type: "javascript" do
     host: rs_optima_host,
     path: "/optima/orgs/" + rs_org_id + "/billUploads",
     body_fields: {
-      "billConnectId": param_bill_connect_id,
+      "billConnectId": ds_param_bill_connect_id,
       "billingPeriod": ds_dates['period']
     },
     headers: {

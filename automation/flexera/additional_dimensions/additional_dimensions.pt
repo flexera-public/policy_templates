@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "0.2.1",
+  version: "0.2.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -72,6 +72,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_effective_date" do
+  run_script $js_param_effective_date, $param_effective_date
+end
+
+script "js_param_effective_date", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
+
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -112,6 +124,9 @@ script "js_rbds_to_get", type: "javascript" do
   parameters "param_rbds", "param_rbds_external"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbds = _.compact(_.map(param_rbds, function(item) { return item.trim() }))
+  param_rbds_external = _.compact(_.map(param_rbds_external, function(item) { return item.trim() }))
   url_table = {
     "AI Models": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/ai_models.json",
     "AI Tokens": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/ai_tokens.json",
@@ -175,11 +190,11 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds_to_create" do
-  run_script $js_rbds_to_create, $ds_rbds_json, $ds_existing_rbds, $param_effective_date
+  run_script $js_rbds_to_create, $ds_rbds_json, $ds_existing_rbds, $ds_param_effective_date
 end
 
 script "js_rbds_to_create", type: "javascript" do
-  parameters "ds_rbds_json", "ds_existing_rbds", "param_effective_date"
+  parameters "ds_rbds_json", "ds_existing_rbds", "ds_param_effective_date"
   result "result"
   code <<-'EOS'
   existing_ids = _.pluck(ds_existing_rbds, "id")
@@ -191,7 +206,7 @@ script "js_rbds_to_create", type: "javascript" do
       id: rbd["id"],
       name: rbd["name"],
       rules: rbd["rules"],
-      effective_at: param_effective_date,
+      effective_at: ds_param_effective_date,
       verb: _.contains(existing_ids, rbd["id"]) ? "PATCH" : "POST"
     }
   }), function(item) {

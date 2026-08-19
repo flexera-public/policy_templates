@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v4.2.0
 
 - Added a region-error-reporting incident that alerts if the policy is unable to check the EBS default encryption setting in one or more AWS regions due to permission or configuration errors.

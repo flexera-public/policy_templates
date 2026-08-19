@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.2.2",
+  version: "1.2.3",
   provider: "Azure",
   service: "All",
   policy_set: "Cheaper Regions",
@@ -103,6 +103,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -250,6 +262,9 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_allow_or_deny = param_bc_allow_or_deny.trim()
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -296,6 +311,8 @@ script "js_costs", type: "javascript" do
   parameters "ds_billing_centers_filtered", "param_cost_metric", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -351,6 +368,8 @@ script "js_regions_sorted", type: "javascript" do
   parameters "ds_costs", "ds_azure_regions_reference", "ds_billing_centers_filtered", "ds_currency", "ds_applied_policy", "param_cost_metric"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -441,13 +460,16 @@ EOS
 end
 
 datasource "ds_cheaper_regions" do
-  run_script $js_cheaper_regions, $ds_regions_sorted, $ds_currency, $param_regions_allow_or_deny, $param_regions_list, $param_incident_csv
+  run_script $js_cheaper_regions, $ds_regions_sorted, $ds_currency, $param_regions_allow_or_deny, $param_regions_list, $ds_param_incident_csv
 end
 
 script "js_cheaper_regions", type: "javascript" do
-  parameters "ds_regions_sorted", "ds_currency", "param_regions_allow_or_deny", "param_regions_list", "param_incident_csv"
+  parameters "ds_regions_sorted", "ds_currency", "param_regions_allow_or_deny", "param_regions_list", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   result = _.filter(ds_regions_sorted, function(item) {
     return typeof(item['cheaper']) == 'string' && item['cheaper'] != ''
   })
@@ -472,7 +494,7 @@ script "js_cheaper_regions", type: "javascript" do
 
   total_savings = Math.round(total_savings * 1000) / 1000
 
-  message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   if (result.length > 0) {
     result[0]['total_savings'] = "Total Estimated Monthly Savings: " + ds_currency['symbol'] + total_savings.toFixed(2)
@@ -549,7 +571,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

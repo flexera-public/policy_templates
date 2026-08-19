@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.1",
   provider: "Azure",
   service: "PostgreSQL",
   policy_set: "Rightsize Database Instances",
@@ -241,6 +241,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -397,6 +421,8 @@ script "js_stats_interval", type: "javascript" do
   parameters "param_stats_interval"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_interval = param_stats_interval.trim()
   // Tables to convert human-readable parameter values to their API equivalents
   interval_table = {
     "1 Minute": "PT1M",
@@ -420,7 +446,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -448,6 +474,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -488,7 +517,7 @@ datasource "ds_azure_postgresql_flexible" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.DBforPostgreSQL/flexibleServers"])
     query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
@@ -541,6 +570,9 @@ script "js_azure_postgresql_tag_filtered", type: "javascript" do
   parameters "ds_azure_postgresql_system_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -617,6 +649,9 @@ script "js_azure_postgresql_region_filtered", type: "javascript" do
   parameters "ds_azure_postgresql_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_postgresql_tag_filtered, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -637,6 +672,9 @@ script "js_azure_postgresql_rg_filtered", type: "javascript" do
   parameters "azure_postgresql_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+  param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
   if (param_resource_groups_list.length > 0) {
     result = _.filter(azure_postgresql_region_filtered, function(resource) {
       rg = resource['resourceGroup']
@@ -662,7 +700,7 @@ end
 datasource "ds_azure_postgresql_metrics" do
   iterate $ds_azure_postgresql_rg_filtered
   request do
-    run_script $js_azure_postgresql_metrics, val(iter_item, "id"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_postgresql_metrics, val(iter_item, "id"), $ds_stats_interval, $ds_param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -689,7 +727,7 @@ end
 
 # https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-dbforpostgresql-flexibleservers-metrics
 script "js_azure_postgresql_metrics", type: "javascript" do
-  parameters "resource_id", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resource_id", "ds_stats_interval", "ds_param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-'EOS'
   end_date = new Date()
@@ -709,7 +747,7 @@ script "js_azure_postgresql_metrics", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     path: resource_id + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
@@ -743,6 +781,10 @@ script "js_merged_metrics", type: "javascript" do
   parameters "ds_azure_postgresql_metrics", "ds_azure_postgresql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple", "param_stats_connection_threshold"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_unused_or_underutilized = param_unused_or_underutilized.trim()
+  param_stats_threshold = param_stats_threshold.trim()
+  param_downsize_multiple = param_downsize_multiple.trim()
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
     // array needs to be sorted to select based on percentile
@@ -1036,14 +1078,17 @@ EOS
 end
 
 datasource "ds_downsize_postgresql_incident" do
-  run_script $js_downsize_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_stats_threshold, $param_stats_connection_threshold, $param_incident_csv
+  run_script $js_downsize_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_stats_threshold, $param_stats_connection_threshold, $ds_param_incident_csv
 end
 
 script "js_downsize_postgresql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_stats_threshold", "param_stats_connection_threshold", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_stats_threshold", "param_stats_connection_threshold", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_unused_or_underutilized = param_unused_or_underutilized.trim()
+  param_stats_threshold = param_stats_threshold.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1217,14 +1262,14 @@ EOS
 end
 
 datasource "ds_unused_postgresql_incident" do
-  run_script $js_unused_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_connection_threshold, $param_incident_csv
+  run_script $js_unused_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_connection_threshold, $ds_param_incident_csv
 end
 
 script "js_unused_postgresql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_connection_threshold", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_connection_threshold", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1617,7 +1662,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

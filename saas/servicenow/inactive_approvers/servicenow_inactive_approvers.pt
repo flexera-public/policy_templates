@@ -8,7 +8,7 @@ category "SaaS Management"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "ServiceNow",
   service: "",
   policy_set: "",
@@ -94,6 +94,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
+datasource "ds_param_servicenow_name" do
+  run_script $js_param_servicenow_name, $param_servicenow_name
+end
+
+script "js_param_servicenow_name", type: "javascript" do
+  parameters "param_servicenow_name"
+  result "result"
+  code <<-'EOS'
+  result = param_servicenow_name.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -153,7 +177,7 @@ end
 
 datasource "ds_servicenow_roles" do
   request do
-    run_script $js_servicenow_roles, $param_servicenow_roles, $param_servicenow_name
+    run_script $js_servicenow_roles, $param_servicenow_roles, $ds_param_servicenow_name
   end
   result do
     encoding "json"
@@ -165,14 +189,16 @@ datasource "ds_servicenow_roles" do
 end
 
 script "js_servicenow_roles", type: "javascript" do
-  parameters "param_servicenow_roles", "param_servicenow_name"
+  parameters "param_servicenow_roles", "ds_param_servicenow_name"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_servicenow_roles = _.compact(_.map(param_servicenow_roles, function(item) { return item.trim() }))
   query = _.map(param_servicenow_roles, function(role) { return "name=" + role }).join("^OR")
 
   var request = {
     auth: "auth_servicenow",
-    host: param_servicenow_name + ".service-now.com",
+    host: ds_param_servicenow_name + ".service-now.com",
     path: "api/now/table/sys_user_role",
     query_params: { "sysparm_fields": "name,sys_id", "sysparm_query": query },
     headers: { "User-Agent": "RS Policies" }
@@ -184,7 +210,7 @@ datasource "ds_servicenow_user_roles" do
   iterate $ds_servicenow_roles
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([$ds_param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sys_user_has_role"
     query "sysparm_fields", "role,sys_id,inherited,user"
     query "sysparm_query", join(["role=", val(iter_item, "sys_id")])
@@ -205,7 +231,7 @@ datasource "ds_servicenow_approver_users" do
   iterate $ds_servicenow_user_roles
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([$ds_param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sys_user"
     query "sysparm_query", join(["sys_id=", val(iter_item, "user_id")])
     query "sysparm_fields", "sys_id,name,user_name,last_login_time,vip,email"
@@ -230,7 +256,7 @@ datasource "ds_approvals" do
   iterate $ds_servicenow_approver_users
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([$ds_param_servicenow_name, ".service-now.com"])
     path "/api/now/table/sysapproval_approver"
     query "sysparm_query", join(["sys_updated_by=", val(iter_item, "username")])
     query "sysparm_fields", "approver,sys_updated_on,state,sys_updated_by"
@@ -253,11 +279,11 @@ datasource "ds_approvals" do
 end
 
 datasource "ds_bad_approvers" do
-  run_script $js_bad_approvers, $ds_approvals, $ds_servicenow_approver_users, $ds_applied_policy, $param_days, $param_incident_csv
+  run_script $js_bad_approvers, $ds_approvals, $ds_servicenow_approver_users, $ds_applied_policy, $param_days, $ds_param_incident_csv
 end
 
 script "js_bad_approvers", type: "javascript" do
-  parameters "ds_approvals", "ds_servicenow_approver_users", "ds_applied_policy", "param_days", "param_incident_csv"
+  parameters "ds_approvals", "ds_servicenow_approver_users", "ds_applied_policy", "param_days", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
   approvals_table = _.groupBy(ds_approvals, 'username')
@@ -265,7 +291,7 @@ script "js_bad_approvers", type: "javascript" do
   target_date = new Date()
   target_date = target_date.setDate(target_date.getDate() - param_days)
 
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -353,7 +379,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

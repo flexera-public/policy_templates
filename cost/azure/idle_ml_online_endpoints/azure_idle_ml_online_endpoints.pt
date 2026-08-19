@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle ML Online Endpoints",
@@ -202,6 +202,30 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -418,7 +442,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -445,6 +469,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -486,7 +513,7 @@ datasource "ds_azure_ml_workspaces" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.MachineLearningServices/workspaces"])
     query "api-version", "2024-04-01"
     header "User-Agent", "RS Policies"
@@ -515,6 +542,9 @@ script "js_azure_ml_workspaces_region_filtered", type: "javascript" do
   parameters "ds_azure_ml_workspaces", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_ml_workspaces, function(workspace) {
       include_workspace = _.contains(param_regions_list, workspace['region'])
@@ -536,6 +566,9 @@ script "js_azure_ml_workspaces_rg_filtered", type: "javascript" do
   parameters "ds_azure_ml_workspaces_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+  param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
   if (param_resource_groups_list.length > 0) {
     result = _.filter(ds_azure_ml_workspaces_region_filtered, function(resource) {
       var rg = resource['resourceGroup']
@@ -568,7 +601,7 @@ datasource "ds_azure_ml_online_endpoints" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.MachineLearningServices/workspaces/", val(iter_item, "name"), "/onlineEndpoints"])
     query "api-version", "2024-04-01"
     query "computeType", "Managed"
@@ -603,6 +636,10 @@ script "js_azure_ml_online_endpoints_filtered", type: "javascript" do
   parameters "ds_azure_ml_online_endpoints", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_exclusion_endpoints"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
+  param_exclusion_endpoints = _.compact(_.map(param_exclusion_endpoints, function(item) { return item.trim() }))
   // Keep only Succeeded managed endpoints
   var provisioned = _.filter(ds_azure_ml_online_endpoints, function(ep) {
     return ep['provisioningState'] == 'Succeeded' && ep['kind'] == 'Managed'
@@ -688,7 +725,7 @@ datasource "ds_azure_ml_online_deployments" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join([val(iter_item, "id"), "/deployments"])
     query "api-version", "2024-04-01"
     header "User-Agent", "RS Policies"
@@ -781,7 +818,7 @@ end
 datasource "ds_azure_ml_endpoint_metrics" do
   iterate $ds_azure_ml_endpoints_with_running_deployments
   request do
-    run_script $js_azure_ml_endpoint_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_ml_endpoint_metrics, val(iter_item, "id"), $ds_param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -791,7 +828,7 @@ datasource "ds_azure_ml_endpoint_metrics" do
 end
 
 script "js_azure_ml_endpoint_metrics", type: "javascript" do
-  parameters "resourceID", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resourceID", "ds_param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-'EOS'
   var end_date = new Date()
@@ -811,7 +848,7 @@ script "js_azure_ml_endpoint_metrics", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     path: resourceID + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2023-10-01",
@@ -900,14 +937,14 @@ EOS
 end
 
 datasource "ds_azure_idle_ml_endpoints_incident" do
-  run_script $js_azure_idle_ml_endpoints_incident, $ds_azure_ml_endpoints_with_running_deployments, $ds_azure_ml_idle_endpoints, $ds_azure_vm_pricing, $ds_region_table, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_min_requests, $param_incident_csv
+  run_script $js_azure_idle_ml_endpoints_incident, $ds_azure_ml_endpoints_with_running_deployments, $ds_azure_ml_idle_endpoints, $ds_azure_vm_pricing, $ds_region_table, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_min_requests, $ds_param_incident_csv
 end
 
 script "js_azure_idle_ml_endpoints_incident", type: "javascript" do
-  parameters "ds_azure_ml_endpoints_with_running_deployments", "ds_azure_ml_idle_endpoints", "ds_azure_vm_pricing", "ds_region_table", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_min_requests", "param_incident_csv"
+  parameters "ds_azure_ml_endpoints_with_running_deployments", "ds_azure_ml_idle_endpoints", "ds_azure_vm_pricing", "ds_region_table", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_min_requests", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1183,7 +1220,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

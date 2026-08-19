@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.7.0",
+  version: "7.7.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -195,6 +195,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -348,7 +372,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -376,6 +400,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -415,7 +442,7 @@ datasource "ds_ip_addresses" do
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version", "2021-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -445,6 +472,8 @@ script "js_ip_addresses_alloc_filtered", type: "javascript" do
   parameters "ds_ip_addresses", "param_allocation_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_allocation_type = param_allocation_type.trim()
   if (param_allocation_type != "Both") {
     result = _.filter(ds_ip_addresses, function(ip) {
       return ip['properties']['publicIPAllocationMethod'] == param_allocation_type
@@ -463,6 +492,9 @@ script "js_ip_addresses_tag_filtered", type: "javascript" do
   parameters "ds_ip_addresses_alloc_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -539,6 +571,9 @@ script "js_ip_addresses_region_filtered", type: "javascript" do
   parameters "ds_ip_addresses_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_ip_addresses_tag_filtered, function(ip) {
       include_ip = _.contains(param_regions_list, ip['region'])
@@ -563,6 +598,9 @@ script "js_ip_addresses_rg_filtered", type: "javascript" do
   parameters "ds_ip_addresses_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_ip_addresses_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -602,7 +640,7 @@ end
 datasource "ds_event_logs" do
   iterate $ds_azure_subscriptions_filtered
   request do
-    run_script $js_event_logs, val(iter_item, "id"), $param_azure_endpoint
+    run_script $js_event_logs, val(iter_item, "id"), $ds_param_azure_endpoint
   end
   result do
     encoding "json"
@@ -620,7 +658,7 @@ datasource "ds_event_logs" do
 end
 
 script "js_event_logs", type:"javascript" do
-  parameters "subscription_id", "param_azure_endpoint"
+  parameters "subscription_id", "ds_param_azure_endpoint"
   result "request"
   code <<-'EOS'
   // Go back 90 days, which is the maximum supported by Azure Activity Logs
@@ -632,7 +670,7 @@ script "js_event_logs", type:"javascript" do
 
   var request = {
     auth: "auth_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     path: "/subscriptions/" + subscription_id + "/providers/Microsoft.Insights/eventtypes/management/values",
     headers: {
       "User-Agent": "RS Policies"
@@ -832,14 +870,14 @@ EOS
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_rg_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached, $param_min_savings, $param_incident_csv
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_rg_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ip_addresses", "ds_ip_addresses_rg_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached", "param_min_savings", "param_incident_csv"
+  parameters "ds_unused_ip_addresses", "ds_ip_addresses_rg_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1089,7 +1127,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

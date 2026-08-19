@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0.2",
+  version: "5.0.3",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -158,6 +158,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -363,6 +375,9 @@ script "js_google_projects", type: "javascript" do
   parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_ignore_sys = param_projects_ignore_sys.trim()
+  param_projects_ignore_app = param_projects_ignore_app.trim()
   query = []
   if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
   if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
@@ -390,6 +405,9 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -456,6 +474,8 @@ script "js_generate_uris", type: "javascript" do
   parameters "ds_google_projects_filtered", "param_resource_types", "endpoint"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   param_mapping = {
     "/aggregated/disks": "Persistent Disks"
     "/aggregated/vpnGateways": "VPN Gateways (Internal)"
@@ -488,6 +508,8 @@ script "js_bucket_uris", type: "javascript" do
   parameters "ds_google_projects_filtered", "param_resource_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
   result = []
 
   if (_.contains(param_resource_types, "Storage Buckets")) {
@@ -819,6 +841,9 @@ script "js_google_resources", type: "javascript" do
   parameters "ds_google_projects_filtered", "ds_disks", "ds_vpn_gateways", "ds_external_vpn_gateways", "ds_images", "ds_instances", "ds_snapshots", "ds_storage_buckets", "param_resource_types", "param_report_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_types = _.compact(_.map(param_resource_types, function(item) { return item.trim() }))
+  param_report_types = _.compact(_.map(param_report_types, function(item) { return item.trim() }))
   projects = []
 
   if (_.contains(param_report_types, "Projects")) {
@@ -854,6 +879,10 @@ script "js_google_resources_missing_labels", type: "javascript" do
   parameters "ds_google_resources", "ds_applied_policy", "ds_tag_dimensions", "param_labels", "param_labels_boolean", "param_consider_tag_dimensions"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_labels = _.compact(_.map(param_labels, function(item) { return item.trim() }))
+  param_labels_boolean = param_labels_boolean.trim()
+  param_consider_tag_dimensions = param_consider_tag_dimensions.trim()
   result = []
 
   comparators = _.map(param_labels, function(item) {
@@ -945,14 +974,17 @@ EOS
 end
 
 datasource "ds_missing_labels_incident" do
-  run_script $js_missing_labels_incident, $ds_google_resources_missing_labels, $ds_applied_policy, $param_labels, $param_labels_boolean, $param_incident_csv
+  run_script $js_missing_labels_incident, $ds_google_resources_missing_labels, $ds_applied_policy, $param_labels, $param_labels_boolean, $ds_param_incident_csv
 end
 
 script "js_missing_labels_incident", type: "javascript" do
-  parameters "ds_google_resources_missing_labels", "ds_applied_policy", "param_labels", "param_labels_boolean", "param_incident_csv"
+  parameters "ds_google_resources_missing_labels", "ds_applied_policy", "param_labels", "param_labels_boolean", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_labels = _.compact(_.map(param_labels, function(item) { return item.trim() }))
+  param_labels_boolean = param_labels_boolean.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   resource_mapping = {
     "Persistent Disks": "Persistent Disk",
@@ -1116,7 +1148,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

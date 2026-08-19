@@ -8,7 +8,7 @@ category "Operational"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.7.2",
+  version: "2.7.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -84,6 +84,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -295,6 +307,8 @@ script "js_bill_connections_combined", type: "javascript" do
   parameters "ds_bill_connections", "ds_bill_connections_valid", "ds_bill_status_errors", "ds_bill_import_history", "ds_applied_policy", "param_processing_limit", "param_report_connection_with_zero_bills"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_report_connection_with_zero_bills = param_report_connection_with_zero_bills.trim()
   today = new Date()
 
   connection_metadata = _.groupBy(ds_bill_connections, "id")
@@ -412,14 +426,16 @@ EOS
 end
 
 datasource "ds_bad_bill_connections" do
-  run_script $js_bad_bill_connections, $ds_bill_connections_combined, $param_ignore_list, $param_incident_csv
+  run_script $js_bad_bill_connections, $ds_bill_connections_combined, $param_ignore_list, $ds_param_incident_csv
 end
 
 script "js_bad_bill_connections", type: "javascript" do
-  parameters "ds_bill_connections_combined", "param_ignore_list", "param_incident_csv"
+  parameters "ds_bill_connections_combined", "param_ignore_list", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_ignore_list = _.compact(_.map(param_ignore_list, function(item) { return item.trim() }))
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = _.reject(ds_bill_connections_combined, function(item) {
     return (item["valid"] && item["errors"] == "") || !item["active"] || _.contains(param_ignore_list, item['id']) || _.contains(param_ignore_list, item['bill_account'])
@@ -481,7 +497,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ severity "high"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.3.1",
+  version: "3.3.2",
   provider: "Flexera",
   service: "SaaS Manager",
   policy_set: "",
@@ -59,6 +59,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -261,14 +273,14 @@ EOS
 end
 
 datasource "ds_format_data" do
-  run_script $js_format_data, $ds_products, $ds_unsanctioned, $ds_applied_policy, $ds_currency, $param_incident_csv
+  run_script $js_format_data, $ds_products, $ds_unsanctioned, $ds_applied_policy, $ds_currency, $ds_param_incident_csv
 end
 
 script "js_format_data", type: "javascript" do
-  parameters "ds_products", "ds_unsanctioned", "ds_applied_policy", "ds_currency", "param_incident_csv"
+  parameters "ds_products", "ds_unsanctioned", "ds_applied_policy", "ds_currency", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = []
   unsanctioned_product_names = _.pluck(ds_unsanctioned, 'product')
 
@@ -347,7 +359,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

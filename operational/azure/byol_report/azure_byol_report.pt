@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.5.1",
+  version: "0.5.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
@@ -103,6 +103,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -341,6 +353,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -480,6 +495,9 @@ script "js_cco_data_region_filtered", type: "javascript" do
   parameters "ds_cco_data", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_cco_data, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -526,14 +544,14 @@ EOS
 end
 
 datasource "ds_byol_report" do
-  run_script $js_byol_report, $ds_azure_virtual_machines, $ds_applied_policy, $param_lookback, $param_incident_csv
+  run_script $js_byol_report, $ds_azure_virtual_machines, $ds_applied_policy, $param_lookback, $ds_param_incident_csv
 end
 
 script "js_byol_report", type:"javascript" do
-  parameters "ds_azure_virtual_machines", "ds_applied_policy", "param_lookback", "param_incident_csv"
+  parameters "ds_azure_virtual_machines", "ds_applied_policy", "param_lookback", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   byol_os_list = ["Red Hat BYOS", "SUSE BYOS", "Windows Server BYOL", "Windows Client BYOL"]
 
@@ -687,7 +705,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

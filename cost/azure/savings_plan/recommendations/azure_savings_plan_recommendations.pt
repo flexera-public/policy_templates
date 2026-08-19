@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.8.0",
+  version: "3.8.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -169,6 +169,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -272,7 +296,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
@@ -300,6 +324,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -344,6 +371,8 @@ script "js_azure_resource_groups_requests", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "param_scope"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_scope = param_scope.trim()
   result = []
   if (param_scope == "Resource Group") { result = ds_azure_subscriptions_filtered }
 EOS
@@ -354,7 +383,7 @@ datasource "ds_azure_resource_groups" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
     query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
@@ -379,6 +408,9 @@ script "js_sp_recommendation_requests", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "param_scope", "param_term"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_scope = param_scope.trim()
+  param_term = param_term.trim()
   var term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
   var terms = []
 
@@ -422,7 +454,7 @@ end
 datasource "ds_sp_recommendations" do
   iterate $ds_sp_recommendation_requests
   request do
-    run_script $js_sp_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint
+    run_script $js_sp_recommendations, iter_item, $param_days, $param_scope, $ds_param_azure_endpoint
   end
   result do
     encoding "json"
@@ -463,6 +495,9 @@ script "js_sp_recommendations_rg_filtered", type: "javascript" do
   parameters "ds_sp_recommendations", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_sp_recommendations, function(resource) {
         rg = resource['resourceGroup']
@@ -486,9 +521,12 @@ EOS
 end
 
 script "js_sp_recommendations", type: "javascript" do
-  parameters "account", "param_days", "param_scope", "param_azure_endpoint"
+  parameters "account", "param_days", "param_scope", "ds_param_azure_endpoint"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_days = param_days.trim()
+  param_scope = param_scope.trim()
   scope = param_scope
   if (scope != "Shared") { scope = "Single" }
 
@@ -504,7 +542,7 @@ script "js_sp_recommendations", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
+    host: ds_param_azure_endpoint,
     // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status: [400, 403, 404, 422],
     path: path_prefix + "/providers/Microsoft.CostManagement/benefitRecommendations",
@@ -587,14 +625,19 @@ EOS
 end
 
 datasource "ds_sp_incident" do
-  run_script $js_sp_incident, $ds_sp_recommendations_rg_filtered, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
+  run_script $js_sp_incident, $ds_sp_recommendations_rg_filtered, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings, $ds_param_incident_csv, $param_payment_option
 end
 
 script "js_sp_incident", type: "javascript" do
-  parameters "ds_sp_recommendations_rg_filtered", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
+  parameters "ds_sp_recommendations_rg_filtered", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings", "ds_param_incident_csv", "param_payment_option"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_term = param_term.trim()
+  param_days = param_days.trim()
+  param_scope = param_scope.trim()
+  param_payment_option = param_payment_option.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -857,7 +900,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

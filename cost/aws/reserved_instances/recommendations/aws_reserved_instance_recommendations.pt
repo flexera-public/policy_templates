@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.9.0",
+  version: "3.9.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -152,6 +152,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -387,6 +399,10 @@ script "js_ri_types", type: "javascript" do
   parameters "param_service", "param_payment_option", "param_term"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_service = _.compact(_.map(param_service, function(item) { return item.trim() }))
+  param_payment_option = param_payment_option.trim()
+  param_term = param_term.trim()
   if (param_service.length == 0) {
     services = [
       "ElastiCache",
@@ -504,6 +520,10 @@ script "js_ri_recommendations", type: "javascript" do
   parameters "service", "payment_option", "term", "param_days", "param_service_spec", "param_scope"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_days = param_days.trim()
+  param_service_spec = param_service_spec.trim()
+  param_scope = param_scope.trim()
   // Tables to convert human-readable parameter values to their API equivalents
   period_table = {
     "Last 7 Days": "SEVEN_DAYS",
@@ -630,14 +650,21 @@ EOS
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings, $param_incident_csv
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings", "param_incident_csv"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_days = param_days.trim()
+  param_service = _.compact(_.map(param_service, function(item) { return item.trim() }))
+  param_service_spec = param_service_spec.trim()
+  param_scope = param_scope.trim()
+  param_term = param_term.trim()
+  param_payment_option = param_payment_option.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -963,7 +990,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

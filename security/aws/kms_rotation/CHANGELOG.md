@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v3.2.0
 
 - Added logic required for 'Meta Policy' use-cases.

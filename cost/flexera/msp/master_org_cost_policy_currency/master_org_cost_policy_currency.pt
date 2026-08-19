@@ -17,7 +17,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.0.5",
+  version: "2.0.6",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Managed Service Provider",
@@ -86,6 +86,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_final_currency" do
+  run_script $js_param_final_currency, $param_final_currency
+end
+
+script "js_param_final_currency", type: "javascript" do
+  parameters "param_final_currency"
+  result "result"
+  code <<-'EOS'
+  result = param_final_currency.trim()
+EOS
+end
+
 datasource "ds_session" do
   request do
     auth $auth_flexera
@@ -136,6 +148,8 @@ script "js_filtered_rejected_organizations", type: "javascript" do
   parameters "ds_current_user_organizations", "param_exclude_organizations"
   result "results"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_exclude_organizations = _.compact(_.map(param_exclude_organizations, function(item) { return item.trim() }))
     var results = _.reject(ds_current_user_organizations, function(org){
       return _.contains(param_exclude_organizations, org["name"])
     })
@@ -184,7 +198,7 @@ datasource "ds_currency_conversion" do
   request do
     host "api.exchangeratesapi.io"
     path "/latest"
-    query "base", $param_final_currency
+    query "base", $ds_param_final_currency
     header "User-Agent", "RS Policies"
   end
 end
@@ -249,6 +263,8 @@ script "js_current_week_costs", type: "javascript" do
   parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
     var range = "daily";
     var scale = "current";
 
@@ -341,6 +357,8 @@ script "js_previous_week_costs", type: "javascript" do
   parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
     var range = "daily";
     var scale = "previous";
 
@@ -433,6 +451,8 @@ script "js_current_month_costs", type: "javascript" do
   parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
     var range = "monthly";
     var scale = "current";
 
@@ -525,6 +545,8 @@ script "js_previous_month_costs", type: "javascript" do
   parameters "rs_org_id", "ds_billing_centers", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
     var range = "monthly";
     var scale = "previous";
 
@@ -600,13 +622,15 @@ script "js_previous_month_costs", type: "javascript" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency, $param_cost_metric
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $ds_param_final_currency, $param_cost_metric
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "param_final_currency", "param_cost_metric"
+  parameters "ds_current_week_costs", "ds_previous_week_costs", "ds_current_month_costs", "ds_previous_month_costs", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "ds_param_final_currency", "param_cost_metric"
   result "report"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
     function formatNumber(number, separator) {
       formatted_number = "0"
 
@@ -701,11 +725,11 @@ script "js_report", type: "javascript" do
     }
 
     // Format costs with currency symbol and thousands separator
-    if( param_final_currency !== undefined ) {
-      if (ds_currency_reference[param_final_currency] !== undefined ) {
-        var cur = ds_currency_reference[param_final_currency]['symbol']
-        if( ds_currency_reference[param_final_currency]['t_separator'] !== undefined ) {
-          var sep = ds_currency_reference[param_final_currency]['t_separator']
+    if( ds_param_final_currency !== undefined ) {
+      if (ds_currency_reference[ds_param_final_currency] !== undefined ) {
+        var cur = ds_currency_reference[ds_param_final_currency]['symbol']
+        if( ds_currency_reference[ds_param_final_currency]['t_separator'] !== undefined ) {
+          var sep = ds_currency_reference[ds_param_final_currency]['t_separator']
         } else {
           var sep = ""
         }
@@ -764,6 +788,9 @@ script "js_previous_six_month_costs", type: "javascript" do
   parameters "rs_org_id", "ds_billing_centers", "param_graph_dimension", "param_cost_metric", "rs_optima_host"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_graph_dimension = param_graph_dimension.trim()
+    param_cost_metric = param_cost_metric.trim()
     // format the date for the `monthly` API
     // returns date formatted as string: YYYY-mm
     function getFormattedMonthlyDate(date) {
@@ -837,13 +864,16 @@ script "js_previous_six_month_costs", type: "javascript" do
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generated_report, $ds_previous_six_month_costs, $ds_report, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency, $param_cost_metric, $param_graph_dimension
+  run_script $js_generated_report, $ds_previous_six_month_costs, $ds_report, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $ds_param_final_currency, $param_cost_metric, $param_graph_dimension
 end
 
 script "js_generated_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs", "ds_report", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "param_final_currency", "param_cost_metric", "param_graph_dimension"
+  parameters "ds_previous_six_month_costs", "ds_report", "ds_currency_code", "ds_currency_reference", "ds_currency_conversion", "ds_filtered_user_organizations", "ds_param_final_currency", "param_cost_metric", "param_graph_dimension"
   result "report"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_cost_metric = param_cost_metric.trim()
+    param_graph_dimension = param_graph_dimension.trim()
     // format the date for the `monthly` API
     // returns date formatted as string: YYYY-mm
     function getFormattedMonthlyDate(date) {
@@ -980,14 +1010,14 @@ script "js_generated_report", type: "javascript" do
       chartTitle: "chtt=Spending+Overview",
       chartAxis: "chxt=x,y",
       chartXAxis: chartXAxis,
-      chartAxisFormat: "chxs=1N*c" + param_final_currency + "s*"
+      chartAxisFormat: "chxs=1N*c" + ds_param_final_currency + "s*"
       chartData: chartData,
       chartCategories: chartCategories,
       chartColors: chartColors,
       chartExtension: "chof=.png",
       chartKeyLocation: "chdlp=b",
       currentSpend:  Math.round(current_month_total),
-      currencyCode: param_final_currency,
+      currencyCode: ds_param_final_currency,
       reportData: ds_report
     }
   EOS
@@ -1005,7 +1035,7 @@ policy "pol_scheduled_report" do
       ### Included Organizations: {{ data.includedOrgs }}
       ### Cost Metric: {{ parameters.param_cost_metric }}
       ### Chart Dimension: {{ parameters.param_graph_dimension }}
-      ### Currency Converted to: {{ parameters.param_final_currency }}*
+      ### Currency Converted to: {{ parameters.ds_param_final_currency }}*
       ![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
       ### For more detailed cost information, visit [Flexera CCO](https://app.flexera.com/orgs/{{ rs_org_id }}/dashboard).
       For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/msp/master_org_cost_policy_currency).<br>

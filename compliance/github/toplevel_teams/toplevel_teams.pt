@@ -8,7 +8,7 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "GitHub",
   service: "Git",
   policy_set: "",
@@ -96,6 +96,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -160,7 +172,9 @@ end
 script "js_org_list", type: "javascript" do
   parameters "param_orgs"
   result "result"
-  code "result = param_orgs"
+  code <<-'EOS'
+  result = _.compact(_.map(param_orgs, function(item) { return item.trim() }))
+EOS
 end
 
 datasource "ds_github_orgs" do
@@ -219,13 +233,15 @@ datasource "ds_org_teams" do
 end
 
 datasource "ds_invalid_teams" do
-  run_script $js_invalid_teams, $ds_org_teams, $ds_applied_policy, $param_allowed_teams, $param_incident_csv
+  run_script $js_invalid_teams, $ds_org_teams, $ds_applied_policy, $param_allowed_teams, $ds_param_incident_csv
 end
 
 script "js_invalid_teams", type: "javascript" do
-  parameters "ds_org_teams", "ds_applied_policy", "param_allowed_teams", "param_incident_csv"
+  parameters "ds_org_teams", "ds_applied_policy", "param_allowed_teams", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_allowed_teams = _.compact(_.map(param_allowed_teams, function(item) { return item.trim() }))
   invalid_teams = _.reject(ds_org_teams, function(team) {
     return typeof(team["parent"]) == "string" || _.contains(param_allowed_teams, team["name"])
   })
@@ -242,7 +258,7 @@ script "js_invalid_teams", type: "javascript" do
     }
   })
 
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
@@ -291,7 +307,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2.3",
+  version: "3.2.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -67,6 +67,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -155,6 +167,8 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_billing_centers = _.compact(_.map(param_billing_centers, function(item) { return item.trim() }))
   if (param_billing_centers.length > 0) {
     result = _.filter(ds_billing_centers, function(bc) {
       return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name'])
@@ -239,14 +253,14 @@ datasource "ds_users_in_groups" do
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_users_in_groups, $ds_billing_center_users, $ds_billing_centers_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_incident, $ds_users_in_groups, $ds_billing_center_users, $ds_billing_centers_filtered, $ds_applied_policy, $ds_param_incident_csv
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_users_in_groups", "ds_billing_center_users", "ds_billing_centers_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_users_in_groups", "ds_billing_center_users", "ds_billing_centers_filtered", "ds_applied_policy", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -371,7 +385,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

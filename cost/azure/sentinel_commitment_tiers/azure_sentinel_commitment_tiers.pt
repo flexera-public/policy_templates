@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.5.0",
+  version: "0.5.1",
   provider: "Azure",
   service: "Sentinel",
   policy_set: "Commitment Tiers",
@@ -151,6 +151,30 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -322,7 +346,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
@@ -347,6 +371,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+    param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
     var enabled_subscriptions = _.filter(ds_azure_subscriptions, function(sub) {
       return sub["state"] === "Enabled"
     })
@@ -390,7 +417,7 @@ datasource "ds_log_analytics_workspaces" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.OperationalInsights/workspaces"])
     query "api-version", "2023-09-01"
     header "User-Agent", "RS Policies"
@@ -452,7 +479,7 @@ datasource "ds_sentinel_onboarding" do
   iterate $ds_log_analytics_workspaces_normalized
   request do
     auth $auth_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join([ "/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.OperationalInsights/workspaces/", val(iter_item, "name"), "/providers/Microsoft.SecurityInsights/onboardingStates/default" ])
     query "api-version", "2023-02-01"
     header "User-Agent", "RS Policies"
@@ -489,7 +516,7 @@ datasource "ds_sentinel_pricing_scheme" do
   iterate $ds_sentinel_workspaces
   request do
     auth $auth_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.OperationsManagement/solutions/SecurityInsights(", val(iter_item, "name"), ")"])
     query "api-version", "2015-11-01-preview"
     header "User-Agent", "RS Policies"
@@ -529,7 +556,7 @@ end
 datasource "ds_workspace_ingestion_raw" do
   iterate $ds_sentinel_workspaces_with_scheme
   request do
-    run_script $js_workspace_ingestion_raw, iter_item, $param_lookback_days, $param_azure_endpoint
+    run_script $js_workspace_ingestion_raw, iter_item, $param_lookback_days, $ds_param_azure_endpoint
   end
   result do
     encoding "json"
@@ -550,7 +577,7 @@ datasource "ds_workspace_ingestion_raw" do
 end
 
 script "js_workspace_ingestion_raw", type: "javascript" do
-  parameters "workspace", "param_lookback_days", "param_azure_endpoint"
+  parameters "workspace", "param_lookback_days", "ds_param_azure_endpoint"
   result "request"
   code <<-'EOS'
     var query = "Usage | where TimeGenerated > ago(" + param_lookback_days + "d) | where IsBillable == true | summarize DataGB = sum(Quantity) / 1000 by bin(TimeGenerated, 1d) | order by TimeGenerated asc"
@@ -558,7 +585,7 @@ script "js_workspace_ingestion_raw", type: "javascript" do
     request = {
       auth: "auth_azure",
       verb: "POST",
-      host: param_azure_endpoint,
+      host: ds_param_azure_endpoint,
       path: "/subscriptions/" + workspace["subscriptionId"] + "/resourceGroups/" + workspace["resourceGroup"] + "/providers/microsoft.operationalinsights/workspaces/" + workspace["name"] + "/query",
       query_params: { "api-version": "2017-10-01" },
       headers: { "User-Agent": "RS Policies", "Content-Type": "application/json" },
@@ -638,6 +665,9 @@ script "js_workspace_ingestion_rg_filtered", type: "javascript" do
   parameters "ds_workspace_ingestion", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_workspace_ingestion, function(resource) {
         rg = resource['resourceGroup']
@@ -701,11 +731,11 @@ datasource "ds_pricing" do
 end
 
 datasource "ds_sentinel_incident" do
-  run_script $js_sentinel_incident, $ds_workspace_ingestion_rg_filtered, $ds_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $param_incident_csv
+  run_script $js_sentinel_incident, $ds_workspace_ingestion_rg_filtered, $ds_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $ds_param_incident_csv
 end
 
 script "js_sentinel_incident", type: "javascript" do
-  parameters "ds_workspace_ingestion_rg_filtered", "ds_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "param_incident_csv"
+  parameters "ds_workspace_ingestion_rg_filtered", "ds_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
     function formatNumber(number, separator) {
@@ -971,7 +1001,7 @@ script "js_sentinel_incident", type: "javascript" do
 
     var disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
     var empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation.\n\n"
-    var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+    var csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
     result[0]["total_savings"] = savings_message
     result[0]["message"] = message + disclaimer + empty_fields + csv_message
@@ -1098,7 +1128,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

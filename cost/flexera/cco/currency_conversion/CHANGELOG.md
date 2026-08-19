@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v5.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

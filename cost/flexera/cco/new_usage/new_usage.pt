@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.1.4",
+  version: "3.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -112,6 +112,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -196,6 +208,9 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_allow_or_deny = param_bc_allow_or_deny.trim()
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -246,6 +261,8 @@ script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimension = param_dimension.trim()
   result = _.find(ds_dimensions_list, function(item) { return item['id'] == param_dimension })
 
   // If user-specified dimension isn't a valid dimension ID, check for name instead
@@ -346,6 +363,8 @@ script "js_get_bill", type: "javascript" do
   parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -382,14 +401,16 @@ EOS
 end
 
 datasource "ds_new_usage" do
-  run_script $js_new_usage, $ds_current_bill, $ds_previous_bill, $ds_billing_centers, $ds_dimension, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_cost_metric, $param_incident_csv
+  run_script $js_new_usage, $ds_current_bill, $ds_previous_bill, $ds_billing_centers, $ds_dimension, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_cost_metric, $ds_param_incident_csv
 end
 
 script "js_new_usage", type: "javascript" do
-  parameters "ds_current_bill", "ds_previous_bill", "ds_billing_centers", "ds_dimension", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_cost_metric", "param_incident_csv"
+  parameters "ds_current_bill", "ds_previous_bill", "ds_billing_centers", "ds_dimension", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_cost_metric", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -563,7 +584,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.1",
+  version: "0.2.2",
   provider: "Flexera",
   service: "Identity & Access Management",
   policy_set: "Identity & Access Management",
@@ -125,6 +125,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -235,6 +247,9 @@ script "js_api_events_url_filtered", type: "javascript" do
   parameters "ds_api_events", "param_url_allow_or_deny", "param_url_filter_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_url_allow_or_deny = param_url_allow_or_deny.trim()
+  param_url_filter_list = _.compact(_.map(param_url_filter_list, function(item) { return item.trim() }))
   if (param_url_filter_list.length > 0) {
     result = _.filter(ds_api_events, function(event) {
       include_event = false
@@ -261,6 +276,9 @@ script "js_api_events_email_filtered", type: "javascript" do
   parameters "ds_api_events_url_filtered", "param_email_allow_or_deny", "param_email_filter_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_email_allow_or_deny = param_email_allow_or_deny.trim()
+  param_email_filter_list = _.compact(_.map(param_email_filter_list, function(item) { return item.trim() }))
   if (param_email_filter_list.length > 0) {
     result = _.filter(ds_api_events_url_filtered, function(event) {
       include_event = false
@@ -282,6 +300,8 @@ script "js_api_events_status_filtered", type: "javascript" do
   parameters "ds_api_events_email_filtered", "param_response_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_response_type = _.compact(_.map(param_response_type, function(item) { return item.trim() }))
   result = _.filter(ds_api_events_email_filtered, function(event) {
     include_event = false
     code_letter = event['responseCode'].toString().substring(0, 1)
@@ -295,14 +315,14 @@ EOS
 end
 
 datasource "ds_api_events_report" do
-  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back, $param_incident_csv
+  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back, $ds_param_incident_csv
 end
 
 script "js_api_events_report", type: "javascript" do
-  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back", "param_incident_csv"
+  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = _.map(ds_api_events_status_filtered, function(event) {
     return {
@@ -377,7 +397,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

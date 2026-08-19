@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.8.1",
+  version: "0.8.2",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -252,6 +252,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -446,7 +470,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -473,6 +497,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   var result = [];
   if (param_subscriptions_list.length > 0) {
     _.each(ds_azure_subscriptions, function(subscription, idx){
@@ -517,7 +544,7 @@ datasource "ds_databricks_workspaces" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers", "/Microsoft.Databricks", "/workspaces"])
     query "api-version", "2023-02-01"
     header "User-Agent", "RS Policies"
@@ -546,6 +573,9 @@ script "js_databricks_workspaces_region_filtered", type: "javascript" do
   parameters "ds_databricks_workspaces", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var result = [];
   if (param_regions_list.length > 0) {
     result = _.filter(ds_databricks_workspaces, function(item, idx){
@@ -571,6 +601,9 @@ script "js_databricks_workspaces_rg_filtered", type: "javascript" do
   parameters "ds_databricks_workspaces_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_databricks_workspaces_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -601,6 +634,8 @@ script "js_databricks_workspaces_filtered", type: "javascript" do
   parameters "ds_databricks_workspaces_rg_filtered", "param_databricks_workspace_list"
   result "results"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_databricks_workspace_list = _.compact(_.map(param_databricks_workspace_list, function(item) { return item.trim() }))
   var results = []
   if ( param_databricks_workspace_list.length != 0 ) {
     _.each(param_databricks_workspace_list, function(workspace){
@@ -639,6 +674,8 @@ script "js_param_stats_interval", type: "javascript" do
   parameters "param_stats_interval"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_interval = param_stats_interval.trim()
   // Tables to convert human-readable parameter values to their API equivalents
   map = {
     "1 minute": "PT1M",
@@ -784,7 +821,7 @@ datasource "ds_azure_skus" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/skus"])
     query "api-version", "2017-09-01"
     header "User-Agent", "RS Policies"
@@ -811,6 +848,8 @@ script "js_param_stats_threshold", type: "javascript" do
   parameters "param_stats_threshold"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_threshold = param_stats_threshold.trim()
   switch(param_stats_threshold) {
     case "Minimum":
       result = {
@@ -876,11 +915,11 @@ EOS
 end
 
 datasource "ds_requests_azure_databricks_managed_vm_metrics" do
-  run_script $js_requests_azure_databricks_managed_vm_metrics, $ds_virtualmachines_from_bill, $ds_param_stats_interval, $ds_lookback_time_formats, $param_azure_endpoint
+  run_script $js_requests_azure_databricks_managed_vm_metrics, $ds_virtualmachines_from_bill, $ds_param_stats_interval, $ds_lookback_time_formats, $ds_param_azure_endpoint
 end
 
 script "js_requests_azure_databricks_managed_vm_metrics", type: "javascript" do
-  parameters "ds_virtualmachines_from_bill", "ds_param_stats_interval", "ds_lookback_time_formats", "param_azure_endpoint"
+  parameters "ds_virtualmachines_from_bill", "ds_param_stats_interval", "ds_lookback_time_formats", "ds_param_azure_endpoint"
   result "requests"
   code <<-'EOS'
   var requests = [];
@@ -1235,6 +1274,8 @@ script "js_databricks_workspaces_vm_costs", type: "javascript" do
   parameters "iter_item", "ds_top_level_bcs", "ds_lookback_time_formats", "param_databricks_cluster_list", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_databricks_cluster_list = _.compact(_.map(param_databricks_cluster_list, function(item) { return item.trim() }))
   subscription_id = iter_item["managedResourceGroupId"].split("/")[2]
   // Select the resource group name from the managedResourceGroupId and lowercase to match what's provided in Azure Bill Data (RGs are always lowercase)
   resource_group = iter_item["managedResourceGroupId"].split("/")[4].toLowerCase()
@@ -1384,14 +1425,16 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $ds_param_stats_interval, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $ds_param_stats_interval, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback, $ds_param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "ds_param_stats_interval", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "ds_param_stats_interval", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback", "ds_param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_check_both = param_stats_check_both.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -2251,7 +2294,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

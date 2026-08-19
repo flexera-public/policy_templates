@@ -8,7 +8,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "4.1.1",
+  version: "4.1.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -157,6 +157,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -346,6 +358,9 @@ script "js_filter_dimensions", type: "javascript" do
   parameters "ds_dimensions", "ds_billing_centers", "param_dimensions", "param_dimensions_excluded"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimensions = _.compact(_.map(param_dimensions, function(item) { return item.trim() }))
+  param_dimensions_excluded = _.compact(_.map(param_dimensions_excluded, function(item) { return item.trim() }))
   result = { ids: [], names: [], filters: [], bc_filters: [], invalid_ids: [] }
 
   _.each(param_dimensions, function(user_input_dimension, index) {
@@ -421,6 +436,8 @@ script "js_request_variables", type: "javascript" do
   parameters "param_cost_metric", "param_days"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -525,6 +542,11 @@ script "js_filter_anomalies", type: "javascript" do
   parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_min_spend_variance", "param_anomaly_types", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "param_anomaly_sort", "rs_org_id", "rs_project_id", "f1_app_host"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_anomaly_types = param_anomaly_types.trim()
+  param_dimensions = _.compact(_.map(param_dimensions, function(item) { return item.trim() }))
+  param_cost_metric = param_cost_metric.trim()
+  param_anomaly_sort = param_anomaly_sort.trim()
   // Helper to generate a chart URL for the moving average timeseries only
   function generateChartUrl(timeseries) {
     if (!timeseries || !timeseries.moving_average) return '';
@@ -696,14 +718,14 @@ EOS
 end
 
 datasource "ds_filter_anomalies_result" do
-  run_script $js_filter_anomalies_result, $ds_filter_anomalies, $ds_currency, $ds_applied_policy, $param_incident_csv
+  run_script $js_filter_anomalies_result, $ds_filter_anomalies, $ds_currency, $ds_applied_policy, $ds_param_incident_csv
 end
 
 script "js_filter_anomalies_result", type: "javascript" do
-  parameters "ds_filter_anomalies", "ds_currency", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_filter_anomalies", "ds_currency", "ds_applied_policy", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   var result = ds_filter_anomalies['anomalies']
   // Append the result metadata to the first result item so we can access it later
   if (result.length > 0) {
@@ -831,7 +853,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

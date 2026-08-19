@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.1",
+  version: "0.2.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -68,6 +68,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -153,14 +165,16 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_billing_centers, $ds_applied_policy, $param_incident_csv, $param_incident_data_table
+  run_script $js_report, $ds_billing_centers, $ds_applied_policy, $ds_param_incident_csv, $param_incident_data_table
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_billing_centers", "ds_applied_policy", "param_incident_csv", "param_incident_data_table"
+  parameters "ds_billing_centers", "ds_applied_policy", "ds_param_incident_csv", "param_incident_data_table"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_incident_data_table = param_incident_data_table.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   function build_data_table(items) {
     header = "| Billing Center ID | Billing Center Name | Description | Created At | Updated At | Parent Billing Center ID | Parent Billing Center Name |"
@@ -273,7 +287,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

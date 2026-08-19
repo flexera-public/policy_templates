@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.9.0",
+  version: "4.9.1",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
@@ -169,6 +169,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -286,6 +298,9 @@ script "js_google_projects", type: "javascript" do
   parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_ignore_sys = param_projects_ignore_sys.trim()
+  param_projects_ignore_app = param_projects_ignore_app.trim()
   query = []
   if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
   if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
@@ -313,6 +328,9 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -337,6 +355,9 @@ script "js_no_projects_error", type: "javascript" do
   parameters "ds_google_projects", "ds_applied_policy", "param_recommendation_scope", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_recommendation_scope = param_recommendation_scope.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   result = []
 
   var policy_name = "Google Policy"
@@ -385,6 +406,9 @@ script "js_google_regions_filtered", type: "javascript" do
   parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_google_regions, function(region) {
       include_region = _.contains(param_regions_list, region['region'])
@@ -409,6 +433,8 @@ script "js_billing_account_scope_enabled", type: "javascript" do
   parameters "param_recommendation_scope"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_recommendation_scope = param_recommendation_scope.trim()
   result = []
   if (param_recommendation_scope != "Project") {
     result = [{}]
@@ -443,6 +469,8 @@ script "js_recommender_requests", type: "javascript" do
   parameters "ds_google_regions_filtered", "param_recommendation_scope"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_recommendation_scope = param_recommendation_scope.trim()
   result = []
 
   if (param_recommendation_scope != "Billing Account") {
@@ -517,6 +545,9 @@ script "js_billing_account_recommender_requests", type: "javascript" do
   parameters "ds_google_billing_accounts", "ds_google_regions_filtered", "ds_recommender_requests", "param_recommendation_scope", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_recommendation_scope = param_recommendation_scope.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   result = []
 
   if (param_recommendation_scope != "Project") {
@@ -691,14 +722,18 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_recommendations_all, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm, $param_incident_csv, $param_recommendation_scope
+  run_script $js_recommendations_incident, $ds_recommendations_all, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm, $ds_param_incident_csv, $param_recommendation_scope
 end
 
 script "js_recommendations_incident", type: "javascript" do
-  parameters "ds_recommendations_all", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm", "param_incident_csv", "param_recommendation_scope"
+  parameters "ds_recommendations_all", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm", "ds_param_incident_csv", "param_recommendation_scope"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_term = param_term.trim()
+  param_algorithm = param_algorithm.trim()
+  param_recommendation_scope = param_recommendation_scope.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1001,7 +1036,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

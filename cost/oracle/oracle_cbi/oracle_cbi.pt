@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "3.3.5",
+  version: "3.3.6",
   provider: "Oracle",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -133,6 +133,54 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_bucket" do
+  run_script $js_param_bucket, $param_bucket
+end
+
+script "js_param_bucket", type: "javascript" do
+  parameters "param_bucket"
+  result "result"
+  code <<-'EOS'
+  result = param_bucket.trim()
+EOS
+end
+
+datasource "ds_param_cbi_endpoint" do
+  run_script $js_param_cbi_endpoint, $param_cbi_endpoint
+end
+
+script "js_param_cbi_endpoint", type: "javascript" do
+  parameters "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_cbi_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_namespace" do
+  run_script $js_param_namespace, $param_namespace
+end
+
+script "js_param_namespace", type: "javascript" do
+  parameters "param_namespace"
+  result "result"
+  code <<-'EOS'
+  result = param_namespace.trim()
+EOS
+end
+
+datasource "ds_param_region" do
+  run_script $js_param_region, $param_region
+end
+
+script "js_param_region", type: "javascript" do
+  parameters "param_region"
+  result "result"
+  code <<-'EOS'
+  result = param_region.trim()
+EOS
+end
+
 datasource "ds_dates" do
   run_script $js_dates, $param_billing_period, $param_specific_period
 end
@@ -141,6 +189,9 @@ script "js_dates", type: "javascript" do
   parameters "param_billing_period", "param_specific_period"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_billing_period = param_billing_period.trim()
+  param_specific_period = param_specific_period.trim()
   result = { period: param_specific_period }
 
   if (param_billing_period != 'Specific Month') {
@@ -164,7 +215,7 @@ datasource "ds_existing_bill_uploads" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    query "billConnectId", $param_cbi_endpoint
+    query "billConnectId", $ds_param_cbi_endpoint
     query "billingPeriod", val($ds_dates, 'period')
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
@@ -267,7 +318,7 @@ datasource "ds_create_bill_upload" do
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
-    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billConnectId", $ds_param_cbi_endpoint
     body_field "billingPeriod", val($ds_dates, 'period')
   end
   result do
@@ -307,7 +358,7 @@ end
 
 datasource "ds_cost_object_list" do
   request do
-    run_script $js_cost_object_list, $param_region, $param_namespace, $param_bucket, $param_prefix
+    run_script $js_cost_object_list, $ds_param_region, $ds_param_namespace, $ds_param_bucket, $param_prefix
   end
   result do
     encoding "json"
@@ -322,17 +373,19 @@ datasource "ds_cost_object_list" do
 end
 
 script "js_cost_object_list", type: "javascript" do
-  parameters "param_region", "param_namespace", "param_bucket", "param_prefix"
+  parameters "ds_param_region", "ds_param_namespace", "ds_param_bucket", "param_prefix"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_prefix = param_prefix.trim()
   query_params = { fields: "name,etag,md5,timeCreated,timeModified" }
   if (param_prefix != "") { query_params["prefix"] = param_prefix }
 
   var request = {
     auth: "auth_oracle",
     pagination: "pagination_oracle",
-    host: [ "objectstorage.", param_region, ".oraclecloud.com" ].join(''),
-    path: [ "/n/", param_namespace, "/b/", param_bucket, "/o/" ].join(''),
+    host: [ "objectstorage.", ds_param_region, ".oraclecloud.com" ].join(''),
+    path: [ "/n/", ds_param_namespace, "/b/", ds_param_bucket, "/o/" ].join(''),
     query_params: query_params
   }
 EOS
@@ -381,8 +434,8 @@ datasource "ds_cost_objects" do
   iterate $ds_cost_object_list_filtered
   request do
     auth $auth_oracle
-    host join(["objectstorage.", $param_region, ".oraclecloud.com"])
-    path join(["/n/", $param_namespace, "/b/", $param_bucket, "/o/", val(iter_item, "name")])
+    host join(["objectstorage.", $ds_param_region, ".oraclecloud.com"])
+    path join(["/n/", $ds_param_namespace, "/b/", $ds_param_bucket, "/o/", val(iter_item, "name")])
     header "User-Agent", "RS Policies"
   end
   result do

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.8",
+  version: "0.2.9",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Common Bill Ingestion",
@@ -95,6 +95,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_bill_connect_id" do
+  run_script $js_param_bill_connect_id, $param_bill_connect_id
+end
+
+script "js_param_bill_connect_id", type: "javascript" do
+  parameters "param_bill_connect_id"
+  result "result"
+  code <<-'EOS'
+  result = param_bill_connect_id.trim()
+EOS
+end
 
 # Get list of Cloud Vendor Account Names in Flexera Org
 datasource "ds_billing_centers" do
@@ -206,6 +218,9 @@ script "js_spotinst_accounts_filtered", type: "javascript" do
   parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_spotinst_accounts_allow_or_deny = param_spotinst_accounts_allow_or_deny.trim()
+  param_spotinst_accounts_list = _.compact(_.map(param_spotinst_accounts_list, function(item) { return item.trim() }))
   if (param_spotinst_accounts_list.length > 0) {
     result = _.filter(ds_spotinst_accounts, function(subscription) {
       include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
@@ -286,6 +301,10 @@ script "js_dates", type: "javascript" do
   parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_period = param_period.trim()
+    param_period_specific_month = param_period_specific_month.trim()
+    param_reallocation_granularity = param_reallocation_granularity.trim()
     var today = new Date()
     // Switch or case statement in javascript for param_period values
     switch(param_period) {
@@ -687,12 +706,12 @@ end
 
 datasource "ds_bill_connect" do
   request do
-    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $param_bill_connect_id, rs_org_id
+    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $ds_param_bill_connect_id, rs_org_id
   end
 end
 
 script "js_bill_connect", type: "javascript" do
-  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
+  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "ds_param_bill_connect_id", "rs_org_id"
   result "request"
   code <<-'EOS'
 
@@ -703,7 +722,7 @@ script "js_bill_connect", type: "javascript" do
     host: ds_flexera_api_hosts["flexera"],
     path:  "/finops-onboarding/v1/orgs/" + rs_org_id + "/bill-connects/cbi",
     body_fields: {
-      "billIdentifier": param_bill_connect_id.split('cbi-oi-optima-')[1],
+      "billIdentifier": ds_param_bill_connect_id.split('cbi-oi-optima-')[1],
       "integrationId": "cbi-oi-optima",
       "name": "Kubernetes",
       "params": {
@@ -716,15 +735,15 @@ script "js_bill_connect", type: "javascript" do
     }
   }
 
-  // Check if ds_existing_bill_connects contains bill connect matching param_bill_connect_id
+  // Check if ds_existing_bill_connects contains bill connect matching ds_param_bill_connect_id
   existing_bc = _.find(ds_existing_bill_connects, function(bc) {
-    return bc.id == param_bill_connect_id
+    return bc.id == ds_param_bill_connect_id
   })
   // If we did, override the POST with a PATCH instead
   // PATCH used instead of GET to mitigate/prevent drift with the Bill Connect configuration from what we expect
   if (_.isObject(existing_bc)) {
     request["verb"] = "PATCH"
-    request["path"] = request["path"] + "/" + param_bill_connect_id
+    request["path"] = request["path"] + "/" + ds_param_bill_connect_id
   }
 
 EOS
@@ -824,7 +843,7 @@ datasource "ds_existing_bill_uploads" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    query "billConnectId", $param_bill_connect_id
+    query "billConnectId", $ds_param_bill_connect_id
     query "billingPeriod", val($ds_dates, "period")
     header "User-Agent", "RS Policies"
   end
@@ -893,12 +912,12 @@ end
 
 datasource "ds_cbi_create_bill_upload" do
   request do
-    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $param_bill_connect_id, rs_org_id, rs_optima_host
+    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $ds_param_bill_connect_id, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_create_bill_upload", type: "javascript" do
-  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "ds_param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   var request = {
@@ -907,7 +926,7 @@ script "js_cbi_create_bill_upload", type: "javascript" do
     host: rs_optima_host,
     path: "/optima/orgs/" + rs_org_id + "/billUploads",
     body_fields: {
-      "billConnectId": param_bill_connect_id,
+      "billConnectId": ds_param_bill_connect_id,
       "billingPeriod": ds_dates['period']
     },
     headers: {

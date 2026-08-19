@@ -8,7 +8,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.2.1",
+  version: "3.2.2",
   provider: "Flexera",
   service: "SaaS Manager",
   policy_set: "",
@@ -76,6 +76,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -176,6 +188,8 @@ script "js_managed_apps_active", type: "javascript" do
   parameters "ds_managed_apps", "param_applications"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_applications = _.compact(_.map(param_applications, function(item) { return item.trim() }))
   if (param_applications.length > 0) {
     result = _.filter(ds_managed_apps, function(app) {
       include_app = _.contains(param_applications, app['appName']) || _.contains(param_applications, app['appId'])
@@ -304,14 +318,14 @@ EOS
 end
 
 datasource "ds_inactive_users" do
-  run_script $js_inactive_users, $ds_integrated_apps_users, $ds_applied_policy, $param_num_days, $param_incident_csv
+  run_script $js_inactive_users, $ds_integrated_apps_users, $ds_applied_policy, $param_num_days, $ds_param_incident_csv
 end
 
 script "js_inactive_users", type: "javascript" do
-  parameters "ds_integrated_apps_users", "ds_applied_policy", "param_num_days", "param_incident_csv"
+  parameters "ds_integrated_apps_users", "ds_applied_policy", "param_num_days", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = []
   today = new Date()
 
@@ -401,7 +415,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

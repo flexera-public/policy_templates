@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.7.0",
+  version: "6.7.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -298,6 +298,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -454,6 +478,8 @@ script "js_stats_interval", type: "javascript" do
   parameters "param_stats_interval"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_interval = param_stats_interval.trim()
   // Tables to convert human-readable parameter values to their API equivalents
   interval_table = {
     "1 Minute": "PT1M",
@@ -477,7 +503,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -505,6 +531,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -545,7 +574,7 @@ datasource "ds_azure_instances" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
@@ -578,7 +607,7 @@ datasource "ds_azure_instance_statuses" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2024-03-01"
     query "statusOnly", "true"
@@ -642,6 +671,9 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -718,6 +750,9 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -738,6 +773,9 @@ script "js_azure_instances_rg_filtered", type: "javascript" do
   parameters "azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(azure_instances_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -768,6 +806,8 @@ script "js_azure_instances_databricks_filtered", type: "javascript" do
   parameters "ds_azure_instances_rg_filtered", "param_exclude_databricks"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclude_databricks = param_exclude_databricks.trim()
   if (param_exclude_databricks == "Yes") {
     result = _.filter(ds_azure_instances_rg_filtered, function(vm) {
       imageOffer = ""
@@ -792,6 +832,8 @@ script "js_azure_instances_status_filtered", type: "javascript" do
   parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclude_stopped = param_exclude_stopped.trim()
   if (param_exclude_stopped == "Yes") {
     result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
       status_codes = _.pluck(vm['statuses'], 'code')
@@ -850,7 +892,7 @@ datasource "ds_azure_metrics_batch" do
   batch true
   iterate $ds_azure_instances_batch
   request do
-    run_script $js_azure_metrics_batch, iter_item, $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_metrics_batch, iter_item, $ds_stats_interval, $ds_param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -862,7 +904,7 @@ datasource "ds_azure_metrics_batch" do
 end
 
 script "js_azure_metrics_batch", type: "javascript" do
-  parameters "ds_azure_instances_batch", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
+  parameters "ds_azure_instances_batch", "ds_stats_interval", "ds_param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-'EOS'
   end_date = new Date()
@@ -878,7 +920,7 @@ script "js_azure_metrics_batch", type: "javascript" do
   start_date.setMinutes(0)
 
   function get_host_by_region(region) {
-    if (param_azure_endpoint === "management.chinacloudapi.cn") {
+    if (ds_param_azure_endpoint === "management.chinacloudapi.cn") {
       // China region has different endpoint for Metric getBatch API
       return region + ".metrics.monitor.azure.cn";
     }
@@ -961,6 +1003,8 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
   parameters "ds_azure_instances_metrics", "param_stats_lookback", "param_stats_threshold", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_threshold = param_stats_threshold.trim()
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
     // array needs to be sorted to select based on percentile
@@ -1353,7 +1397,7 @@ datasource "ds_azure_instance_size_details" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
     query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
@@ -1456,14 +1500,20 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_rg_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_azure_local_disk_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_local_disk_filter, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_rg_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_azure_local_disk_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_local_disk_filter, $ds_param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_rg_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_azure_local_disk_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_local_disk_filter", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_rg_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_azure_local_disk_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_local_disk_filter", "ds_param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_stats_check_both = param_stats_check_both.trim()
+  param_stats_threshold = param_stats_threshold.trim()
+  param_exclude_databricks = param_exclude_databricks.trim()
+  param_downsize_multiple = param_downsize_multiple.trim()
+  param_local_disk_filter = param_local_disk_filter.trim()
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
@@ -2275,7 +2325,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

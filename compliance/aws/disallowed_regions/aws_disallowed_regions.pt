@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.2.0",
+  version: "5.2.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Disallowed Regions",
@@ -115,6 +115,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -358,6 +370,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_disallow_or_allow"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_disallow_or_allow = param_regions_disallow_or_allow.trim()
   result = []
 
   // Inverted from other policies since we're looking for instances outside of these regions
@@ -435,6 +450,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_disallow_or_allow", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_disallow_or_allow = param_regions_disallow_or_allow.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = []
 
   var region_responses = {}
@@ -496,6 +514,8 @@ script "js_instances", type: "javascript" do
   parameters "ds_instance_sets", "param_exclusion_tags"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   result = []
 
   _.each(ds_instance_sets, function(item) {
@@ -530,14 +550,17 @@ EOS
 end
 
 datasource "ds_instances_in_bad_regions" do
-  run_script $js_instances_in_bad_regions, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_regions_disallow_or_allow, $param_regions_list, $param_incident_csv
+  run_script $js_instances_in_bad_regions, $ds_instances, $ds_aws_account, $ds_applied_policy, $param_regions_disallow_or_allow, $param_regions_list, $ds_param_incident_csv
 end
 
 script "js_instances_in_bad_regions", type: "javascript" do
-  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_regions_disallow_or_allow", "param_regions_list", "param_incident_csv"
+  parameters "ds_instances", "ds_aws_account", "ds_applied_policy", "param_regions_disallow_or_allow", "param_regions_list", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_disallow_or_allow = param_regions_disallow_or_allow.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = _.map(ds_instances, function(instance) {
     tags = []
@@ -694,7 +717,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

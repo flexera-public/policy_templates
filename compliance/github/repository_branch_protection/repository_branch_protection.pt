@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.2",
   provider: "GitHub",
   service: "Git",
   policy_set: "",
@@ -168,6 +168,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -232,7 +244,9 @@ end
 script "js_org_list", type: "javascript" do
   parameters "param_orgs"
   result "result"
-  code "result = param_orgs"
+  code <<-'EOS'
+  result = _.compact(_.map(param_orgs, function(item) { return item.trim() }))
+EOS
 end
 
 datasource "ds_github_orgs" do
@@ -297,6 +311,9 @@ script "js_github_org_repos_filtered", type: "javascript" do
   parameters "ds_github_org_repos", "param_repos_allow_or_deny", "param_repos_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_repos_allow_or_deny = param_repos_allow_or_deny.trim()
+  param_repos_list = _.compact(_.map(param_repos_list, function(item) { return item.trim() }))
   if (param_repos_list.length > 0) {
     result = _.filter(ds_github_org_repos, function(repo) {
       include_repo = _.contains(param_repos_list, repo['name'])
@@ -317,6 +334,9 @@ script "js_github_query", type: "javascript" do
   parameters "param_orgs", "param_branches"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_orgs = _.compact(_.map(param_orgs, function(item) { return item.trim() }))
+  param_branches = _.compact(_.map(param_branches, function(item) { return item.trim() }))
   org_names = _.map(param_orgs, function(org) { return 'org:' + org }).join(' ')
 
   branch_names = _.map(param_branches, function(branch) {
@@ -434,13 +454,16 @@ EOS
 end
 
 datasource "ds_invalid_repo_branches" do
-  run_script $js_invalid_repo_branches, $ds_github_repos_combined, $param_branches, $param_include_default_branch, $param_incident_csv
+  run_script $js_invalid_repo_branches, $ds_github_repos_combined, $param_branches, $param_include_default_branch, $ds_param_incident_csv
 end
 
 script "js_invalid_repo_branches", type: "javascript" do
-  parameters "ds_github_repos_combined", "param_branches", "param_include_default_branch", "param_incident_csv"
+  parameters "ds_github_repos_combined", "param_branches", "param_include_default_branch", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_branches = _.compact(_.map(param_branches, function(item) { return item.trim() }))
+  param_include_default_branch = param_include_default_branch.trim()
   result = []
 
   _.each(ds_github_repos_combined, function(repo) {
@@ -467,7 +490,7 @@ script "js_invalid_repo_branches", type: "javascript" do
     })
   })
 
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
@@ -520,7 +543,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

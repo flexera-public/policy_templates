@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1.8",
+  version: "0.1.9",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -60,6 +60,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_effective_date" do
+  run_script $js_param_effective_date, $param_effective_date
+end
+
+script "js_param_effective_date", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -317,13 +329,16 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_s3_usage_types, $ds_existing_rbds, $param_rbd_id, $param_rbd_name, $param_effective_date
+  run_script $js_rbds, $ds_s3_usage_types, $ds_existing_rbds, $param_rbd_id, $param_rbd_name, $ds_param_effective_date
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_s3_usage_types", "ds_existing_rbds", "param_rbd_id", "param_rbd_name", "param_effective_date"
+  parameters "ds_s3_usage_types", "ds_existing_rbds", "param_rbd_id", "param_rbd_name", "ds_param_effective_date"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_id = param_rbd_id.trim()
+  param_rbd_name = param_rbd_name.trim()
   verb = "POST"
   if (_.contains(_.pluck(ds_existing_rbds, 'id'), param_rbd_id)) { verb = "PATCH" }
 
@@ -349,7 +364,7 @@ script "js_rbds", type: "javascript" do
     id: param_rbd_id,
     name: param_rbd_name,
     verb: verb,
-    effective_at: param_effective_date,
+    effective_at: ds_param_effective_date,
     rules: rules
   }]
 EOS

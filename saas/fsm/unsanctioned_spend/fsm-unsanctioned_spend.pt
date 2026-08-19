@@ -8,7 +8,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.2.1",
+  version: "3.2.2",
   provider: "Flexera",
   service: "SaaS Manager",
   policy_set: "",
@@ -75,6 +75,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -180,14 +192,16 @@ EOS
 end
 
 datasource "ds_cleanup_expenses" do
-  run_script $js_cleanup_expenses, $ds_unsanctioned, $ds_applied_policy, $param_days, $param_unsanctioned_apps, $param_incident_csv
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $ds_applied_policy, $param_days, $param_unsanctioned_apps, $ds_param_incident_csv
 end
 
 script "js_cleanup_expenses", type: "javascript" do
-  parameters "ds_unsanctioned", "ds_applied_policy", "param_days", "param_unsanctioned_apps", "param_incident_csv"
+  parameters "ds_unsanctioned", "ds_applied_policy", "param_days", "param_unsanctioned_apps", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_unsanctioned_apps = _.compact(_.map(param_unsanctioned_apps, function(item) { return item.trim() }))
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = []
   date = new Date()
   date = date.setHours(param_days * -24)
@@ -263,7 +277,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

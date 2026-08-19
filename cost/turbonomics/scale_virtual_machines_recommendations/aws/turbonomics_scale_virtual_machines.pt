@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.6.9",
+  version: "0.6.10",
   provider: "AWS",
   source: "Turbonomic",
   service: "Compute",
@@ -83,10 +83,34 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_turbonomic_audience" do
+  run_script $js_param_turbonomic_audience, $param_turbonomic_audience
+end
+
+script "js_param_turbonomic_audience", type: "javascript" do
+  parameters "param_turbonomic_audience"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_audience.trim()
+EOS
+end
+
+datasource "ds_param_turbonomic_endpoint" do
+  run_script $js_param_turbonomic_endpoint, $param_turbonomic_endpoint
+end
+
+script "js_param_turbonomic_endpoint", type: "javascript" do
+  parameters "param_turbonomic_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_endpoint.trim()
+EOS
+end
+
 #get turbonomic token
 datasource "ds_get_turbonomic_token" do
   request do
-    run_script $js_get_turbonomic_token, $param_turbonomic_endpoint, $param_turbonomic_audience
+    run_script $js_get_turbonomic_token, $ds_param_turbonomic_endpoint, $ds_param_turbonomic_audience
   end
   result do
     encoding "json"
@@ -97,7 +121,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint
+    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $ds_param_turbonomic_endpoint
   end
   result do
     encoding "json"
@@ -125,7 +149,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, val($ds_get_turbonomic_token, "access_token"), $ds_get_turbonomic_recommendations, $param_turbonomic_endpoint
+    run_script $js_get_action_details, val($ds_get_turbonomic_token, "access_token"), $ds_get_turbonomic_recommendations, $ds_param_turbonomic_endpoint
   end
   result do
     encoding "json"
@@ -136,7 +160,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint, $param_provider
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $ds_param_turbonomic_endpoint, $param_provider
   end
   result do
     encoding "json"
@@ -149,13 +173,13 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_action_details, $ds_get_business_units, $param_provider, $param_turbonomic_endpoint
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_action_details, $ds_get_business_units, $param_provider, $ds_param_turbonomic_endpoint
 end
 
 datasource "ds_get_stats" do
   iterate $ds_filtered_turbonomic_recommendations
   request do
-    run_script $js_get_stats, iter_item, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_stats, iter_item, $ds_param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -225,6 +249,8 @@ script "js_get_business_units", type: "javascript" do
   parameters "access_token", "turbonomic_endpoint", "param_provider"
   result "request"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_provider = param_provider.trim()
     var providers = {
       "AWS":"AWS",
       "Azure Subscription":"AZURE",
@@ -270,9 +296,11 @@ EOS
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
-  parameters "ds_get_turbonomic_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider", "param_turbonomic_endpoint"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider", "ds_param_turbonomic_endpoint"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_provider = param_provider.trim()
     var instances = []
     var monthlySavings = 0.0
     function getRiCoverage(actionDetails, action) {
@@ -349,7 +377,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         }
         vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
         monthlySavings = monthlySavings + vm.savings
-        vm.url = "System name: " + vm.resourceName  + " || https://" + param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
+        vm.url = "System name: " + vm.resourceName  + " || https://" + ds_param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
         vm.resourceType = vm.currentResourceType
         instances.push(vm)
       }

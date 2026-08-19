@@ -8,7 +8,7 @@ category "Compliance"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "3.1.3",
+  version: "3.1.4",
   provider: "AWS",
   service: "Organization",
   policy_set: "",
@@ -96,6 +96,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -266,14 +278,16 @@ EOS
 end
 
 datasource "ds_filter_accounts" do
-  run_script $js_filter_accounts, $ds_org_accounts_with_policies, $ds_service_control_policies, $ds_applied_policy, $param_policy_names, $param_incident_csv
+  run_script $js_filter_accounts, $ds_org_accounts_with_policies, $ds_service_control_policies, $ds_applied_policy, $param_policy_names, $ds_param_incident_csv
 end
 
 script "js_filter_accounts", type: "javascript" do
-  parameters "ds_org_accounts_with_policies", "ds_service_control_policies", "ds_applied_policy", "param_policy_names", "param_incident_csv"
+  parameters "ds_org_accounts_with_policies", "ds_service_control_policies", "ds_applied_policy", "param_policy_names", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_policy_names = _.compact(_.map(param_policy_names, function(item) { return item.trim() }))
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   policies_to_check = _.filter(ds_service_control_policies, function(policy) {
     return _.contains(param_policy_names, policy["name"])
@@ -375,7 +389,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

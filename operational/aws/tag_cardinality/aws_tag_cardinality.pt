@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.3.3",
+  version: "3.3.4",
   provider: "AWS",
   service: "Tags",
   policy_set: "Tag Cardinality",
@@ -115,6 +115,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -244,6 +256,9 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -334,19 +349,19 @@ end
 
 datasource "ds_aws_accounts_tag_list" do
   batch true
-  run_script $js_tag_lister, $ds_aws_accounts_sorted, $param_incident_csv, "Account"
+  run_script $js_tag_lister, $ds_aws_accounts_sorted, $ds_param_incident_csv, "Account"
 end
 
 datasource "ds_aws_resources_tag_list" do
   batch true
-  run_script $js_tag_lister, $ds_aws_resources_sorted, $param_incident_csv, "Resource"
+  run_script $js_tag_lister, $ds_aws_resources_sorted, $ds_param_incident_csv, "Resource"
 end
 
 script "js_tag_lister", type: "javascript" do
-  parameters "tagged_list", "param_incident_csv", "tag_type"
+  parameters "tagged_list", "ds_param_incident_csv", "tag_type"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   tags = {}
   tag_stats = []
@@ -416,6 +431,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = [];
 
   var region_responses = {};
@@ -526,7 +544,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

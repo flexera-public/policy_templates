@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "AWS",
-  version: "0.4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.4.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -215,6 +215,18 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_param_combined_incident_csv" do
+  run_script $js_param_combined_incident_csv, $param_combined_incident_csv
+end
+
+script "js_param_combined_incident_csv", type: "javascript" do
+  parameters "param_combined_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_combined_incident_csv.trim()
+EOS
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -429,6 +441,9 @@ script "js_make_billing_center_request", type: "javascript" do
   parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimension_filter_includes = _.compact(_.map(param_dimension_filter_includes, function(item) { return item.trim() }))
+  param_dimension_filter_excludes = _.compact(_.map(param_dimension_filter_excludes, function(item) { return item.trim() }))
 
   billing_centers_formatted = []
 
@@ -716,6 +731,9 @@ script "js_take_in_parameters", type: "javascript" do
   parameters "ds_get_aws_accounts", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_template_source = param_template_source.trim()
+  param_policy_schedule = param_policy_schedule.trim()
   // Convert schedule label to iCal RRULE frequency string
   var frequency = "FREQ=" + param_policy_schedule.toUpperCase()
   if (param_policy_schedule.toLowerCase() == "15 minutes") {
@@ -1398,7 +1416,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_combined_incident_email do
-    attach_export_table $param_combined_incident_csv
+    attach_export_table $ds_param_combined_incident_csv
     body_table_max_rows $param_combined_incident_table_size
   end
 end

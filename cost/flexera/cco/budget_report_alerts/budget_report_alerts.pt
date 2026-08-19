@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.7.0",
+  version: "3.7.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -123,6 +123,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -219,6 +231,8 @@ script "js_filters", type: "javascript" do
   parameters "ds_dimensions", "param_filter"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_filter = _.compact(_.map(param_filter, function(item) { return item.trim() }))
   result = {}
   dimensions = _.invert(ds_dimensions)
 
@@ -264,6 +278,8 @@ script "js_filtered_budgets", type: "javascript" do
   parameters "ds_budgets", "param_budget_name_id"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_budget_name_id = param_budget_name_id.trim()
   current_month = new Date().toISOString().substring(0, 7)
 
   result = _.filter(ds_budgets, function(budget) {
@@ -297,6 +313,9 @@ script "js_reports", type: "javascript" do
   parameters "budget", "param_use_groups", "param_unbudgeted", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_use_groups = param_use_groups.trim()
+  param_unbudgeted = param_unbudgeted.trim()
   current = new Date()
   start_date = current.getFullYear() + '-' + ('0' + (current.getMonth() + 1)).slice(-2)
   current.setMonth(current.getMonth() + 1)
@@ -329,6 +348,8 @@ script "js_filtered_reports", type: "javascript" do
   parameters "ds_reports", "ds_filters", "param_use_groups"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_use_groups = param_use_groups.trim()
   if (param_use_groups == "Summarized" || _.isEmpty(ds_filters)) {
     result = ds_reports
   } else {
@@ -375,13 +396,18 @@ EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, $param_incident_data_table, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $ds_param_incident_csv, $param_incident_data_table, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "param_incident_data_table", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "ds_param_incident_csv", "param_incident_data_table", "f1_app_host"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_type = param_type.trim()
+  param_budget_name_id = param_budget_name_id.trim()
+  param_filter = _.compact(_.map(param_filter, function(item) { return item.trim() }))
+  param_incident_data_table = param_incident_data_table.trim()
   function convert_bc_name(id) {
     return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
   }
@@ -461,7 +487,7 @@ script "js_aggregated", type: "javascript" do
     forecasted: [],
   }
 
-  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  var csv_message = ds_param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   if (!ds_filtered_reports || !ds_filtered_reports.length) { result['invalid'].push(param_budget_name_id) }
 
@@ -732,7 +758,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send budget alert email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

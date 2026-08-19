@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Auto Scaling Recommendations",
@@ -199,6 +199,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -412,6 +424,9 @@ script "js_regions", type: "javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
   allow_deny_test = { "Allow": true, "Deny": false }
   if (param_regions_list.length > 0) {
     result = _.filter(ds_describe_regions, function(item) {
@@ -544,6 +559,10 @@ script "js_aws_asgs_filtered", type: "javascript" do
   parameters "ds_aws_asgs_raw", "param_stats_lookback", "param_min_age_days", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_findings"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
+  param_findings = _.compact(_.map(param_findings, function(item) { return item.trim() }))
   // If only finding #4 (group metrics disabled) is selected, no per-ASG metric/activity
   // data is needed. Skip the downstream API calls entirely.
   needs_metrics = _.contains(param_findings, "Fixed-size ASG") || _.contains(param_findings, "Never Moved Off Floor") || _.contains(param_findings, "Over-provisioned Floor")
@@ -960,6 +979,9 @@ script "js_asg_processed", type: "javascript" do
   parameters "ds_aws_asgs_raw", "ds_aws_scaling_policies", "ds_aws_scaling_activities", "ds_cloudwatch_data_sorted", "ds_instance_costs_grouped", "param_stats_lookback", "param_min_age_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
   // Build tag-exclusion comparators (standard catalog pattern)
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) { return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item } }
@@ -1183,19 +1205,21 @@ end
 ###############################################################################
 
 datasource "ds_finding_fixed_size" do
-  run_script $js_finding_fixed_size, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_findings, $param_incident_csv
+  run_script $js_finding_fixed_size, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_findings, $ds_param_incident_csv
 end
 
 script "js_finding_fixed_size", type: "javascript" do
-  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_findings", "param_incident_csv"
+  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_findings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_findings = _.compact(_.map(param_findings, function(item) { return item.trim() }))
   function fmt(n) {
     if (n == null || n == undefined || isNaN(n)) { return 'n/a' }
     return (Math.round(n * 100) / 100).toString()
   }
 
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
   result = []
   total_spend = 0.0
 
@@ -1276,19 +1300,21 @@ EOS
 end
 
 datasource "ds_finding_never_moved" do
-  run_script $js_finding_never_moved, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_findings, $param_incident_csv
+  run_script $js_finding_never_moved, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_findings, $ds_param_incident_csv
 end
 
 script "js_finding_never_moved", type: "javascript" do
-  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_findings", "param_incident_csv"
+  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_findings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_findings = _.compact(_.map(param_findings, function(item) { return item.trim() }))
   function fmt(n) {
     if (n == null || n == undefined || isNaN(n)) { return 'n/a' }
     return (Math.round(n * 100) / 100).toString()
   }
 
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
   result = []
   total_spend = 0.0
 
@@ -1384,19 +1410,21 @@ EOS
 end
 
 datasource "ds_finding_overprovisioned" do
-  run_script $js_finding_overprovisioned, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_floor_headroom_ratio, $param_floor_cpu_threshold, $param_findings, $param_incident_csv
+  run_script $js_finding_overprovisioned, $ds_asg_processed, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_floor_headroom_ratio, $param_floor_cpu_threshold, $param_findings, $ds_param_incident_csv
 end
 
 script "js_finding_overprovisioned", type: "javascript" do
-  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_floor_headroom_ratio", "param_floor_cpu_threshold", "param_findings", "param_incident_csv"
+  parameters "ds_asg_processed", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_floor_headroom_ratio", "param_floor_cpu_threshold", "param_findings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_findings = _.compact(_.map(param_findings, function(item) { return item.trim() }))
   function fmt(n) {
     if (n == null || n == undefined || isNaN(n)) { return 'n/a' }
     return (Math.round(n * 100) / 100).toString()
   }
 
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
   result = []
   total_spend = 0.0
 
@@ -1492,14 +1520,16 @@ EOS
 end
 
 datasource "ds_finding_metrics_disabled" do
-  run_script $js_finding_metrics_disabled, $ds_asg_processed, $ds_aws_account, $ds_applied_policy, $param_findings, $param_incident_csv
+  run_script $js_finding_metrics_disabled, $ds_asg_processed, $ds_aws_account, $ds_applied_policy, $param_findings, $ds_param_incident_csv
 end
 
 script "js_finding_metrics_disabled", type: "javascript" do
-  parameters "ds_asg_processed", "ds_aws_account", "ds_applied_policy", "param_findings", "param_incident_csv"
+  parameters "ds_asg_processed", "ds_aws_account", "ds_applied_policy", "param_findings", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_findings = _.compact(_.map(param_findings, function(item) { return item.trim() }))
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
   result = []
 
   if (!_.contains(param_findings, "Group Metrics Collection Disabled")) { ds_asg_processed = [] }
@@ -1561,6 +1591,9 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var errors = []
 
   var region_responses = {}
@@ -2039,7 +2072,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

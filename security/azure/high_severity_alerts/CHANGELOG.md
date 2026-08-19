@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v3.3.0
 
 - Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple Azure subscriptions.

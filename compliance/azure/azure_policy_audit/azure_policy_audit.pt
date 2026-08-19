@@ -8,7 +8,7 @@ category "Compliance"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "3.2.1",
+  version: "3.2.2",
   provider: "Azure",
   service: "Identity & Access Management",
   policy_set: "Identity & Access Management",
@@ -114,6 +114,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_param_azure_endpoint" do
+  run_script $js_param_azure_endpoint, $param_azure_endpoint
+end
+
+script "js_param_azure_endpoint", type: "javascript" do
+  parameters "param_azure_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_azure_endpoint.trim()
+EOS
+end
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -175,7 +199,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -203,6 +227,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -243,7 +270,7 @@ datasource "ds_azure_policy_definitions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Authorization/policyDefinitions"])
     query "api-version", "2023-04-01"
     header "User-Agent", "RS Policies"
@@ -270,7 +297,7 @@ datasource "ds_azure_policy_assignments" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $ds_param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Authorization/policyAssignments"])
     query "api-version", "2023-04-01"
     header "User-Agent", "RS Policies"
@@ -302,6 +329,8 @@ script "js_azure_policy_assignments_enriched", type: "javascript" do
   parameters "ds_azure_policy_definitions", "ds_azure_policy_assignments", "param_policy_names"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_policy_names = _.compact(_.map(param_policy_names, function(item) { return item.trim() }))
   // Create a list of policy assignments with policy definition metadata integrated into it
   definitions_object = {}
 
@@ -351,14 +380,16 @@ EOS
 end
 
 datasource "ds_audit_results" do
-  run_script $js_audit_results, $ds_azure_subscriptions_filtered, $ds_azure_policy_assignments_enriched, $ds_applied_policy, $param_policy_names, $param_incident_csv
+  run_script $js_audit_results, $ds_azure_subscriptions_filtered, $ds_azure_policy_assignments_enriched, $ds_applied_policy, $param_policy_names, $ds_param_incident_csv
 end
 
 script "js_audit_results", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "ds_azure_policy_assignments_enriched", "ds_applied_policy", "param_policy_names", "param_incident_csv"
+  parameters "ds_azure_subscriptions_filtered", "ds_azure_policy_assignments_enriched", "ds_applied_policy", "param_policy_names", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_policy_names = _.compact(_.map(param_policy_names, function(item) { return item.trim() }))
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Sort assignments by subscription for easy iteration later
   assignments_by_sub = {}
@@ -533,7 +564,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

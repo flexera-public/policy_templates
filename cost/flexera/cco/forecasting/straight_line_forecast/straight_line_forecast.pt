@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.1.1",
+  version: "4.1.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting",
@@ -129,6 +129,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -271,6 +283,9 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_allow_or_deny = param_bc_allow_or_deny.trim()
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -321,6 +336,8 @@ script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimension = param_dimension.trim()
   if (param_dimension == "Billing Center") {
     result = { id: "billing_center_name", name: "Billing Center" }
   } else {
@@ -396,6 +413,8 @@ script "js_costs", type: "javascript" do
   parameters "start_date", "end_date", "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -435,6 +454,8 @@ script "js_past_costs", type: "javascript" do
   parameters "ds_costs", "ds_billing_centers", "ds_dimension", "param_cost_metric", "param_forecasted"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cost_metric = param_cost_metric.trim()
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -523,6 +544,8 @@ script "js_forecasted_costs", type: "javascript" do
   parameters "ds_past_costs", "ds_dimension", "param_forecasted", "param_formula"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_formula = param_formula.trim()
   // Simple function to advance date in YYYY-MM format ahead or behind one month
   // Avoids issues caused by using setMonth() functionality
   function change_month(date, change) {
@@ -636,6 +659,9 @@ script "js_chart_creation", type: "javascript" do
   parameters "ds_forecasted_costs", "ds_dimension", "ds_applied_policy", "ds_currency", "param_formula", "param_incident_data_table"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_formula = param_formula.trim()
+  param_incident_data_table = param_incident_data_table.trim()
   function format_number(number, separator) {
     formatted_number = "0"
 
@@ -772,7 +798,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

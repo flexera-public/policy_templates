@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.2.0",
+  version: "3.2.1",
   provider: "AWS",
   service: "Identity & Access Management",
   policy_set: "CIS",
@@ -90,6 +90,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_param_incident_csv" do
+  run_script $js_param_incident_csv, $param_incident_csv
+end
+
+script "js_param_incident_csv", type: "javascript" do
+  parameters "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  result = param_incident_csv.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -355,14 +367,14 @@ datasource "ds_iam_users_with_keys" do
 end
 
 datasource "ds_iam_users_with_many_keys" do
-  run_script $js_iam_users_with_many_keys, $ds_iam_users_with_keys, $ds_aws_account, $ds_applied_policy, $param_max_keys, $param_incident_csv
+  run_script $js_iam_users_with_many_keys, $ds_iam_users_with_keys, $ds_aws_account, $ds_applied_policy, $param_max_keys, $ds_param_incident_csv
 end
 
 script "js_iam_users_with_many_keys", type:"javascript" do
-  parameters "ds_iam_users_with_keys", "ds_aws_account", "ds_applied_policy", "param_max_keys", "param_incident_csv"
+  parameters "ds_iam_users_with_keys", "ds_aws_account", "ds_applied_policy", "param_max_keys", "ds_param_incident_csv"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
@@ -445,7 +457,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email do
-    attach_export_table $param_incident_csv
+    attach_export_table $ds_param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end
