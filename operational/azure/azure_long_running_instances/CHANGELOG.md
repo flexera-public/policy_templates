@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v6.4.3
 
 - Minor code formatting cleanup. No functional or user-facing changes.
