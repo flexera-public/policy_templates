@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.2.1",
+  version: "2.2.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -106,6 +106,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_effective_date_input" do
+  run_script $js_effective_date_input, $param_effective_date
+end
+
+script "js_effective_date_input", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -157,11 +169,11 @@ end
 # Determine the effective date to use for the generated rules: either the static value from the
 # 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
 datasource "ds_effective_date" do
-  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+  run_script $js_effective_date, $ds_effective_date_input, $param_effective_date_mode
 end
 
 script "js_effective_date", type: "javascript" do
-  parameters "param_effective_date", "param_effective_date_mode"
+  parameters "ds_effective_date_input", "param_effective_date_mode"
   result "result"
   code <<-'EOS'
   if (param_effective_date_mode == "Current Month") {
@@ -170,7 +182,7 @@ script "js_effective_date", type: "javascript" do
     month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
     result = year + "-" + month
   } else {
-    result = param_effective_date
+    result = ds_effective_date_input
   }
 EOS
 end
@@ -314,6 +326,9 @@ script "js_new_rules", type: "javascript" do
   parameters "rgs", "accounts", "effective_date", "param_name_list", "param_tag_list", "param_subscription_fallback", "param_normalize_case"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_name_list = _.compact(_.map(param_name_list, function(item) { return item.trim() }))
+  param_tag_list = _.compact(_.map(param_tag_list, function(item) { return item.trim() }))
   rule_lists = []
 
   _.each(param_tag_list, function(tag, index) {

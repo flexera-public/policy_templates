@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v0.4.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

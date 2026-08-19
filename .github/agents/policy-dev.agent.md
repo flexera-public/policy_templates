@@ -471,6 +471,19 @@ Underscore.js (`_`) is always available in `script` blocks. Use `_.filter`, `_.m
 >
 > Underscore.js 1.13.x is available. All other JavaScript must be valid ES5.
 
+### Common JavaScript Patterns — Parameter Sanitization
+
+Trim leading/trailing whitespace from every `string` and `list` parameter where whitespace would never make sense — region names, cloud account/subscription/project identifiers, resource group names, tags, SKUs/instance types, endpoints, allow/deny selectors, and any other value compared for equality or passed to a cloud API. This guards against accidental whitespace from copy/paste or scripted policy application via the API. Do not sanitize `param_email` (no established precedent) or genuinely freeform display/branding text.
+
+Two mechanisms, depending on how the parameter is consumed:
+
+- **Already consumed by a filtering/transform script** (e.g. `param_regions_list`, `param_exclusion_tags`, `param_sku_ignore_list`): add the trim as the first line(s) of that script's code, before the value is used for anything else. This is the common case, since most string/list parameters feed into a JavaScript filter.
+- **Referenced directly by DSL** — a `datasource ... request do` block's `host`/`path`/`query`, or an `escalation` block (e.g. `param_azure_endpoint` used as `host`, `param_incident_csv` used in `attach_export_table`) — instead of being processed by any script: create a dedicated `ds_param_x` / `js_param_x` datasource pair that trims the value, then replace every reference to `$param_x` (including as an argument to other `run_script` calls) with `$ds_param_x`.
+
+**Example:** See "Common JavaScript Patterns - Parameter Sanitization" in `data/agent/code_examples.txt`.
+
+**Architectural exception - "action-only" parameters used exclusively inside `run`/`define` Cloud Workflow blocks** (e.g. `param_tags_to_add`, `param_labels_to_add`, `param_new_name`, `param_new_description`, `param_schedule`, `param_target_bucket`): these cannot be sanitized with either mechanism above. `run "define_name", data, $param_x, ...` invocation lines only ever accept raw `$param_x` references (or reserved words/built-ins) - never a `$ds_param_x` datasource reference - and `define` blocks have no string-manipulation function equivalent to JavaScript's `.trim()`. Since there is no script in the chain to insert a trim into and no way to substitute a sanitized datasource value into `run`, leave these parameters untrimmed. This is a confirmed language limitation, not an oversight - do not attempt to work around it (for example, by adding a no-op script) purely to satisfy a sanitization audit. `param_aws_account_number` (used only inside `credentials do ... aws_account_number $param_x end` blocks) falls into the same category for the same reason.
+
 ### Common JavaScript Patterns — Tag Filtering
 
 The `param_exclusion_tags` + `param_exclusion_tags_boolean` parameter pair is filtered in JavaScript using a standard comparator pattern. It supports: bare key (key exists), `Key==Value` (exact), `Key!=Value` (not equal), `Key=~Value` (regex match), `Key!~Value` (regex non-match).
@@ -779,7 +792,7 @@ Multi-region/subscription/project templates start with a datasource listing all 
 
 **Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 
-**Azure — `ds_azure_subscriptions`:** Use `$param_azure_endpoint` as host to support Azure China:
+**Azure — `ds_azure_subscriptions`:** Use the sanitized `$ds_param_azure_endpoint` (see Parameter Sanitization) as host to support Azure China:
 
 **Example:** See "Provider Boilerplate Datasources" in `data/agent/code_examples.txt`.
 

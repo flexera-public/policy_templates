@@ -9,7 +9,7 @@ severity "low"
 default_frequency "daily"
 info(
   publish: "false",
-  version: "0.1.5",
+  version: "0.1.6",
   provider: "Flexera",
   service: "FinOps Customizations",
   policy_set: "Automation",
@@ -81,6 +81,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_effective_date_input" do
+  run_script $js_effective_date_input, $param_effective_date
+end
+
+script "js_effective_date_input", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -258,13 +270,16 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_existing_rbds, $ds_csv_to_object, $param_effective_date, $param_dimensions_rules, $param_dimensions_rbds
+  run_script $js_rbds, $ds_existing_rbds, $ds_csv_to_object, $ds_effective_date_input, $param_dimensions_rules, $param_dimensions_rbds
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_existing_rbds", "ds_csv_to_object", "param_effective_date", "param_dimensions_rules", "param_dimensions_rbds"
+  parameters "ds_existing_rbds", "ds_csv_to_object", "ds_effective_date_input", "param_dimensions_rules", "param_dimensions_rbds"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_dimensions_rules = _.compact(_.map(param_dimensions_rules, function(item) { return item.trim() }))
+  param_dimensions_rbds = _.compact(_.map(param_dimensions_rbds, function(item) { return item.trim() }))
   rbd_ids = [];
   dimension_ids = [];
   var result = {
@@ -301,7 +316,7 @@ script "js_rbds", type: "javascript" do
     // Add the rules for each row
     rbd_object["dated_rules"] = [
       {
-        "effective_at": param_effective_date,
+        "effective_at": ds_effective_date_input,
         "rules": []
       }
     ];

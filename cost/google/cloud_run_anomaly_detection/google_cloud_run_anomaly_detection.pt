@@ -9,7 +9,7 @@ category "Cost"
 default_frequency "daily"
 info(
   publish: "false",
-  version: "0.4.0",
+  version: "0.4.1",
   provider: "Google",
   service: "Cloud Run",
   policy_set: "Anomaly Detection",
@@ -172,11 +172,11 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_param_values" do
-  run_script $js_param_values, $param_metric_lookback_time, $param_metric_aggregation
+datasource "ds_values" do
+  run_script $js_values, $param_metric_lookback_time, $param_metric_aggregation
 end
 
-script "js_param_values", type: "javascript" do
+script "js_values", type: "javascript" do
   parameters "param_metric_lookback_time", "param_metric_aggregation"
   result "result"
   code <<-'EOS'
@@ -288,6 +288,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -354,6 +356,8 @@ script "js_google_regions_filtered", type: "javascript" do
   parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_google_regions, function(region) {
       include_region = _.contains(param_regions_list, region['region'])
@@ -398,13 +402,13 @@ datasource "ds_cloud_run_utilization" do
     auth $auth_google
     host "monitoring.googleapis.com"
     path join(["/v3/projects/", val(iter_item, "projectId"), "/timeSeries"])
-    query "aggregation.alignmentPeriod", join(['+', val($ds_param_values, "aggregation"), "s"], "")
+    query "aggregation.alignmentPeriod", join(['+', val($ds_values, "aggregation"), "s"], "")
     query "aggregation.crossSeriesReducer", "REDUCE_SUM"
     query "aggregation.groupByFields", 'resource.label."service_name"'
     query "aggregation.perSeriesAligner", "ALIGN_RATE"
     query "filter", join(['metric.type="', $param_threshold_metric_name, '" resource.type="cloud_run_revision" resource.label."service_name"="', last(split(val(iter_item, "name"), "/services/")), '" AND resource.labels."location"="', val(iter_item, "region"), '" AND resource.labels."service_name"="', last(split(val(iter_item, "name"), "/services/")), '"'], "")
-    query "interval.startTime", val($ds_param_values, "start_time")
-    query "interval.endTime", val($ds_param_values, "end_time")
+    query "interval.startTime", val($ds_values, "start_time")
+    query "interval.endTime", val($ds_values, "end_time")
   end
   result do
     encoding "json"
