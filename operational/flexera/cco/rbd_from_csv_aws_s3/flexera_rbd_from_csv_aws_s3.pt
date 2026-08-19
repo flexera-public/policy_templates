@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.4",
+  version: "0.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -113,6 +113,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_s3_bucket_hostname" do
+  run_script $js_s3_bucket_hostname, $param_s3_bucket_hostname
+end
+
+script "js_s3_bucket_hostname", type: "javascript" do
+  parameters "param_s3_bucket_hostname"
+  result "result"
+  code <<-'EOS'
+  result = param_s3_bucket_hostname.trim()
+EOS
+end
+
+datasource "ds_s3_file_prefix" do
+  run_script $js_s3_file_prefix, $param_s3_file_prefix
+end
+
+script "js_s3_file_prefix", type: "javascript" do
+  parameters "param_s3_file_prefix"
+  result "result"
+  code <<-'EOS'
+  result = param_s3_file_prefix.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -164,9 +188,9 @@ datasource "ds_s3_list_objects" do
   request do
     auth $auth_aws
     pagination $pagination_aws_s3
-    host $param_s3_bucket_hostname
+    host $ds_s3_bucket_hostname
     query "list-type", "2"
-    query "prefix", $param_s3_file_prefix
+    query "prefix", $ds_s3_file_prefix
     header "User-Agent", "RS Policies"
   end
   result do
@@ -188,6 +212,8 @@ script "js_csv_file_selected", type: "javascript" do
   parameters "ds_s3_list_objects", "param_s3_file_override"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_s3_file_override = param_s3_file_override.trim()
   if (param_s3_file_override && param_s3_file_override.length > 0) {
     result = _.find(ds_s3_list_objects, function(file) {
       return file.object_key == param_s3_file_override
@@ -214,7 +240,7 @@ end
 datasource "ds_csv_raw" do
   request do
     auth $auth_aws
-    host $param_s3_bucket_hostname
+    host $ds_s3_bucket_hostname
     path join(["/", val($ds_csv_file_selected, "object_key")])
     header "User-Agent", "RS Policies"
   end
@@ -691,6 +717,9 @@ script "js_rbds", type: "javascript" do
   parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_filter = _.compact(_.map(param_rbd_filter, function(item) { return item.trim() }))
+  param_rbd_name_map = _.compact(_.map(param_rbd_name_map, function(item) { return item.trim() }))
   result = []
 
   // If there are validation errors, output empty list to block RBD creation
@@ -1105,4 +1134,3 @@ EOS
     end
   end
 end
-

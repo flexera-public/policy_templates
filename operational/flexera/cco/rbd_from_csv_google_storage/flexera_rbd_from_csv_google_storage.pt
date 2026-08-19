@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.4",
+  version: "0.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -113,6 +113,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_gcs_bucket" do
+  run_script $js_gcs_bucket, $param_gcs_bucket
+end
+
+script "js_gcs_bucket", type: "javascript" do
+  parameters "param_gcs_bucket"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_bucket.trim()
+EOS
+end
+
+datasource "ds_gcs_file_prefix" do
+  run_script $js_gcs_file_prefix, $param_gcs_file_prefix
+end
+
+script "js_gcs_file_prefix", type: "javascript" do
+  parameters "param_gcs_file_prefix"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_file_prefix.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -165,8 +189,8 @@ datasource "ds_gcs_list_objects" do
     auth $auth_google
     pagination $pagination_google
     host "storage.googleapis.com"
-    path join(["/storage/v1/b/", $param_gcs_bucket, "/o"])
-    query "prefix", $param_gcs_file_prefix
+    path join(["/storage/v1/b/", $ds_gcs_bucket, "/o"])
+    query "prefix", $ds_gcs_file_prefix
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
   end
@@ -189,6 +213,8 @@ script "js_csv_file_selected", type: "javascript" do
   parameters "ds_gcs_list_objects", "param_gcs_file_override"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_gcs_file_override = param_gcs_file_override.trim()
   if (param_gcs_file_override && param_gcs_file_override.length > 0) {
     result = _.find(ds_gcs_list_objects, function(file) {
       return file.object_name == param_gcs_file_override
@@ -216,7 +242,7 @@ datasource "ds_csv_raw" do
   request do
     auth $auth_google
     host "storage.googleapis.com"
-    path join(["/storage/v1/b/", $param_gcs_bucket, "/o/", val($ds_csv_file_selected, "object_name")])
+    path join(["/storage/v1/b/", $ds_gcs_bucket, "/o/", val($ds_csv_file_selected, "object_name")])
     query "alt", "media"
     header "User-Agent", "RS Policies"
   end
@@ -693,6 +719,9 @@ script "js_rbds", type: "javascript" do
   parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_filter = _.compact(_.map(param_rbd_filter, function(item) { return item.trim() }))
+  param_rbd_name_map = _.compact(_.map(param_rbd_name_map, function(item) { return item.trim() }))
   result = []
 
   // If there are validation errors, output empty list to block RBD creation
@@ -1107,4 +1136,3 @@ EOS
     end
   end
 end
-
