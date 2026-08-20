@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.2",
+  version: "0.1.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -59,6 +59,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_effective_date_input" do
+  run_script $js_effective_date_input, $param_effective_date
+end
+
+script "js_effective_date_input", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
 
 # Get region-specific Flexera API endpoints
 
@@ -157,13 +169,15 @@ EOS
 end
 
 datasource "ds_parent_rbd_selection" do
-  run_script $js_parent_rbd_selection, $ds_parent_org_rbds, $param_rbd_list, $param_effective_date
+  run_script $js_parent_rbd_selection, $ds_parent_org_rbds, $ds_effective_date_input, $param_rbd_list
 end
 
 script "js_parent_rbd_selection", type: "javascript" do
-  parameters "ds_parent_org_rbds", "param_rbd_list", "param_effective_date"
+  parameters "ds_parent_org_rbds", "ds_effective_date_input", "param_rbd_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_list = _.compact(_.map(param_rbd_list, function(item) { return item.trim() }))
   selected = []
   missing = []
   seen_selected = {}
@@ -197,7 +211,7 @@ script "js_parent_rbd_selection", type: "javascript" do
     if (!match) {
       missing.push({
         requested_value: requested_value,
-        effective_at: param_effective_date,
+        effective_at: ds_effective_date_input,
         recommendation: "Verify that the Rule-Based Dimension exists in the current org and that the requested ID or name is correct."
       })
       return
@@ -214,7 +228,7 @@ script "js_parent_rbd_selection", type: "javascript" do
     selected.push({
       id: match["id"],
       name: match["name"],
-      effective_at: param_effective_date
+      effective_at: ds_effective_date_input
     })
   })
 
@@ -560,14 +574,14 @@ datasource "ds_child_existing_selected_rbds_with_rules" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-customizations/v1/orgs/", val(iter_item, "org_id"), "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    path join(["/finops-customizations/v1/orgs/", val(iter_item, "org_id"), "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $ds_effective_date_input])
     ignore_status [400, 401, 403, 404, 429]
   end
   result do
     encoding "json"
     field "org_id", val(iter_item, "org_id")
     field "org_name", val(iter_item, "org_name")
-    field "effective_at", $param_effective_date
+    field "effective_at", $ds_effective_date_input
     field "id", val(iter_item, "id")
     field "name", val(iter_item, "name")
     field "rules", jmes_path(response, "rules")
