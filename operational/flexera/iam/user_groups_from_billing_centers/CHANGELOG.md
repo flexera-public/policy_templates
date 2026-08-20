@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v0.2.3
 
 - Renamed the internal `policyName` field to `policy_name` for consistency with the standard convention used across other policy templates. No functional changes.
