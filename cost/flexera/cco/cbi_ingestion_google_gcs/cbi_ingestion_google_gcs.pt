@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.1.2",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -119,6 +119,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_gcs_bucket" do
+  run_script $js_gcs_bucket, $param_gcs_bucket
+end
+
+script "js_gcs_bucket", type: "javascript" do
+  parameters "param_gcs_bucket"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_bucket.trim()
+EOS
+end
+
+datasource "ds_gcs_prefix" do
+  run_script $js_gcs_prefix, $param_gcs_prefix
+end
+
+script "js_gcs_prefix", type: "javascript" do
+  parameters "param_gcs_prefix"
+  result "result"
+  code <<-'EOS'
+  result = param_gcs_prefix.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -212,6 +236,8 @@ script "js_cbi_endpoint_id", type: "javascript" do
   parameters "param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
   result = param_cbi_endpoint
 
   if (param_cbi_endpoint == "") {
@@ -257,6 +283,8 @@ script "js_to_create_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
   result = []
 
   existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
@@ -422,18 +450,18 @@ EOS
 end
 
 datasource "ds_cost_object_names" do
-  run_script $js_cost_object_names, $ds_dates, $param_gcs_prefix, $param_granularity
+  run_script $js_cost_object_names, $ds_dates, $ds_gcs_prefix, $param_granularity
 end
 
 script "js_cost_object_names", type: "javascript" do
-  parameters "ds_dates", "param_gcs_prefix", "param_granularity"
+  parameters "ds_dates", "ds_gcs_prefix", "param_granularity"
   result "result"
   code <<-'EOS'
   result = []
 
   if (param_granularity == "Monthly") {
     result.push({
-      object: [ param_gcs_prefix, ds_dates["period"], ".csv" ].join('')
+      object: [ ds_gcs_prefix, ds_dates["period"], ".csv" ].join('')
     })
   } else {
     for (var i = 1; i <= 31; i++) {
@@ -441,7 +469,7 @@ script "js_cost_object_names", type: "javascript" do
       if (i < 10) { day = "0" + day }
 
       result.push({
-        object: [ param_gcs_prefix, ds_dates["period"], "-", day, ".csv" ].join('')
+        object: [ ds_gcs_prefix, ds_dates["period"], "-", day, ".csv" ].join('')
       })
     }
   }
@@ -453,7 +481,7 @@ datasource "ds_cost_objects" do
   request do
     auth $auth_google
     host "storage.googleapis.com"
-    path join(["/", $param_gcs_bucket, "/", val(iter_item, "object")])
+    path join(["/", $ds_gcs_bucket, "/", val(iter_item, "object")])
     header "User-Agent", "RS Policies"
     ignore_status [404] # Ignore dates that have no associated file instead of failing completely
   end
@@ -545,11 +573,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $param_gcs_bucket, $param_gcs_prefix
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $ds_gcs_bucket, $ds_gcs_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "param_gcs_bucket", "param_gcs_prefix"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "ds_gcs_bucket", "ds_gcs_prefix"
   result "result"
   code <<-'EOS'
   result = [{
@@ -560,7 +588,7 @@ script "js_incident", type: "javascript" do
     updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    gcs_bucket: param_gcs_bucket
+    gcs_bucket: ds_gcs_bucket
   }]
 EOS
 end
