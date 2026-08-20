@@ -3,6 +3,7 @@
 ## v0.1.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for `js_parent_rbd_selection` (datasources before parameters).
 
 ## v0.1.2
 
