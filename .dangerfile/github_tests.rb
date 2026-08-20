@@ -10,10 +10,10 @@
 def github_pr_bad_title?(github)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Github pull request for bad title..."
 
-  pol_matcher = /^POL-\d{1,4} .+$/
-  fopts_matcher = /^FOPTS-\d{1,4} .+$/
-  foaa_matcher = /^FOAA-\d{1,4} .+$/
-  sq_matcher = /^SQ-\d{1,4} .+$/
+  pol_matcher = /^POL-\d+ .+$/
+  fopts_matcher = /^FOPTS-\d+ .+$/
+  foaa_matcher = /^FOAA-\d+ .+$/
+  sq_matcher = /^SQ-\d+ .+$/
 
   return false if github.pr_title.match?(pol_matcher) || github.pr_title.match?(fopts_matcher) || github.pr_title.match?(foaa_matcher) || github.pr_title.match?(sq_matcher)
 
