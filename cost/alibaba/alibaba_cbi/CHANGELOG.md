@@ -3,6 +3,7 @@
 ## v0.1.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter ordering in the incident datasource.
 
 ## v0.1.6
 
