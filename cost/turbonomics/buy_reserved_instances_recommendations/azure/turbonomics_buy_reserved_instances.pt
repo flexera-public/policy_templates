@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.3.9",
+  version: "0.3.10",
   provider: "Azure",
   source: "Turbonomic",
   service: "Usage Discount",
@@ -73,10 +73,34 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_turbonomic_audience" do
+  run_script $js_turbonomic_audience, $param_turbonomic_audience
+end
+
+script "js_turbonomic_audience", type: "javascript" do
+  parameters "param_turbonomic_audience"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_audience.trim()
+EOS
+end
+
+datasource "ds_turbonomic_host" do
+  run_script $js_turbonomic_host, $param_turbonomic_host
+end
+
+script "js_turbonomic_host", type: "javascript" do
+  parameters "param_turbonomic_host"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_host.trim()
+EOS
+end
+
 #get turbonomic token
 datasource "ds_get_turbonomic_token" do
   request do
-    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+    run_script $js_get_turbonomic_token, $ds_turbonomic_host, $ds_turbonomic_audience
   end
   result do
     encoding "json"
@@ -87,7 +111,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_host
+    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $ds_turbonomic_host
   end
   result do
     encoding "json"
@@ -117,7 +141,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_host
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $ds_turbonomic_host
   end
   result do
     encoding "json"
@@ -150,13 +174,13 @@ end
 
 ##script using a acquired turbonomic token and pulls hard coded purchasable ri data
 script "js_get_turbonomic_recommendations", type: "javascript" do
-  parameters "access_token", "param_turbonomic_host"
+  parameters "access_token", "ds_turbonomic_host"
   result "request"
   code <<-'EOS'
   var request = {
       verb: "POST",
       pagination: "pagination_turbonomic",
-      host: param_turbonomic_host,
+      host: ds_turbonomic_host,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
           "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -179,11 +203,11 @@ end
 
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
-  parameters "access_token", "param_turbonomic_host"
+  parameters "access_token", "ds_turbonomic_host"
   result "request"
   code <<-'EOS'
   var request = {
-      host: param_turbonomic_host,
+      host: ds_turbonomic_host,
       path: "/api/v3/businessunits",
       query_params: {
           "cloud_type": "AZURE",
@@ -200,7 +224,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, val($ds_get_turbonomic_token, "access_token"), $ds_get_turbonomic_recommendations, $param_turbonomic_host
+    run_script $js_get_action_details, val($ds_get_turbonomic_token, "access_token"), $ds_get_turbonomic_recommendations, $ds_turbonomic_host
   end
   result do
     encoding "json"
@@ -235,7 +259,7 @@ script "js_get_action_details", type: "javascript" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $ds_get_action_details, $param_turbonomic_host
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $ds_get_action_details, $ds_turbonomic_host
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
