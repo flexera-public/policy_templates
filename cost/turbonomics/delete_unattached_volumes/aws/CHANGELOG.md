@@ -3,6 +3,7 @@
 ## v0.6.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for the business units and filtered recommendations scripts (datasources before parameters).
 
 ## v0.6.9
 
