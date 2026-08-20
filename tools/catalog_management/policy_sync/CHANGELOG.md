@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0.8
+
+- Trimmed leading/trailing whitespace from the `GitHub Organization Name`, `GitHub Repository Name`, `GitHub Branch Name`, and `Active Policy JSON Path` parameters to prevent accidental whitespace from causing GitHub requests to fail.
+- Renamed `sync_policy_name` to `policy_name` in the generated report data and `summary_template` references to follow the standard naming convention.
+
 ## v3.0.7
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
