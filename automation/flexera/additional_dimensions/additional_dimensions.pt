@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "0.2.1",
+  version: "0.2.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -71,6 +71,18 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_effective_date_input" do
+  run_script $js_effective_date_input, $param_effective_date
+end
+
+script "js_effective_date_input", type: "javascript" do
+  parameters "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = param_effective_date.trim()
+EOS
+end
 
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -175,11 +187,11 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds_to_create" do
-  run_script $js_rbds_to_create, $ds_rbds_json, $ds_existing_rbds, $param_effective_date
+  run_script $js_rbds_to_create, $ds_rbds_json, $ds_existing_rbds, $ds_effective_date_input
 end
 
 script "js_rbds_to_create", type: "javascript" do
-  parameters "ds_rbds_json", "ds_existing_rbds", "param_effective_date"
+  parameters "ds_rbds_json", "ds_existing_rbds", "ds_effective_date_input"
   result "result"
   code <<-'EOS'
   existing_ids = _.pluck(ds_existing_rbds, "id")
@@ -191,7 +203,7 @@ script "js_rbds_to_create", type: "javascript" do
       id: rbd["id"],
       name: rbd["name"],
       rules: rbd["rules"],
-      effective_at: param_effective_date,
+      effective_at: ds_effective_date_input,
       verb: _.contains(existing_ids, rbd["id"]) ? "PATCH" : "POST"
     }
   }), function(item) {

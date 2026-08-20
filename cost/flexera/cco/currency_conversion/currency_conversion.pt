@@ -8,7 +8,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "5.1.2",
+  version: "5.1.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -113,6 +113,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_currency_from" do
+  run_script $js_currency_from, $param_currency_from
+end
+
+script "js_currency_from", type: "javascript" do
+  parameters "param_currency_from"
+  result "result"
+  code <<-'EOS'
+  result = param_currency_from.trim()
+EOS
+end
+
+datasource "ds_currency_to" do
+  run_script $js_currency_to, $param_currency_to
+end
+
+script "js_currency_to", type: "javascript" do
+  parameters "param_currency_to"
+  result "result"
+  code <<-'EOS'
+  result = param_currency_to.trim()
+EOS
+end
+
 # Find dimension in the CCO platform based on user input
 datasource "ds_dimensions" do
   request do
@@ -166,15 +190,15 @@ end
 
 # Branching Logic: Whether or not to set the organization currency
 datasource "ds_set_org_currency_logic" do
-  run_script $js_set_org_currency_logic, $param_set_org_currency, $param_currency_to
+  run_script $js_set_org_currency_logic, $ds_currency_to, $param_set_org_currency
 end
 
 script "js_set_org_currency_logic", type: "javascript" do
-  parameters "param_set_org_currency", "param_currency_to"
+  parameters "ds_currency_to", "param_set_org_currency"
   result "result"
   code <<-'EOS'
   result = []
-  if (param_set_org_currency == "Yes") { result = [{ currency_code: param_currency_to }] }
+  if (param_set_org_currency == "Yes") { result = [{ currency_code: ds_currency_to }] }
 EOS
 end
 
@@ -200,6 +224,8 @@ script "js_month_list", type: "javascript" do
   parameters "param_backfill", "param_backfill_start_date"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_backfill_start_date = param_backfill_start_date.trim()
   // Function to take YYYY-MM formatted date and move it backwards or forwards by month
   function move_month(date_string, amount) {
     year = Number(date_string.split('-')[0])
@@ -277,8 +303,8 @@ datasource "ds_xe_exchange_rates" do
   request do
     host "api.xe-auth.flexeraeng.com"
     path "/prod/{proxy+}"
-    query "from", $param_currency_from
-    query "to", $param_currency_to
+    query "from", $ds_currency_from
+    query "to", $ds_currency_to
     query "amount", "1"
     query "year", iter_item
   end
@@ -292,15 +318,15 @@ end
 
 # Assemble exchange rates into a simple object that can be used later
 datasource "ds_exchange_rates" do
-  run_script $js_exchange_rates, $ds_xe_exchange_rates, $param_currency_to
+  run_script $js_exchange_rates, $ds_xe_exchange_rates, $ds_currency_to
 end
 
 script "js_exchange_rates", type: "javascript" do
-  parameters "ds_xe_exchange_rates", "param_currency_to"
+  parameters "ds_xe_exchange_rates", "ds_currency_to"
   result "result"
   code <<-'EOS'
   result = {}
-  currency_code = param_currency_to.toUpperCase().trim()
+  currency_code = ds_currency_to.toUpperCase().trim()
 
   _.each(ds_xe_exchange_rates, function(item) {
     year_num = item['year'].toString()
@@ -326,13 +352,15 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_filter_dimensions, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date, $param_dimensions_boolean, $param_adj_bring_forward
+  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_filter_dimensions, $ds_currency_from, $ds_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date, $param_dimensions_boolean, $param_adj_bring_forward
 end
 
 script "js_updated_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_filter_dimensions", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date", "param_dimensions_boolean", "param_adj_bring_forward"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_filter_dimensions", "ds_currency_from", "ds_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date", "param_dimensions_boolean", "param_adj_bring_forward"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_backfill_start_date = param_backfill_start_date.trim()
   function generateMonths(startMonth) {
     month_list = []
 
@@ -441,7 +469,7 @@ script "js_updated_adjustments", type: "javascript" do
         {
           condition: condition,
           cost_multiplier: conversion_rate - 1,
-          label: param_currency_from + " to " + param_currency_to
+          label: ds_currency_from + " to " + ds_currency_to
         }
       ]
     }
@@ -543,7 +571,7 @@ end
 
 policy "pol_currency_conversion" do
   validate_each $ds_new_adjustments do
-    summary_template "Currency Conversion - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }} - {{ with index data 0 }}{{ .dimension }}{{ end }}"
+    summary_template "Currency Conversion - {{ parameters.ds_currency_from }} to {{ parameters.ds_currency_to }} - {{ with index data 0 }}{{ .dimension }}{{ end }}"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(0, 1)
   end

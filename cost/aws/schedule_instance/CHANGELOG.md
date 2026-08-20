@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.1.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v8.1.0
 
 - Added a region error-reporting check that surfaces a clear incident when the policy is unable to access one or more AWS regions, instead of silently omitting data from those regions.

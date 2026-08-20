@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v0.1.4
 
 - Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
