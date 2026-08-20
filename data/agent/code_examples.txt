@@ -284,12 +284,55 @@ script "js_filter_items", type: "javascript" do
 EOS
 end
 
+### Common JavaScript Patterns - Parameter Sanitization
+
+# Case 1: the parameter is already consumed by an existing filtering/transform script.
+# Trim as the first line(s) of that script, before the parameter is used for anything else.
+
+script "js_example_filter", type: "javascript" do
+  parameters "resources", "param_sku_ignore_list"
+  result "result"
+  code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_sku_ignore_list = _.compact(_.map(param_sku_ignore_list, function(item) { return item.trim() }))
+
+  result = _.reject(resources, function(resource) {
+    return _.contains(param_sku_ignore_list, resource['tier'])
+  })
+EOS
+end
+
+# Case 2: the parameter is referenced directly by DSL (a datasource `request` block as
+# `host`/`path`/`query`, or an `escalation` block) instead of being processed by a script.
+# Wrap it in a dedicated datasource that trims the value, then reference the datasource
+# ($ds_x) everywhere the raw parameter ($param_x) would otherwise have been used,
+# including as an argument to other `run_script` calls. Only do this for genuinely
+# free-text parameters; never wrap a parameter that has `allowed_values`/`allowed_pattern`
+# (see exception below). Name the wrapper datasource/script by dropping the `param_`
+# prefix (ds_cbi_endpoint / js_cbi_endpoint) - never ds_param_cbi_endpoint / js_param_cbi_endpoint.
+
+datasource "ds_cbi_endpoint" do
+  run_script $js_cbi_endpoint, $param_cbi_endpoint
+end
+
+script "js_cbi_endpoint", type: "javascript" do
+  parameters "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = param_cbi_endpoint.trim()
+EOS
+end
+
 ### Common JavaScript Patterns - Tag Filtering
 
 script "js_filter_resources", type: "javascript" do
   parameters "resources", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+    param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
+
     comparators = _.map(param_exclusion_tags, function(item) {
       if (item.indexOf('==') != -1) {
         return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -344,6 +387,10 @@ script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -366,6 +413,10 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_allow_or_deny = param_subscriptions_allow_or_deny.trim()
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
+
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -411,6 +462,10 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_allow_or_deny = param_projects_allow_or_deny.trim()
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
+
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -1061,7 +1116,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $param_azure_endpoint
+    host $param_azure_endpoint     # not sanitized: has allowed_values, see Parameter Sanitization exclusion
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -1442,6 +1497,10 @@ script "js_azure_storage_accounts_tag_filtered", type: "javascript" do
   parameters "ds_azure_storage_accounts", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
+  param_exclusion_tags_boolean = param_exclusion_tags_boolean.trim()
+
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -1518,6 +1577,10 @@ script "js_azure_storage_accounts_region_filtered", type: "javascript" do
   parameters "ds_azure_storage_accounts_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_allow_or_deny = param_regions_allow_or_deny.trim()
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
       include_account = _.contains(param_regions_list, account['region'])
@@ -1542,6 +1605,10 @@ script "js_azure_storage_accounts_rg_filtered", type: "javascript" do
   parameters "ds_azure_storage_accounts_name_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_allow_or_deny = param_resource_groups_allow_or_deny.trim()
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
+
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_storage_accounts_name_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -1549,7 +1616,7 @@ script "js_azure_storage_accounts_rg_filtered", type: "javascript" do
         include_resource = _.any(param_resource_groups_list, function(rg_entry) {
           if (rg_entry.indexOf('/') != -1) {
             entry_parts = rg_entry.split('/')
-            return sub == entry_parts[0] && rg == entry_parts[1]
+            return sub == entry_parts[0].trim() && rg == entry_parts[1].trim()
           }
           return rg == rg_entry
         })

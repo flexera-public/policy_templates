@@ -1213,7 +1213,7 @@ end
 def policy_run_script_incorrect_order?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any scripts with parameters in the wrong order..."
 
-  fail_message = ""
+  found_calls = []
   ds_name = nil
 
   file_lines.each_with_index do |line, index|
@@ -1264,9 +1264,26 @@ def policy_run_script_incorrect_order?(file, file_lines)
           val_index = index if parameter.start_with?("val(")
         end
       end
-    end
 
-    fail_message += "Line #{line_number}: #{ds_name} / run_script #{script_name}\n" if disordered
+      found_calls << { line_number: line_number, ds_name: ds_name, script_name: script_name, disordered: disordered }
+    end
+  end
+
+  # If the same script is invoked more than once, and at least one of those invocations is
+  # correctly ordered, treat every invocation of that script as correct. A "disordered"
+  # reading on a sibling call in this situation is only an artifact of that call passing a
+  # raw value (e.g. a hardcoded lookback of 3 for a baseline comparison) in the same
+  # argument slot where another call passes a $param/$ds/constant, not an actual structural
+  # reordering bug — the argument's position, and thus the script's interpretation of it,
+  # is unchanged between calls.
+  calls_by_script = found_calls.group_by { |call| call[:script_name] }
+
+  fail_message = ""
+  found_calls.each do |call|
+    next unless call[:disordered]
+    next if calls_by_script[call[:script_name]].any? { |c| !c[:disordered] }
+
+    fail_message += "Line #{call[:line_number]}: #{call[:ds_name]} / run_script #{call[:script_name]}\n"
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
@@ -1637,8 +1654,6 @@ def policy_bad_comma_spacing?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     line = line.strip
-    test_line = line
-    parts = []
 
     # Skip image charts stuff
     next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=") || line.include?("chf=")
@@ -1648,21 +1663,15 @@ def policy_bad_comma_spacing?(file, file_lines)
     next if line.match?(/\/[^\/]*,[^\/]*\/\.(test|match|exec|replace)\(/)
 
     # Strip content inside quotation marks to avoid false positives from comma-separated
-    # API parameter strings (e.g. metricnames, aggregation) and other string literal values.
-    # Lines starting with a quote are included so that JSON-style key-value pairs like
-    # `"metricnames": "Percentage CPU,Memory"` have their string values stripped correctly.
-    # A limit of -1 is passed to split so that a trailing empty string is preserved when the
-    # line ends exactly on a closing quote (Ruby's split otherwise silently drops it, which
-    # previously caused the stripping logic below to be skipped for these lines).
-    parts = line.split("\"", -1) if line.include?("\"") && !line.include?("'")
-    parts = line.split("'", -1) if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
-
-    if parts.length > 2
-      test_parts = []
-      parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
-      test_line = test_parts.join("'")
-      test_line += "'" if line.end_with?("'") || line.end_with?("\"")
-    end
+    # API parameter strings (e.g. metricnames, aggregation), Google Chart data strings
+    # (e.g. "chd=t:60,40|0,100"), and other string literal values. Both quote styles are
+    # stripped unconditionally (rather than picking a single style based on which one(s)
+    # appear on the line), so this also handles lines that mix single and double quotes
+    # (e.g. ds_x['key'] + "literal,text"), which a previous either/or split-based approach
+    # missed, causing commas inside the string to be misread as list separators. Double
+    # quotes are stripped first so that an apostrophe inside a double-quoted string (e.g.
+    # "here's a comma, and more") doesn't get mistaken for the start of a single-quoted span.
+    test_line = line.gsub(/"[^"]*"/, '""').gsub(/'[^']*'/, "''")
 
     if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
       if test_line.match(/,\s{2,}/) || test_line.match(/\s,/) || test_line.match(/,[^\s]/) && !(test_line.match(/\',\'/) || test_line.match(/\",\"/) || test_line.match(/\`,\`/))

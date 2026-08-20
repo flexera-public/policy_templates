@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.3.1",
   provider: "Oracle",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -142,6 +142,30 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_primary_region" do
+  run_script $js_primary_region, $param_primary_region
+end
+
+script "js_primary_region", type: "javascript" do
+  parameters "param_primary_region"
+  result "result"
+  code <<-'EOS'
+  result = param_primary_region.trim()
+EOS
+end
+
+datasource "ds_root_compartment" do
+  run_script $js_root_compartment, $param_root_compartment
+end
+
+script "js_root_compartment", type: "javascript" do
+  parameters "param_root_compartment"
+  result "result"
+  code <<-'EOS'
+  result = param_root_compartment.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -257,9 +281,9 @@ datasource "ds_oci_recommendation_list" do
   request do
     auth $auth_oracle
     pagination $pagination_oracle
-    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
+    host join(["optimizer.", $ds_primary_region, ".oci.oraclecloud.com"])
     path "/20200606/recommendations"
-    query "compartmentId", $param_root_compartment
+    query "compartmentId", $ds_root_compartment
     query "compartmentIdInSubtree", "true"
     header "User-Agent", "RS Policies"
   end
@@ -309,9 +333,9 @@ datasource "ds_oci_recommendation_actions" do
     auth $auth_oracle
     pagination $pagination_oracle
     verb "POST"
-    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
+    host join(["optimizer.", $ds_primary_region, ".oci.oraclecloud.com"])
     path "/20200606/actions/filterResourceActions"
-    query "compartmentId", $param_root_compartment
+    query "compartmentId", $ds_root_compartment
     query "compartmentIdInSubtree", "true"
     query "includeResourceMetadata", "true"
     query "recommendationId", val(iter_item, "id")
@@ -367,6 +391,8 @@ script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
   parameters "ds_oci_recommendation_actions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_oci_recommendation_actions, function(action) {
       include_action = _.contains(param_regions_list, action['region'])
