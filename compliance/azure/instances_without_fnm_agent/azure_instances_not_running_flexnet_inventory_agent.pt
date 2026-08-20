@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.3.3",
+  version: "4.3.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -123,6 +123,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_report_id" do
+  run_script $js_report_id, $param_report_id
+end
+
+script "js_report_id", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  result = param_report_id.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -203,6 +215,8 @@ script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscriptions_list"
   result "results"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   var results = []
   if ( param_subscriptions_list.length != 0){
     results = []
@@ -247,18 +261,18 @@ datasource "ds_list_virtual_machines" do
 end
 
 datasource "ds_fnms_report_api_body" do
-  run_script $js_fnms_report_api_body, $param_report_id
+  run_script $js_fnms_report_api_body, $ds_report_id
 end
 
 script "js_fnms_report_api_body", type: "javascript" do
-  parameters "param_report_id"
+  parameters "ds_report_id"
   result "result"
   code <<-'EOS'
   body = [
     "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
     "  <soap:Body>\n",
     "    <tem:GetCustomView>\n",
-    "      <tem:customViewID>", param_report_id, "</tem:customViewID>\n",
+    "      <tem:customViewID>", ds_report_id, "</tem:customViewID>\n",
     "      <tem:rowLimit>100000</tem:rowLimit>\n",
     "   </tem:GetCustomView>\n",
     "  </soap:Body>\n",
@@ -297,6 +311,8 @@ script "js_formatted_instances", type: "javascript" do
   parameters "ds_list_virtual_machines", "ds_fnms_report", "param_exclusion_tag_key", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tag_key = param_exclusion_tag_key.trim()
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   var result = [];
