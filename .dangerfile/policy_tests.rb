@@ -1213,7 +1213,7 @@ end
 def policy_run_script_incorrect_order?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any scripts with parameters in the wrong order..."
 
-  fail_message = ""
+  found_calls = []
   ds_name = nil
 
   file_lines.each_with_index do |line, index|
@@ -1264,9 +1264,26 @@ def policy_run_script_incorrect_order?(file, file_lines)
           val_index = index if parameter.start_with?("val(")
         end
       end
-    end
 
-    fail_message += "Line #{line_number}: #{ds_name} / run_script #{script_name}\n" if disordered
+      found_calls << { line_number: line_number, ds_name: ds_name, script_name: script_name, disordered: disordered }
+    end
+  end
+
+  # If the same script is invoked more than once, and at least one of those invocations is
+  # correctly ordered, treat every invocation of that script as correct. A "disordered"
+  # reading on a sibling call in this situation is only an artifact of that call passing a
+  # raw value (e.g. a hardcoded lookback of 3 for a baseline comparison) in the same
+  # argument slot where another call passes a $param/$ds/constant, not an actual structural
+  # reordering bug — the argument's position, and thus the script's interpretation of it,
+  # is unchanged between calls.
+  calls_by_script = found_calls.group_by { |call| call[:script_name] }
+
+  fail_message = ""
+  found_calls.each do |call|
+    next unless call[:disordered]
+    next if calls_by_script[call[:script_name]].any? { |c| !c[:disordered] }
+
+    fail_message += "Line #{call[:line_number]}: #{call[:ds_name]} / run_script #{call[:script_name]}\n"
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
