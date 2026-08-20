@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.3.6
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for `js_cost_object_list` (datasources before parameters).
+
 ## v3.3.5
 
 - Updated documentation link in policy description. Functionality unchanged.

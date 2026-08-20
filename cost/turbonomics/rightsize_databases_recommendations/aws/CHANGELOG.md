@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for the filtered recommendations script (datasources before parameters).
+
 ## v0.4.9
 
 - Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
