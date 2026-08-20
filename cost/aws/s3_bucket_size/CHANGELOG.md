@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0.6
+## v4.0.7
 
 - Fixed issue where the policy would fail if bucket name contains dots (.).
 - Fixed issue where the policy would produce incorrect result for certain bucket name combinations.
