@@ -3,6 +3,7 @@
 ## v0.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Updated the summary message to include the policy name.
 
 ## v0.1.1
 
