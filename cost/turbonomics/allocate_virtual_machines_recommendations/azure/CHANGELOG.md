@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.9
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
 ## v2.3.8
 
 - Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
