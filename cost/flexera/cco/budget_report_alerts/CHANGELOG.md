@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.7.2
+
+- Fixed the Data Table in the incident detail to consistently round currency values to two decimal places and format them using the org currency's thousands separator (e.g. `$10,345,123.33` instead of `$10345123.33456`). Negative amounts (e.g. an over-budget Remaining Amount) now display correctly (e.g. `-$500.26` instead of `$-,500.26`).
+- Fixed currency formatting in the Data Table for currencies whose thousands separator is a period (e.g. Brazilian Real) so the decimal point now correctly switches to a comma (e.g. `R$10.345.123,33` instead of the ambiguous `R$10.345.123.33`).
+- Fixed the Projected (prorated) Spend value to always be rounded to two decimal places.
+
 ## v3.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

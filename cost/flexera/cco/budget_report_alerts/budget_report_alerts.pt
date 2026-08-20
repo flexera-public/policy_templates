@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.7.1",
+  version: "3.7.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -393,26 +393,32 @@ script "js_aggregated", type: "javascript" do
     return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
   }
 
-  function format_number(number, separator) {
-    formatted_number = "0"
+  function format_number(number, separator, symbol) {
+    // Round to 2 decimal places first, then format the sign, symbol, and digits separately so
+    // that negative values (e.g. a negative Remaining Amount) group and display correctly (e.g.
+    // "-$500.26" instead of "$-,500.26") and every value always shows exactly 2 decimal places,
+    // per local currency convention. Some currencies (e.g. BRL, ARS, CLP) use "." as the
+    // thousands separator, so the decimal point must switch to "," in that case to avoid
+    // ambiguous output like "10.345.123.33".
+    number = Math.round((number || 0) * 100) / 100
+    negative = number < 0
+    parts = Math.abs(number).toFixed(2).split(".")
+    formatted_number = parts[0]
+    decimal_point = separator == "." ? "," : "."
 
-    if (number) {
-      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+    if (separator) {
+      with_separator = ""
 
-      if (separator) {
-        with_separator = ""
-
-        for (var i = 0; i < formatted_number.length; i++) {
-          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
-          with_separator += formatted_number[i]
-        }
-
-        formatted_number = with_separator
+      for (var i = 0; i < formatted_number.length; i++) {
+        if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+        with_separator += formatted_number[i]
       }
 
-      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
-      if (decimal) { formatted_number += "." + decimal }
+      formatted_number = with_separator
     }
+
+    formatted_number = (symbol || "") + formatted_number + decimal_point + parts[1]
+    if (negative) { formatted_number = "-" + formatted_number }
 
     return formatted_number
   }
@@ -423,10 +429,10 @@ script "js_aggregated", type: "javascript" do
 
     rows = _.map(items, function(item) {
       return "| " + item['group'] +
-        " | " + ds_currency['symbol'] + format_number(item['budgetAmount'], ds_currency['separator']) +
-        " | " + ds_currency['symbol'] + format_number(item['spendAmount'], ds_currency['separator']) +
-        " | " + ds_currency['symbol'] + format_number(item['forecastedAmount'], ds_currency['separator']) +
-        " | " + ds_currency['symbol'] + format_number(item['remaining'], ds_currency['separator']) +
+        " | " + format_number(item['budgetAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['spendAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['forecastedAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['remaining'], ds_currency['separator'], ds_currency['symbol']) +
         " | " + (item['spentPercent'] || "") +
         " | " + item['details'] + " |"
     })
@@ -489,7 +495,7 @@ script "js_aggregated", type: "javascript" do
       item['monthYear'] = monthYear
       item['forecasted'] = ""
       item['currency'] = ds_currency['code']
-      item['forecastedAmount'] = item['spendAmount']
+      item['forecastedAmount'] = Math.round(item['spendAmount'] * 100) / 100
       date = new Date(item['timestamp'])
       item['date'] = date.toLocaleDateString()
       now = new Date()
