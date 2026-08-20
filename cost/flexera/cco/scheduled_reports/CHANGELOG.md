@@ -3,6 +3,7 @@
 ## v4.1.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Renamed `policyName` to `policy_name` in the generated report data and `summary_template`/`detail_template` references to follow the standard naming convention.
 
 ## v4.1.3
 

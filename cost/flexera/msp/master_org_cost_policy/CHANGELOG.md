@@ -3,6 +3,7 @@
 ## v2.0.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Added a link to docs.flexera.com in the `short_description`.
 
 ## v2.0.5
 
