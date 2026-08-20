@@ -5,6 +5,7 @@
 - Fixed issue where the policy would fail if bucket name contains dots (.).
 - Fixed issue where the policy would produce incorrect result for certain bucket name combinations.
 - Fixed issue where the policy only gather partial AWS CloudWatch data.
+- Fixed issue where the policy would fail to run when the `Exclusion Tags` parameter was used.
 
 ## v4.0.6
 
