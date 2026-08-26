@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.7.1",
+  version: "0.7.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -649,9 +649,12 @@ script "js_conditional_currency_conversion", type: "javascript" do
   result = []
   from_currency = "USD"
 
-  if (ds_optimizer_recs.length > 0) {
-    if (ds_optimizer_recs[0]['recommendationOptions'].length > 0) {
-      from_currency = ds_optimizer_recs[0]['recommendationOptions'][0]['savingsOpportunity']['estimatedMonthlySavings']['currency']
+  // AWS does not always return recommendationOptions or savingsOpportunity for every recommendation
+  if (ds_optimizer_recs.length > 0 && ds_optimizer_recs[0]['recommendationOptions'] != undefined && ds_optimizer_recs[0]['recommendationOptions'].length > 0) {
+    first_savings_opportunity = ds_optimizer_recs[0]['recommendationOptions'][0]['savingsOpportunity']
+
+    if (first_savings_opportunity != undefined && first_savings_opportunity['estimatedMonthlySavings'] != undefined && first_savings_opportunity['estimatedMonthlySavings']['currency'] != undefined) {
+      from_currency = first_savings_opportunity['estimatedMonthlySavings']['currency']
     }
   }
 
@@ -744,6 +747,16 @@ script "js_recommendations_merged", type: "javascript" do
     return formatted_number
   }
 
+  // AWS Compute Optimizer does not always return a savings opportunity for every recommendation
+  // option (for example, when cost data isn't available for that resource). Default to 0 in that case.
+  function getEstimatedMonthlySavings(opportunity) {
+    if (opportunity != undefined && opportunity['estimatedMonthlySavings'] != undefined && opportunity['estimatedMonthlySavings']['value'] != undefined) {
+      return opportunity['estimatedMonthlySavings']['value']
+    }
+
+    return 0.0
+  }
+
   instance_table = {}
   _.each(ds_instances, function(instance) { instance_table[instance['instanceId']] = instance })
 
@@ -751,7 +764,8 @@ script "js_recommendations_merged", type: "javascript" do
   total_savings = 0.0
 
   _.each(ds_optimizer_recs, function(rec) {
-    instance = instance_table[rec['instanceArn'].split('/')[1]]
+    instance = undefined
+    if (rec['instanceArn'] != undefined) { instance = instance_table[rec['instanceArn'].split('/')[1]] }
 
     if (instance != undefined) {
       tags = []
@@ -765,26 +779,32 @@ script "js_recommendations_merged", type: "javascript" do
         })
       }
 
-      lookbackPeriod = Number(rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[1])
+      // AWS does not always return effectiveRecommendationPreferences/lookBackPeriod for every recommendation
+      lookbackPeriod = null
+      lookBackPeriodPref = rec['effectiveRecommendationPreferences'] != undefined ? rec['effectiveRecommendationPreferences']['lookBackPeriod'] : undefined
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "MINUTES") {
-        lookbackPeriod = lookbackPeriod / 24 / 60
-      }
+      if (lookBackPeriodPref != undefined) {
+        lookbackPeriod = Number(lookBackPeriodPref.split('_')[1])
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "HOURS") {
-        lookbackPeriod = lookbackPeriod / 24
-      }
+        if (lookBackPeriodPref.split('_')[0] == "MINUTES") {
+          lookbackPeriod = lookbackPeriod / 24 / 60
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "WEEKS") {
-        lookbackPeriod = lookbackPeriod * 7
-      }
+        if (lookBackPeriodPref.split('_')[0] == "HOURS") {
+          lookbackPeriod = lookbackPeriod / 24
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "MONTHS") {
-        lookbackPeriod = lookbackPeriod * 30
-      }
+        if (lookBackPeriodPref.split('_')[0] == "WEEKS") {
+          lookbackPeriod = lookbackPeriod * 7
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "YEARS") {
-        lookbackPeriod = lookbackPeriod * 365
+        if (lookBackPeriodPref.split('_')[0] == "MONTHS") {
+          lookbackPeriod = lookbackPeriod * 30
+        }
+
+        if (lookBackPeriodPref.split('_')[0] == "YEARS") {
+          lookbackPeriod = lookbackPeriod * 365
+        }
       }
 
       cpuMaximum = null
@@ -841,8 +861,8 @@ script "js_recommendations_merged", type: "javascript" do
 
       _.each(rec['recommendationOptions'], function(option) {
         if (option['rank'] == 1 || param_multi_recommendations == "Yes") {
-          savings = option['savingsOpportunity']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
-          savings_after_discount = option['savingsOpportunityAfterDiscounts']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
+          savings = getEstimatedMonthlySavings(option['savingsOpportunity']) * ds_currency['exchange_rate']
+          savings_after_discount = getEstimatedMonthlySavings(option['savingsOpportunityAfterDiscounts']) * ds_currency['exchange_rate']
 
           // Exclude OS families the user has opted not to include
           os_family = "Other"
@@ -873,9 +893,9 @@ script "js_recommendations_merged", type: "javascript" do
               region: instance['region'],
               platform: instance['platform'],
               launchTime: instance['launchTime'],
-              hostname: instance['privateDnsName'].split('.')[0],
+              hostname: instance['privateDnsName'] != undefined ? instance['privateDnsName'].split('.')[0] : "",
               finding: rec['finding'],
-              findingReasonCodes: rec['findingReasonCodes'].join(', '),
+              findingReasonCodes: rec['findingReasonCodes'] != undefined ? rec['findingReasonCodes'].join(', ') : "",
               migrationEffort: option['migrationEffort'],
               performanceRisk: option['performanceRisk'],
               rank: option['rank'],
@@ -895,7 +915,7 @@ script "js_recommendations_merged", type: "javascript" do
               gpuMaximum: gpuMaximum,
               gpuMemoryMaximum: gpuMemoryMaximum,
               service: "EC2",
-              lookbackPeriod: Math.round(lookbackPeriod * 100) / 100,
+              lookbackPeriod: lookbackPeriod != null ? Math.round(lookbackPeriod * 100) / 100 : null,
               policy_name: ds_applied_policy['name'],
               total_savings: "",
               message: ""
