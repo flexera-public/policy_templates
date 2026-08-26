@@ -2,7 +2,7 @@
 
 ## v0.7.2
 
-- Fixed an issue where the policy would fail to run if AWS Compute Optimizer did not return an estimated savings amount for a recommendation. Recommendations missing savings data from AWS are now treated as having $0 in estimated savings instead of causing an error. Also added similar safeguards for other recommendation fields that AWS does not always return.
+- Fixed an issue where the policy would fail to run if AWS Compute Optimizer did not return an estimated savings amount for a recommendation.
 
 ## v0.7.1
 
