@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.2
+
+- Fixed an issue where the policy would fail to run if AWS Compute Optimizer did not return an estimated savings amount for a recommendation.
+
 ## v0.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
