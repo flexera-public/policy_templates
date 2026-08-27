@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2
+
+- Fixed an issue where the policy could fail to generate an incident for a SQL pool if one of its monitoring metrics had no data points during the analysis window.
+
 ## v0.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
