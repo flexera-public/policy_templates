@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.11
+
+- Fixed an issue where incidents could show a blank or incorrect resource ID when Turbonomic returned more than one vendor ID for a recommended volume.
+
 ## v0.6.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
