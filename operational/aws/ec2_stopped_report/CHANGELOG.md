@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.2
+
+- Fixed an issue where the policy could fail to generate the report if a stopped instance did not have a private DNS name assigned.
+
 ## v0.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
