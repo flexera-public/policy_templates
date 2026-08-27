@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2
+
+- Fixed an issue where the incident summary could display an invalid percentage value when there were no storage accounts found to analyze.
+
 ## v0.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
