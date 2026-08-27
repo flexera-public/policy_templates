@@ -1,5 +1,10 @@
 # Changelog
 
+## v7.7.2
+
+- Fixed an issue where the incident summary could display "NaN%" instead of a valid percentage when no IP addresses were found to analyze.
+- Fixed an issue where the incident message always used the singular word "day" instead of "days", regardless of the configured threshold value.
+
 ## v7.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

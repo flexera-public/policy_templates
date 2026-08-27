@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Fixed an issue where the policy would always report the AWS account as missing a support role, even when the AWSSupportAccess policy was attached to one or more roles.
+
 ## v3.2.0
 
 - Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.
