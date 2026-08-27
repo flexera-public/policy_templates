@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.2
+
+- Fixed an issue where the policy could fail to check for security alerts if no alert severity levels were selected.
+
 ## v3.1.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

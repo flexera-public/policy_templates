@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Fixed an issue where repositories intentionally excluded via the repository filter parameter could still be incorrectly reported as having no associated team.
+
 ## v3.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

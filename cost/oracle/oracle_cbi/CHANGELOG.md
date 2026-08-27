@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.7
+
+- Fixed an issue where the status message could fail to generate immediately after a new bill upload was created with no files yet.
+
 ## v3.3.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
