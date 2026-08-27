@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Fixed an issue where the policy could fail to run when Google Cloud billing data included costs that were not attributed to a specific project.
+
 ## v0.3.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
