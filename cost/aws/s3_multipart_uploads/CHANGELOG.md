@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8
+
+- Fixed an issue where the policy would fail to run and report incomplete multi-part uploads whenever exclusion tags were configured, causing the incident to never be generated for any bucket in that scenario.
+
 ## v0.2.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

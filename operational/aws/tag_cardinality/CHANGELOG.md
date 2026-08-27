@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.5
+
+- Combined reports now skip child incidents that do not include result rows instead of failing intermittently.
+
 ## v3.3.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

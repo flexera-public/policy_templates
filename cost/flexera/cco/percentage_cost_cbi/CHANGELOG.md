@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed an issue where the injected cost could be reported as blank/invalid when the calculated monthly spend for the selected billing centers and filters was exactly zero.
+
 ## v0.1.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
