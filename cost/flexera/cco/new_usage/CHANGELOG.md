@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.6
+
+- Fixed an issue where the policy could report blank usage values when cost data did not include the selected dimension.
+
 ## v3.1.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

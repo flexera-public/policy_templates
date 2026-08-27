@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Fixed an issue where the AutoScaling Group dimension was never included in CloudWatch memory metric queries for instances that are part of an Auto Scaling Group, which could result in memory utilization data not being retrieved for those instances.
+
 ## v0.3.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

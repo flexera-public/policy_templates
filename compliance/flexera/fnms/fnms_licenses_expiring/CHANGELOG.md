@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1
+
+- Fixed an issue where the policy could produce an error when a license record returned by the API had a null or missing expiry date field.
+
 ## v2.5.0
 
 - Added support for attaching CSV files to incident emails.

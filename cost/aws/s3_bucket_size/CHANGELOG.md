@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.8
+
+- Fixed an issue where the policy could report an outdated bucket size measurement instead of the most recent one when multiple data points were returned for the same bucket.
+
 ## v4.0.7
 
 - Fixed issue where the policy would fail if bucket name contains dots (.).
