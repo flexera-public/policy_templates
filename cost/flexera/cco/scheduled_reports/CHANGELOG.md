@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.5
+
+- Fixed an issue where selecting a custom graph dimension could fail when the entered dimension name only differed by whitespace or letter case from the saved dimension name.
+
 ## v4.1.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

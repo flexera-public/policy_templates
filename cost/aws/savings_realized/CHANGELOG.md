@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0.11
+
+- Fixed an issue where the report could use the wrong starting month when run late in a month and the previous month had fewer days.
+- Fixed an issue where the policy could fail to generate a report when the selected billing centers had no matching AWS savings data for the requested period.
+
 ## v4.0.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
