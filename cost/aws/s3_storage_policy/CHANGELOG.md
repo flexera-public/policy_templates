@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.11
+
+- Fixed an issue where the policy could fail to correctly identify buckets that should be excluded when Exclusion Tags were configured, potentially causing the policy to error instead of applying the tag-based filter.
+
 ## v4.2.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.9
+
+- Fixed an issue where the policy could fail to generate an incident for users who have never logged in via the API or UI.
+
 ## v4.0.8
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

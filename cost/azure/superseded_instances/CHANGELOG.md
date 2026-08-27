@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4.2
+
+- Fixed an issue where non-USD users would incorrectly see a currency conversion API malfunction warning in the incident details even when currency conversion was working correctly.
+
 ## v4.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

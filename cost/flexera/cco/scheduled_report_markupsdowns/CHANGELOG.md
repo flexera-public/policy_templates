@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.6
+
+- Fixed an issue where the Support cost category's dedicated markup/markdown percentage was never applied, causing the general markup/markdown percentage to be used instead.
+
 ## v2.0.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.9.2
+
+- Fixed an issue where the policy could fail with an error when generating shared-scope recommendations and none of the in-scope subscriptions had eligible usage.
+- Fixed an issue where the estimated break-even period could show an invalid value for recommendations with no on-demand cost baseline to compare against.
+
 ## v4.9.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

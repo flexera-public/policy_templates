@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.3
+
+- Fixed an issue where the policy could fail to generate results for any application if a license term did not have a valid expiration date (such as a perpetual or evergreen license).
+
 ## v3.3.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
