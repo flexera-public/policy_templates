@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.4
+
+- Fixed an issue where selecting "Deny" for the Billing Center filter could fail to exclude the specified billing centers, causing them to still be included in the report.
+
 ## v1.2.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
