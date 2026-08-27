@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.11
+
+- Fixed an issue where the current and recommended connection count values for database servers were swapped in the incident details.
+
 ## v0.4.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
