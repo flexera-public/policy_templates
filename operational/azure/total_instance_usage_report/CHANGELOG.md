@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.14
+
+- Fixed an issue where selecting "Deny" for the billing center filter parameter could fail to exclude billing centers that were specified by only an ID or only a name in the filter list.
+- Fixed an issue where the reporting period could be shifted by one month depending on the day of the month the policy was run and the number of months selected for the lookback period.
+- Fixed an issue where the policy could fail with an error instead of generating a report when there was no instance usage data for the selected billing center(s), region(s), or time period.
+
 ## v1.0.13
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
