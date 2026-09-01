@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.6.2
+
+- Fixed an issue where the policy could fail to recommend a larger instance size for the smallest burstable EC2 instance types when surplus CPU credits exceeded the configured threshold.
+
 ## v4.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

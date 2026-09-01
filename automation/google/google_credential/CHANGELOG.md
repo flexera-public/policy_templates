@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Improved consolidated reporting when the applied policy has no Google credential selected.
+
 ## v0.2.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

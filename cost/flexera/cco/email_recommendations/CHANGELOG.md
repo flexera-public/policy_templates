@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.10.3
+
+- Fixed an issue where filtering by cloud account could fail with an error for recommendations that do not include a cloud account name.
+- Fixed an issue where filtering by billing center could fail with an error for recommendations that do not include a billing center name.
+- Fixed an issue where the policy could fail with an error while processing recommendation types that do not include extended recommendation details.
+
 ## v0.10.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

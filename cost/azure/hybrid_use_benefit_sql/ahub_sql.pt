@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.9.1",
+  version: "4.9.2",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit",
@@ -803,22 +803,31 @@ script "js_resources_rg_filtered", type: "javascript" do
   code <<-'EOS'
     // Remove any leading/trailing whitespace the user may have accidentally entered
     param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
-    if (param_resource_groups_list.length > 0) {
-      result = _.filter(ds_resources_region_filtered, function(resource) {
+    function rg_filter_resources(resource_list, rg_allow_or_deny, rg_list) {
+      return _.filter(resource_list, function(resource) {
         rg = resource['resourceGroup']
         sub = resource['subscriptionId'] || resource['subscriptionID']
-        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+        include_resource = _.any(rg_list, function(rg_entry) {
           if (rg_entry.indexOf('/') != -1) {
             entry_parts = rg_entry.split('/')
             return sub == entry_parts[0] && rg == entry_parts[1]
           }
           return rg == rg_entry
         })
-        if (param_resource_groups_allow_or_deny == "Deny") {
+        if (rg_allow_or_deny == "Deny") {
           include_resource = !include_resource
         }
         return include_resource
       })
+    }
+
+    if (param_resource_groups_list.length > 0) {
+      result = {
+        sql_virtualmachines: rg_filter_resources(ds_resources_region_filtered['sql_virtualmachines'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_elastic_pools: rg_filter_resources(ds_resources_region_filtered['sql_elastic_pools'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_databases: rg_filter_resources(ds_resources_region_filtered['sql_databases'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_managed_instances: rg_filter_resources(ds_resources_region_filtered['sql_managed_instances'], param_resource_groups_allow_or_deny, param_resource_groups_list)
+      }
     } else {
       result = ds_resources_region_filtered
     }

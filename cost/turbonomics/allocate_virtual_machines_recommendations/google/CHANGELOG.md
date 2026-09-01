@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3.11
+
+- Fixed an issue where the policy could fail to calculate RI coverage values for certain virtual machines when the Turbonomic action details response did not include RI coverage data for those actions.
+- Fixed an issue where the reported RI coverage percentage could display as an invalid value for virtual machines with no available RI coverage capacity.
+
 ## v2.3.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

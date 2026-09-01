@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0.3",
+  version: "5.0.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -466,7 +466,7 @@ script "js_azure_resources_type_filtered", type: "javascript" do
       if (param_resourcetypes_allow_or_deny == "Deny") { include_resource = !include_resource }
 
       // Filter out resources with untaggable resource types based on our list
-      return include_resource && ds_azure_resource_types[resource['resourceType']]['supportsTags']
+      return include_resource && ds_azure_resource_types[resource['resourceType']] != undefined && ds_azure_resource_types[resource['resourceType']]['supportsTags']
     })
   } else {
     result = ds_azure_resources_region_filtered
@@ -629,12 +629,18 @@ script "js_azure_providers", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
   result "request"
   code <<-'EOS'
+  // Use an empty placeholder subscription id if there are no subscriptions left after filtering.
+  // ignore_status below prevents this from causing a hard failure; there are no resources to
+  // check tag support for in this scenario anyway since resources are fetched per subscription.
+  subscription_id = ds_azure_subscriptions_filtered.length > 0 ? ds_azure_subscriptions_filtered[0]['id'] : ''
+
   request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
     host: param_azure_endpoint,
-    path: ["/subscriptions/", ds_azure_subscriptions_filtered[0]['id'], "/providers"].join(''),
-    query_params: { "api-version": "2021-04-01" }
+    path: ["/subscriptions/", subscription_id, "/providers"].join(''),
+    query_params: { "api-version": "2021-04-01" },
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
