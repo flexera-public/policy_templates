@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.9.10",
+  version: "3.9.11",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized",
@@ -770,8 +770,10 @@ script "js_savings_realized", type: "javascript" do
 
       if (base_aggregated_costs[index] != undefined) {
         _.each(base_aggregated_costs[index], function(cost) {
-          base_cost_instance_hour_total += cost['cost'] / cost['usage_amount']
-          count += 1
+          if (cost['usage_amount']) {
+            base_cost_instance_hour_total += cost['cost'] / cost['usage_amount']
+            count += 1
+          }
         })
       }
 
@@ -791,8 +793,12 @@ script "js_savings_realized", type: "javascript" do
     if (unique_cost_instance_hours[index]) { avg_base_cost_instance_hour = unique_cost_instance_hours[index] }
 
     if (avg_base_cost_instance_hour != undefined) {
-      savings_realized_per_instance_hour = avg_base_cost_instance_hour - (cost['cost'] / cost['usage_amount'])
-      savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
+      savings_realized = 0
+
+      if (cost['usage_amount']) {
+        savings_realized_per_instance_hour = avg_base_cost_instance_hour - (cost['cost'] / cost['usage_amount'])
+        savings_realized = savings_realized_per_instance_hour * cost['usage_amount']
+      }
 
       if (savings_realized_object[cost['month']] == undefined) { savings_realized_object[cost['month']] = 0 }
       savings_realized_object[cost['month']] += savings_realized
@@ -851,6 +857,7 @@ script "js_chart_data", type: "javascript" do
   code <<-'EOS'
   // Get currency code or symbol
   currency_data = ds_currency_reference[ds_currency_code.value]
+  if (currency_data == undefined) { currency_data = { code: "USD", symbol_native: "$" } }
   currency = currency_data.code
   switch (param_chart_currency) {
     case "Code (e.g. USD)":
