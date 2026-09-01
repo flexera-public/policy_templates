@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.8",
+  version: "0.2.9",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -118,18 +118,6 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
-
-datasource "ds_blob_hostname" do
-  run_script $js_blob_hostname, $param_blob_hostname
-end
-
-script "js_blob_hostname", type: "javascript" do
-  parameters "param_blob_hostname"
-  result "result"
-  code <<-'EOS'
-  result = param_blob_hostname.trim()
-EOS
-end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
@@ -470,7 +458,7 @@ datasource "ds_cost_objects" do
   iterate $ds_cost_object_names
   request do
     auth $auth_azure_storage
-    host $ds_blob_hostname
+    host $param_blob_hostname
     path val(iter_item, "object")
     header "User-Agent", "RS Policies"
     header "x-ms-version", "2025-05-05"
@@ -568,14 +556,15 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $ds_blob_hostname, $param_blob_prefix
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $param_blob_hostname, $param_blob_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "ds_blob_hostname", "param_blob_prefix"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "param_blob_hostname", "param_blob_prefix"
   result "result"
   code <<-'EOS'
   // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_blob_hostname = param_blob_hostname.trim()
   param_blob_prefix = param_blob_prefix.trim()
   result = [{
     policy_name: ds_applied_policy['name'],
@@ -585,7 +574,7 @@ script "js_incident", type: "javascript" do
     updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    blob_hostname: ds_blob_hostname
+    blob_hostname: param_blob_hostname
   }]
 EOS
 end
