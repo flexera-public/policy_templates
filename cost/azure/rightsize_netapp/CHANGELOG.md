@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.2
+
+- Fixed an issue where the policy could fail to evaluate recommendations for NetApp pools or volumes when the Azure metrics API returned a time series with no valid data points for a resource.
+
 ## v2.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

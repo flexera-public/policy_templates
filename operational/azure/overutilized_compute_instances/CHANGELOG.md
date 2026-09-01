@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.5
+
+- Fixed an issue where the policy could fail to generate a report when a virtual machine's power state could not be determined.
+- Fixed an issue where the incident summary could display an invalid percentage value when there were no virtual machines found to analyze.
+
 ## v0.4.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

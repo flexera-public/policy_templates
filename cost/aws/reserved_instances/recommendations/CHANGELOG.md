@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.1
+
+- Fixed an issue where the incident message could omit the currency information when Flexera's internal currency conversion service was temporarily unavailable.
+
 ## v3.9.0
 
 - Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.

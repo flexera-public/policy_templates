@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed an issue where the policy could fail to complete if tag information could not be retrieved for one or more Lambda functions.
+
 ## v0.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.6.2
+
+- Fixed an issue where the incident summary could display an invalid percentage value when there were no disks found to analyze.
+
 ## v4.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

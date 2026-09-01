@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed an issue where the policy could fail when Azure returned no CPU or connection metrics for a server during the selected lookback window.
+
 ## v0.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

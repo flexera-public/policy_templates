@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Fixed an issue where selecting "Deny" for the account filter parameter did not actually exclude the listed accounts from the report.
+
 ## v0.1.6
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

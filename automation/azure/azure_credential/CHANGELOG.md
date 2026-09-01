@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Improved reliability when consolidating credential test results that may be missing summary details.
+
 ## v0.3.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
