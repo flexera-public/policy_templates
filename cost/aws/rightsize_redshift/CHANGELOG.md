@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.2
+
+- Fixed an issue where the CPU p90 and p99 statistics could be swapped when determining whether a cluster is underutilized, which could lead to incorrect recommendations when the "Threshold Statistic" parameter was set to p90 or p99.
+- Fixed an issue where approving the automatic downsize action could fail to resize any Redshift clusters.
+
 ## v0.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

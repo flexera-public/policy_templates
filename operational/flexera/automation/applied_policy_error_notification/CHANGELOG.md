@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.4
+
+- Fixed an issue where the child policy error report could fail to run, and could incorrectly include non-child policies, when reporting on child policy errors was enabled.
+
 ## v4.1.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

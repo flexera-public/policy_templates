@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.3
+
+- Fixed an issue where negative monthly cost or moving average values (e.g. due to credits or refunds) could be displayed incorrectly in the incident data table, with the minus sign misplaced relative to the thousands separator.
+
 ## v4.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.11
+
+- Fixed an issue where the policy could fail to generate reserved instance purchase recommendations when utilization data was missing for a recommendation.
+
 ## v0.3.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

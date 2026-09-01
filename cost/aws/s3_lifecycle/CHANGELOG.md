@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8
+
+- Fixed bug where the policy would fail with a `'resource' is not defined` error whenever the `Exclusion Tags` parameter was used.
+
 ## v0.2.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

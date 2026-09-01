@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.8.1",
+  version: "0.8.3",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -529,6 +529,7 @@ datasource "ds_databricks_workspaces" do
       field "subscriptionId", jmes_path(iter_item, "subscriptionId")
       field "subscriptionName", jmes_path(iter_item, "subscriptionName")
       field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "name", jmes_path(col_item, "name")
       field "location", jmes_path(col_item, "location")
       field "workspaceId", jmes_path(col_item, "properties.workspaceId")
@@ -683,6 +684,8 @@ script "js_lookback_time_formats", type: "javascript" do
 
   // Get the "start_at" and "end_at" format which is needed for Flexera Cost API
   end_date = new Date()
+  // Set to the 1st of the month before adding a month so day-of-month rollover (e.g. Jan 31 + 1 month) can't skip an extra month
+  end_date.setDate(1)
   end_date.setMonth(end_date.getMonth() + 1)
   // Convert to YYYY-MM
   end_date = end_date.toISOString().split("T")[0].split("-").slice(0, 2).join("-")
@@ -869,7 +872,9 @@ script "js_azure_sku_memory", type: "javascript" do
         return item["name"] == "MemoryGB"
       })
 
-      result[name] = memory["value"] * 1024 * 1024 * 1024
+      if (memory != undefined) {
+        result[name] = memory["value"] * 1024 * 1024 * 1024
+      }
     }
   })
 EOS
@@ -1339,7 +1344,8 @@ script "js_virtualmachines_from_bill", type: "javascript" do
     vm_cost_rg = vm["resourceId"].split("/")[4] // Get the resource group from the resource ID
     vm_rg_string = "/subscriptions/"+vm_cost_sub+"/resourceGroups/"+vm_cost_rg
 
-    var db_workspace = ds_databricks_workspaces_filtered_indexed[vm_rg_string.toLowerCase()][0];
+    var db_workspace_group = ds_databricks_workspaces_filtered_indexed[vm_rg_string.toLowerCase()];
+    var db_workspace = (db_workspace_group != undefined && db_workspace_group.length > 0) ? db_workspace_group[0] : undefined;
     if (db_workspace != undefined) {
       if (result_map[vm_cost_sub] == undefined || result_map[vm_cost_sub] == null) {
         result_map[vm_cost_sub] = {}
@@ -1625,9 +1631,14 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         idle_list.push(vm)
       } else if (is_underutil) { // If not idle, check see if the resource is below the lower "idle" threshold
         // Get the downsize instance type
+        var newResourceType
         if (ds_azure_instance_size_map[vm['resourceType']]) {
-          vm["newResourceType"] = ds_azure_instance_size_map[vm['resourceType']]['down']
+          newResourceType = ds_azure_instance_size_map[vm['resourceType']]['down']
         }
+        if (!newResourceType) {
+          return // No smaller instance type available in this family, so there is nothing actionable to recommend
+        }
+        vm["newResourceType"] = newResourceType
         vm["recommendationType"] = "Downsize"
 
         recommendationDetails = [

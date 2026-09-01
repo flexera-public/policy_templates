@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.11
+
+- Fixed an issue where the policy could error out or report a missing resource ID for a recommendation whose underlying resource had more than one associated cloud identifier.
+
 ## v0.5.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed an issue where some recommendations could report negative savings when a newer instance class cost more than the current one in certain regions or engine configurations.
+
 ## v0.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

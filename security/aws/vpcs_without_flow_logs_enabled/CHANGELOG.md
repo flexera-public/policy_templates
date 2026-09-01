@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.2
+
+- Fixed an issue where, in AWS regions with a large number of VPC Flow Logs, some VPCs that already had Flow Logs enabled could be incorrectly reported as missing Flow Logs because only the first page of Flow Log results was being checked.
+
 ## v4.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

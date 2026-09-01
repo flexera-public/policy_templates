@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.0.4
+
+- Fixed an issue where the policy could fail to run if the subscription filter excluded every subscription in the account.
+- Fixed an issue where the policy could fail if a resource's type was not found in the policy's list of known Azure resource types.
+
 ## v5.0.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

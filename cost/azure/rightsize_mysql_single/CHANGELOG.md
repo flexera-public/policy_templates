@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where applying a region filter would cause the policy to fail instead of filtering databases by region.
+- Fixed an issue where enabling the "Skip Instance Sizes" option could cause the policy to fail when recommending a downsized instance for certain instances.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

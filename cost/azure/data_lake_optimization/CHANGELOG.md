@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4
+
+- Fixed an issue where the tags for a storage account were never included in the incident output, even when the storage account had tags configured.
+
 ## v0.4.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Fixed an issue where the compliance score could display as an invalid value for a compliance standard with no assessable controls.
+
 ## v3.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
