@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.4
+
+- Fixed an issue where the incident notification could be missing its recommendation details when the AHUB core usage or virtual machine count was exactly equal to the licensed amount.
+
 ## v4.3.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.13
+
+- Fixed an issue where the "Enable Automatic Action" check for outdated applied policies always reported as non-compliant, even when the automatic update option was correctly configured.
+- Fixed an issue where the unallocated cost percentage for rule-based dimensions could display as "NaN%" instead of 0% for organizations with no recorded cost during the analysis period.
+
 ## v0.1.12
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

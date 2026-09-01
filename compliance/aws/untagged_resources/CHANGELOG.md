@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.5
+
+- Fixed an issue where the policy could fail when account-level tag data was missing for the AWS account.
+
 ## v6.0.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

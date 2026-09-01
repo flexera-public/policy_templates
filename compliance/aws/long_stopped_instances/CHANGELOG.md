@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.2.2
+
+- Fixed an issue where the incident summary could display "NaN%" instead of a valid percentage when no EC2 instances were found to analyze.
+- Fixed an issue where the policy could fail to generate an incident for stopped instances that do not have a private DNS name assigned.
+
 ## v6.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

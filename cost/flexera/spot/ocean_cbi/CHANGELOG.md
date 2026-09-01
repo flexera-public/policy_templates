@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Fixed an issue where very large reallocations could fail to split billing data into multiple upload files, which could cause upload failures for some environments.
+
 ## v0.2.8
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

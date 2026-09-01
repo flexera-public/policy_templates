@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.4
+
+- Fixed an issue where the policy could fail to generate a report when the region filter was used.
+
 ## v3.3.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.11
+
+- Fixed an issue where the forecast report could show invalid or nonsensical values when the commitment period's start and end date were set to the same month.
+
 ## v4.0.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

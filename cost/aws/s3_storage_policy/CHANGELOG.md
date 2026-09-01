@@ -2,7 +2,7 @@
 
 ## v4.2.11
 
-- Fixed an issue where the policy could fail to correctly identify buckets that should be excluded when Exclusion Tags were configured, potentially causing the policy to error instead of applying the tag-based filter.
+- Fixed bug where the "Exclusion Tags" parameter incorrectly included matching resources in the results instead of excluding them, and fixed a related error that occurred whenever any exclusion tag was entered.
 
 ## v4.2.10
 

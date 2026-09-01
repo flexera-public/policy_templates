@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.2
+
+- Fixed an issue where the automatic deletion action could fail to delete a load balancer that was flagged as internet-facing.
+
 ## v4.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
