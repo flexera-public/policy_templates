@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.11
+
+- Fixed an issue where the Resource ID reported for a recommendation could be malformed when the virtual machine's cloud account could not be cross-referenced against the discovered business units.
+
 ## v0.6.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

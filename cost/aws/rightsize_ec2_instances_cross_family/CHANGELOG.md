@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed an issue where the CPU and memory utilization chart could be generated with no data displayed for instances that only had memory utilization data available.
+
 ## v0.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

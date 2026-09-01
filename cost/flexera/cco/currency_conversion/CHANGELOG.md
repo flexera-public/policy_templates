@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.4
+
+- Fixed an issue where the policy could fail with an error instead of applying no changes when none of the values entered in the "Dimensions" parameter matched a valid dimension in Flexera CCO.
+
 ## v5.1.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
