@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.11
+
+- Fixed an issue where the savings realized calculation could produce an invalid result when a cost record had zero usage.
+- Fixed an issue where the chart could fail to generate if the organization's currency could not be determined.
+
 ## v3.9.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

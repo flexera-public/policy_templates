@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where the policy could fail to generate a report when the "Allow/Deny Regions List" filter parameter was used.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

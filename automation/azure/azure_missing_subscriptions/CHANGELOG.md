@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Fixed an issue where unattributed or unallocated cloud billing data could be incorrectly reported as a missing Azure subscription.
+
 ## v0.3.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

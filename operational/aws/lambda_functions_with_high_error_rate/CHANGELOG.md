@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.2
+
+- Fixed an issue where the incident message would omit the number of hours when the statistic lookback period was set to 1 hour.
+
 ## v5.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

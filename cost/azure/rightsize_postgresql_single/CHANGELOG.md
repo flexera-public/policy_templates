@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed an issue where, with "Skip Instance Sizes" set to "Yes", a server that qualified for downsizing more than one size could cause the policy to fail to generate an incident instead of recommending the correct target size.
+
 ## v0.2.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

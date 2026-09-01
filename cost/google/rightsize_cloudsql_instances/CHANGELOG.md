@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.2
+
+- Fixed an issue where the policy could fail to run when monitoring data did not include CPU or memory utilization values for a specific Cloud SQL instance.
+- Fixed an issue where the incident summary for idle and underutilized Cloud SQL instances could display "NaN%" instead of a valid percentage when no instances were found to analyze.
+
 ## v0.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

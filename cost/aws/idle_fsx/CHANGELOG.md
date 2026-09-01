@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Fixed an issue where changing the "Statistic Lookback Period" parameter away from its default value could cause the policy to analyze the wrong number of days of read/write activity, potentially causing file systems to be incorrectly flagged (or not flagged) as idle.
+
 ## v0.3.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

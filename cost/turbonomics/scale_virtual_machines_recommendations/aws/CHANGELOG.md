@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.11
+
+- Fixed an issue where the policy could fail to report Reserved Instance coverage details for a virtual machine when that data was not available from Turbonomic, instead of showing a coverage value of zero.
+
 ## v0.6.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

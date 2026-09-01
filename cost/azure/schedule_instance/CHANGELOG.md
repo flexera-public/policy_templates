@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.2.4
+
+- Fixed an issue where the policy could fail to generate an incident when the Azure directory information for the tenant was unavailable.
+
 ## v7.2.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

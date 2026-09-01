@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.3.2
+
+- Fixed an issue where the policy could error out entirely when an instance type had no available replacement in the selected recommendation category, instead of simply skipping that instance.
+- Fixed an issue where an instance could be assigned incorrect list price data left over from a previous instance's calculation when pricing data was unavailable for its own instance type or region, resulting in an inaccurate savings estimate.
+- Fixed an issue where the incident could always display a currency conversion malfunction notice for organizations using a non-USD currency, even when the currency conversion succeeded.
+
 ## v3.3.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

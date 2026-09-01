@@ -2,7 +2,7 @@
 
 ## v0.2.8
 
-- Fixed an issue where the policy would fail to run and report incomplete multi-part uploads whenever exclusion tags were configured, causing the incident to never be generated for any bucket in that scenario.
+- Fixed bug where the "Exclusion Tags" parameter incorrectly included matching resources in the results instead of excluding them, and fixed a related error that occurred whenever any exclusion tag was entered.
 
 ## v0.2.7
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.5
+
+- Fixed an issue where the policy could fail to determine which files still needed to be uploaded once all files for a billing period had already been uploaded, preventing the bill upload from progressing to completion.
+- Fixed an issue where selecting "Previous Month" as the billing period could cause the policy to compute the wrong billing period on certain calendar dates (the 1st of January, April, June, August, and November), causing it to look for and upload the wrong month's cost files.
+
 ## v0.1.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

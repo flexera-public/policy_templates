@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.5
+
+- Fixed an issue where entering a subscription in the "Subscription Allowed List" parameter that did not match any accessible subscription (for example due to a typo or a subscription that was later renamed or removed) could cause the policy to fail instead of simply skipping that entry.
+
 ## v4.3.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
