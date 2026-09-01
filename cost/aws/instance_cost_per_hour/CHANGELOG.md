@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Fixed an issue where the monthly reporting periods could be calculated incorrectly when the policy ran on the 29th, 30th, or 31st day of certain months, causing some months to be skipped or duplicated in the report.
+
 ## v0.2.8
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
