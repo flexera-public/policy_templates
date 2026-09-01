@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.2
+
+- Fixed an issue where applying a region filter would cause the policy to fail instead of filtering databases by region.
+- Fixed an issue where the policy could fail for databases with no recent storage usage data available.
+- Fixed an issue where the policy could fail when Azure did not return complete database size capability information for a subscription and region.
+
 ## v0.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

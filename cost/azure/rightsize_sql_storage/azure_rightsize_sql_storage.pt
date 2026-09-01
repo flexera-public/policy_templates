@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.1",
+  version: "0.5.2",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -640,7 +640,7 @@ script "js_azure_sql_databases_region_filtered", type: "javascript" do
   param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
-      include_db = _.contains(param_regions_list, db['region'])
+      include_db = _.contains(param_regions_list, ip['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
         include_db = !include_db
@@ -763,7 +763,12 @@ script "js_azure_sql_databases_with_used_space", type: "javascript" do
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
-    metrics = _.sortBy(db["value"][0]["timeseries"][0]["data"], "timeStamp").reverse()
+    data = (db["value"] && db["value"][0] && db["value"][0]["timeseries"] && db["value"][0]["timeseries"][0]) ? db["value"][0]["timeseries"][0]["data"] : []
+    metrics = _.sortBy(data, "timeStamp").reverse()
+
+    // Skip databases with no reported storage metric data available for the queried time window
+    if (metrics.length == 0) { return }
+
     usedSpace = metrics[0]["total"]
     usedPercentage = usedSpace / db["maxSizeBytes"] * 100
 
@@ -870,7 +875,7 @@ script "js_azure_sql_capabilities_table", type: "javascript" do
     if (result[accountID] == undefined) { result[accountID] = {} }
     if (result[accountID][region] == undefined) { result[accountID][region] = {} }
 
-    all_lists = list["supportedManagedInstanceVersions"].concat(list["supportedServerVersions"])
+    all_lists = (list["supportedManagedInstanceVersions"] || []).concat(list["supportedServerVersions"] || [])
 
     _.each(all_lists, function(item) {
       version = item["name"]
