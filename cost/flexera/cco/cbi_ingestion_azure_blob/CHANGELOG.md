@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8
+
+- Fixed an issue where the "Current Month" and "Previous Month" billing period options could resolve to the wrong month, most likely to occur on the first day of a calendar month.
+
 ## v0.2.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
