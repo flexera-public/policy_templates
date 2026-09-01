@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.9.2
+
+- Fixed an issue where the policy could fail to filter results correctly when the resource group filter parameter was used, causing an error instead of a report.
+
 ## v4.9.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
