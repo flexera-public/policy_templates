@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Fixed an issue where reallocated support costs could be calculated incorrectly for a billing period in which the rest of the organization had no other recorded costs.
+
 ## v0.1.4
 
 - Minor code formatting cleanup. No functional or user-facing changes.

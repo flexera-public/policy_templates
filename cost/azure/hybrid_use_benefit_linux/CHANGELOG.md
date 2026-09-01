@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.6.2
+
+- Fixed an issue where the policy could fail to complete if currency conversion data was temporarily unavailable for the organization's currency.
+- Fixed an issue where the displayed hourly cost for a resource could show an invalid value when no billable usage data was available for that resource.
+- Fixed an issue where the incident summary could use incorrect grammar when describing certain counts of virtual machines.
+
 ## v5.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

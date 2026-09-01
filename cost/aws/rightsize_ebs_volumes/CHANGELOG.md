@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where recommendations for older standard volumes could fail when a rightsize recommendation was generated without any existing provisioned IOPS.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

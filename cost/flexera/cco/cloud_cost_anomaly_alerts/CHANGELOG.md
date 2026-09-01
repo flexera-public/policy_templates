@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.1.3
+
+- Fixed an issue where filtering anomalies by a specific billing center could cause the policy to fail instead of returning results.
+- Fixed an issue where an anomaly associated with a billing center that could no longer be found (for example, one that was since deleted or renamed) could cause the policy to fail instead of reporting the anomaly.
+
 ## v4.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

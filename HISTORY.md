@@ -6,6 +6,94 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4874](https://github.com/flexera-public/policy_templates/pull/4874): POL-1832 Policy Template Bug Fix Pass [02]
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Fixes conditional/data-dependent JavaScript bugs found during a repo-wide audit of policy templates. See individual CHANGELOG.md files for user-facing descriptions of each fix.
+>
+> Split into multiple PRs due to the large number of changes.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4874) for these details.
+- **Merged At**: 2026-08-28 12:07:14 UTC
+
+---
+
+### PR [#4873](https://github.com/flexera-public/policy_templates/pull/4873): POL-1832 Policy Template Bug Fix Pass [01]
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Fixes conditional/data-dependent JavaScript bugs found during a repo-wide audit of policy templates. See individual CHANGELOG.md files for user-facing descriptions of each fix.
+>
+> Split into multiple PRs due to the large number of changes.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4873) for these details.
+- **Merged At**: 2026-08-28 12:07:09 UTC
+
+---
+
+### PR [#4871](https://github.com/flexera-public/policy_templates/pull/4871): POL-1828 AWS S3 Buckets Without Lifecycle Configuration: Bug Fix
+
+*Minor Update*
+
+#### Description
+
+> AWS S3 Buckets Without Lifecycle Configuration - Fixed bug where the policy would fail with a `'resource' is not defined` error whenever the `Exclusion Tags` parameter was used.
+>
+> Also fixed bugs in this and two other policy templates related to the tag filtering not working correctly.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4871) for these details.
+- **Merged At**: 2026-08-28 08:29:08 UTC
+
+---
+
+### PR [#4872](https://github.com/flexera-public/policy_templates/pull/4872): POL-1832 Policy Template Bug Fix Pass [00]
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Fixes conditional/data-dependent JavaScript bugs found during a repo-wide audit of policy templates. See individual CHANGELOG.md files for user-facing descriptions of each fix.
+>
+> Split into multiple PRs due to the large number of changes.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4872) for these details.
+- **Merged At**: 2026-08-27 18:45:45 UTC
+
+---
+
+### PR [#4867](https://github.com/flexera-public/policy_templates/pull/4867): POL-1829 AWS EC2 Compute Optimizer: Bug Fix
+
+*Minor Update*
+
+#### Description
+
+> AWS EC2 Compute Optimizer - Fixed an issue where the policy would fail to run if AWS Compute Optimizer did not return an estimated savings amount for a recommendation.
+>
+
+#### Metadata
+
+- **Policies**: [AWS EC2 Compute Optimizer Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/ec2_compute_optimizer/README.md), [Meta Parent: AWS EC2 Compute Optimizer Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/ec2_compute_optimizer/README.md)
+- **Merged At**: 2026-08-26 18:27:10 UTC
+
+---
+
 ### PR [#4856](https://github.com/flexera-public/policy_templates/pull/4856): POL-1830 Budget Alerts: Currency Fixes
 
 *Minor Update*
@@ -1747,101 +1835,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4288) for these details.
 - **Merged At**: 2026-04-08 18:31:56 UTC
-
----
-
-### PR [#4281](https://github.com/flexera-public/policy_templates/pull/4281): POL-1747 Meta Parent Fixes
-
-#### Description
-
-> Fixes the meta parent templates with the following:
->
-> - Refactored `js_take_in_parameters` to solve multiple bugs, including one that prevented the meta parent from deleting child policy templates.
-> - Added pagination support to `﻿ds_get_existing_policies`; without this, a meta parent could have issues in cases where 1000+ child policies are returned.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4281) for these details.
-- **Merged At**: 2026-04-07 17:02:39 UTC
-
----
-
-### PR [#4270](https://github.com/flexera-public/policy_templates/pull/4270): POL-1740 Vendor Spend Commitment Forecast: Longer Date Range Support
-
-*Minor Update*
-
-#### Description
-
-> Updates the `Vendor Spend Commitment Forecast` policy template to support longer data ranges by making multiple API calls to the costs/aggregated endpoint as needed.
->
-> Also makes a minor tweak to the `policy_summary_template_missing_policy_name?` Dangerfile test to avoid false positives.
->
-
-#### Metadata
-
-- **Policies**: [Vendor Spend Commitment Forecast](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/README.md)
-- **Merged At**: 2026-04-07 12:15:50 UTC
-
----
-
-### PR [#4253](https://github.com/flexera-public/policy_templates/pull/4253): POL-1743 Misc. Policy Template instance_types.json Update
-
-*Minor Update*
-
-#### Description
-
-> - `AWS RDS Instances With Unapproved Backup Settings`: Updated to use `aws_ec2_instance_types.json`
-> - `Azure Databricks Rightsize Compute Instances`: Updated to use `azure_compute_instance_types` and to make proper use of hash_exclude.
-> - `Google Overutilized VM Instances`: Updated to use `google_compute_instance_types.json`
-> - `google_compute_instance_types.py`: Updated to pull in superseded instance data from `instance_types.json`
-> - `instance_types.json (AWS/Azure/Google)`: Updated to have up to date instance information. This is primarily to support users using old versions of policy templates.
-> - Additionally, automated instance type JSONs for each cloud provider have been updated.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4253) for these details.
-- **Merged At**: 2026-04-03 14:34:39 UTC
-
----
-
-### PR [#4245](https://github.com/flexera-public/policy_templates/pull/4245): POL-1482 AWS Policy Templates: aws_ec2_instance_types.json
-
-*Minor Update*
-
-#### Description
-
-> Updates 2 AWS policy templates to now use the aws_ec2_instance_types.json file, which is generated from automation, instead of the manually maintained instance_types.json file.
->
-> - AWS Rightsize EC2 Instances
-> - AWS Overutilized EC2 Instances
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances/README.md)
-- **Merged At**: 2026-04-03 12:57:14 UTC
-
----
-
-### PR [#4244](https://github.com/flexera-public/policy_templates/pull/4244): POL-1492 Azure Policy Templates: azure_compute_instance_types.json
-
-*Minor Update*
-
-#### Description
-
-> Updates 3 Azure policy templates to now use the `azure_compute_instance_types.json` file, which is generated from automation, instead of the manually maintained `instance_types.json` file.
->
-> - Azure Rightsize Compute Instances
-> - Azure Overutilized Compute Instances
-> - Azure Usage Report - Instance Time Used (Also includes a bug fix)
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances/README.md), [Azure Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_usage_report/README.md)
-- **Merged At**: 2026-04-03 12:55:28 UTC
 
 ---
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.4
+
+- Fixed an issue where the policy could fail to run when a Common Bill Ingestion (CBI) connection's vendor information was incomplete.
+
 ## v2.7.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

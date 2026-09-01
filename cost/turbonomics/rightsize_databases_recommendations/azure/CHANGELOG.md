@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.11
+
+- Fixed an issue where the Resource ID could be missing from the report for databases that have more than one vendor identifier.
+
 ## v0.5.10
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

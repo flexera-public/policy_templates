@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.6.3
+
+- Fixed an issue where the policy could calculate an invalid unused volume percentage when filters left no Azure volumes to analyze.
+
 ## v8.6.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

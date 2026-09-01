@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.3
+
+- Fixed an issue where the policy could fail to run when a security contact did not have role-based notifications configured.
+
 ## v3.2.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

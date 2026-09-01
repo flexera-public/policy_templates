@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.7
+
+- Fixed an issue where selecting "Previous Month" for the Billing Month parameter could incorrectly inject the cost into the current month instead of the prior month, when the policy was run on the 30th or 31st of March.
+
 ## v0.3.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

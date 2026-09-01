@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.3
+
+- Fixed an issue where instances with an exclusion label value that matches the specified "does not match regex" filter would be incorrectly excluded from policy evaluation instead of being retained.
+
 ## v6.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
