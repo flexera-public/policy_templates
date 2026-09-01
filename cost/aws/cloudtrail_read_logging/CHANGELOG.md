@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.7
+
+- Fixed an issue where the policy could fail when the AWS account identity response was unavailable.
+
 ## v0.2.6
 
 - Minor code formatting cleanup. No functional or user-facing changes.

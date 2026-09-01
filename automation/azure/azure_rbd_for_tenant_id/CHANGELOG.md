@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Fixed an issue where the policy's 12 month data lookback window could be shifted by one month when the policy ran on February 29th (leap day).
+
 ## v0.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

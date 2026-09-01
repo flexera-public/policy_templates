@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.8.1",
+  version: "5.8.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1572,6 +1572,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   underutil_list = []
   idle_list = []
 
+  underutil_analysis_message = ""
+  idle_analysis_message = ""
+  lookback_message = ""
+  disclaimer = ""
+
   // Only bother doing anything if we're checking at least one metric
   if (checking_cpu || checking_mem) {
     // Loop through metrics data, appending cost data
@@ -1593,10 +1598,13 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       // Determine if the instance is idle or underutilized for each category.
       // Store boolean result for later use.
-      is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
-      is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
-      is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
-      is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
+      has_cpu_value = cpu_value != null
+      has_mem_value = mem_value != null
+
+      is_idle_cpu = has_cpu_value && cpu_value < param_stats_idle_threshold_cpu_value
+      is_underutil_cpu = has_cpu_value && cpu_value < param_stats_underutil_threshold_cpu_value
+      is_idle_mem = has_mem_value && mem_value < param_stats_idle_threshold_mem_value
+      is_underutil_mem = has_mem_value && mem_value < param_stats_underutil_threshold_mem_value
 
       // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
       if (!checking_mem) { is_idle = is_idle_cpu }
@@ -1732,11 +1740,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   if (checking_cpu || checking_mem) {
-    instances_total = ds_instances.length.toString()
-    underutil_instances_total = underutil_list.length.toString()
-    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
-    idle_instances_total = idle_list.length.toString()
-    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    instances_total = ds_instances.length
+    underutil_instances_total = underutil_list.length
+    idle_instances_total = idle_list.length
+    underutil_instances_percentage = instances_total > 0 ? (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%' : '0.00%'
+    idle_instances_percentage = instances_total > 0 ? (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%' : '0.00%'
+    instances_total = instances_total.toString()
+    underutil_instances_total = underutil_instances_total.toString()
+    idle_instances_total = idle_instances_total.toString()
 
     underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])

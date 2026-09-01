@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.4
+
+- Fixed an issue where report entries could be displayed out of order instead of grouped and sorted by month when a budget's report included multiple groups.
+
 ## v2.7.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

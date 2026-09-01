@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.4
+
+- Fixed an issue where the policy could fail to run when a specific list of regions was configured for filtering.
+
 ## v3.3.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
