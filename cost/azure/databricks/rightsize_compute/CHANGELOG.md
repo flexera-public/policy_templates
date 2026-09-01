@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.8.3
+
+- Fixed an issue where filtering by resource group could exclude all workspaces, or fail to exclude any, because the filter never matched.
+- Fixed an issue where the cost lookback date range could be calculated one month later than intended when the policy ran on certain days of the month.
+- Fixed an issue where the policy could fail to generate an incident when cost data referenced a workspace that no longer matched the current filter criteria.
+- Fixed an issue where a downsizing recommendation could show a blank or invalid target instance size when no smaller instance size was available in the same family.
+- Fixed an issue where the policy could fail to generate an incident when Azure returned instance type data without memory capacity information.
+
 ## v0.8.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.2
+
+- Fixed an issue where missing CPU or memory statistics from Google monitoring data could cause the policy to fail instead of skipping unavailable measurements.
+- Fixed an issue where VM counts with no matching running instances could produce invalid percentage values in incident details.
+- Fixed an issue where some downsizing recommendations could select an instance type without valid pricing data and then fail while estimating savings.
+
 ## v0.4.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
