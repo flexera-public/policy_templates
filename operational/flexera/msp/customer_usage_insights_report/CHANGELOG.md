@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Fixed an issue where the overall user activity summary table in the report could display "NaN%" values when an organization had zero total users or zero users matching the configured Included User Regex.
+
 ## v0.1.8
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

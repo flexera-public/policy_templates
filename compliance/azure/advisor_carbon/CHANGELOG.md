@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Fixed an issue where the "Allow/Deny Resource Groups List" filter never matched any resource group, causing recommendations to be incorrectly excluded (or included) when this filter was configured.
+
 ## v0.4.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

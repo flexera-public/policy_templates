@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Improved reliability when summarizing account credential results for child policies with incomplete account details.
+
 ## v0.2.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

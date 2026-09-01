@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.7.2
+
+- Fixed an issue where resource hourly cost could be invalid when billing data contained zero usage hours for a virtual machine.
+- Fixed an issue where the incident summary could show an invalid percentage when no virtual machines remained after filtering.
+
 ## v5.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

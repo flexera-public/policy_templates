@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.8.2
+
+- Fixed an issue where instances without CPU or memory utilization data could still be reported as idle or underutilized.
+- Fixed an issue where percentage summaries could show invalid values when no EC2 instances matched the policy scope.
+- Fixed an issue where the policy could fail during incident generation when all CPU and memory thresholds were disabled.
+
 ## v5.8.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.2
+
+- Fixed an issue where the policy could fail to run if currency conversion data was unavailable for the organization's configured currency.
+
 ## v3.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

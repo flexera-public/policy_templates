@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Fixed an issue where the policy could fail while evaluating CloudTrail buckets that did not have a bucket policy.
+
 ## v3.2.0
 
 - Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.

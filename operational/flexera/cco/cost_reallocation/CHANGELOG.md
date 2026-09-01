@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.8
+
+- Fixed an issue where the policy could produce invalid allocated cost and usage values for destination cost slices that had no total spend to allocate against.
+- Fixed an issue where the policy would fail with an unclear error instead of a helpful message when "Specific Month" was selected for the Billing Period without also specifying which month.
+
 ## v0.1.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

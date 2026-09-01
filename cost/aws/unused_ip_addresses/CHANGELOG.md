@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.5.7
+
+- Fixed an issue where organizations using a non-USD currency could incorrectly see a currency conversion malfunction disclaimer in the incident message even when currency conversion was working correctly.
+
 ## v9.5.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

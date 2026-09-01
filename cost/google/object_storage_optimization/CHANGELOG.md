@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Fixed an issue where the policy could produce an invalid percentage in the incident summary when no storage objects were returned for analysis.
+
 ## v3.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

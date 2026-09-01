@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.2
+
+- Fixed an issue where the policy could miss some RDS instances in regions or accounts with a large number of instances.
+
 ## v4.3.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

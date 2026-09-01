@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where the region filter would fail to correctly include or exclude SQL Managed Instances when a region allow/deny list was specified, causing all instances to be incorrectly filtered out or included regardless of their region.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.10
+
+- Fixed an issue where the policy could automatically delete all previously created billing centers instead of only the ones no longer needed, if no cost or dimension data was available at the time the policy ran.
+
 ## v0.1.9
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

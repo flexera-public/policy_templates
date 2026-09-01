@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.3
+
+- Fixed an issue where the Linear Regression forecast formula could produce an invalid (blank/NaN) forecast when the "Look Back Months" parameter was set to 1 month.
+
 ## v4.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

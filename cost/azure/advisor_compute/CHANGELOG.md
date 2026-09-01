@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2
+
+- Fixed an issue where the policy could fail to generate recommendations for virtual machines that have no power state status reported by the Azure API.
+
 ## v0.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
