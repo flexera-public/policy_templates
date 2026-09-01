@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.12.2
+
+- Fixed an issue where the reported vCPU count for an RDS instance could be missing when the instance did not have explicit processor configuration data available.
+- Fixed an issue where the policy could fail with an error while analyzing network throughput usage for RDS instances that have no recorded network activity data for the analyzed period.
+
 ## v5.12.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
