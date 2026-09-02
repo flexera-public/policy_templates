@@ -4,8 +4,6 @@
 
 This Policy Template leverages the [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to determine if any Savings Plans have low utilization and present a report of any offending Savings Plans. Optionally, this report can be emailed.
 
-> *NOTE: This Policy Template must be applied to the **AWS Organization Master Payer** account.*
-
 ## How It Works
 
 - This policy template uses [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to retrieve Savings Plan Utilization data.
