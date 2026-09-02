@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where the policy could fail to run if Kubecost did not report a currency code, instead of falling back to the Flexera organization's currency or US Dollars.
+- Fixed an issue where, when the "Scope" parameter was set to "Per Cluster" and more than one cluster was present, recommendations for all clusters could incorrectly be generated using only the last cluster's data instead of each cluster's own data.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1
+
+- Fixed an issue where license consumption counts could be calculated incorrectly if the source data returned them as text instead of numbers.
+
 ## v2.5.0
 
 - Added support for attaching CSV files to incident emails.
