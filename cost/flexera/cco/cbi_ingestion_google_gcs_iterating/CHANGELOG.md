@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Fixed an issue where the policy would fail with an "invalid argument in join" error when listing or downloading cost files from Google Cloud Storage, caused by internal bucket name and prefix values not being passed to the request correctly.
+
 ## v0.1.2
 
 - Fixed an issue where the policy could select the wrong billing period on the first day of the month.

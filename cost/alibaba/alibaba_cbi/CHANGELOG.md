@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.8
+
+- Fixed an issue where the policy could incorrectly calculate the number of days in February during centurial non-leap years (such as the year 2100), which could cause an extra, non-existent billing date to be requested.
+- Simplified internal handling of the billing report bucket parameter to reduce unnecessary processing. Functionality unchanged.
+
 ## v0.1.7
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

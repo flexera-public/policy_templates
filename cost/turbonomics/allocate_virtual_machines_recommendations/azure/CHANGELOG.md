@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.10
+
+- Fixed an issue where some allocation recommendations could fail when coverage data was missing or had no baseline capacity.
+
 ## v2.3.9
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

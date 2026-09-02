@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.2
+
+- Fixed an issue where the region filter could exclude or include the wrong SQL Managed Instances when a region allow/deny list was configured.
+- Fixed an issue where the policy could fail to generate a downsize recommendation for certain SQL Managed Instance sizes when multiple downsize steps applied.
+
 ## v0.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

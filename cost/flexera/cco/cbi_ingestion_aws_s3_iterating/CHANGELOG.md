@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when listing or downloading cost files from S3, caused by an internal hostname value not being passed to the request correctly.
+
 ## v0.1.5
 
 - Fixed an issue where the policy could fail to determine which files still needed to be uploaded once all files for a billing period had already been uploaded, preventing the bill upload from progressing to completion.

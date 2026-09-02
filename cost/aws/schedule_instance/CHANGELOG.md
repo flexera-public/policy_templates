@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.1.2
+
+- Fixed an issue where an instance without a Name tag could incorrectly display the name of a different, previously processed instance in the incident report.
+
 ## v8.1.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

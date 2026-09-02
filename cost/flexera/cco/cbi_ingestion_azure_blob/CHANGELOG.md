@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when downloading cost files from Azure Blob Storage, caused by an internal hostname value not being passed to the request correctly.
+
 ## v0.2.8
 
 - Fixed an issue where the "Current Month" and "Previous Month" billing period options could resolve to the wrong month, most likely to occur on the first day of a calendar month.
