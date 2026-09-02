@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.6
+
+- Fixed an issue where the report could fail or show invalid percentages when the selected filters returned zero total spend.
+
 ## v0.3.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

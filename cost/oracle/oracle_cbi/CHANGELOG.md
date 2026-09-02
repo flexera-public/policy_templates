@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.3.7
+
+- Fixed an issue where the status message could fail to generate immediately after a new bill upload was created with no files yet.
+- Fixed an issue where creating a new bill upload could fail with a `400 Bad Request` error due to the CBI endpoint value being sent in the wrong format.
+- Fixed an issue where downloading cost and usage reports from Oracle Cloud Object Storage could fail with a `join` error due to the namespace and bucket values being sent in the wrong format.
+- Added input sanitization to trim leading and trailing whitespace from the namespace, bucket, and prefix parameter values when listing cost and usage reports.
+
 ## v3.3.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

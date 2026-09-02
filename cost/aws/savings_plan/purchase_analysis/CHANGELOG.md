@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Fixed an issue where the incident message could display an incorrect currency notice when Flexera's currency conversion data was temporarily unavailable.
+
 ## v0.2.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

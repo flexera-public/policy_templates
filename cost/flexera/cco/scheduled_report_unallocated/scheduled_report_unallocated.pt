@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "0.3.5",
+  version: "0.3.6",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -435,7 +435,11 @@ script "js_costs_flattened", type: "javascript" do
   rows_with_total = []
 
   _.each(rows, function(row) {
-    row[param_cost_metric + " (% of Total)"] = +(((row[metric_name] / total_spend) * 100).toFixed(2))
+    if (total_spend == 0) {
+      row[param_cost_metric + " (% of Total)"] = 0
+    } else {
+      row[param_cost_metric + " (% of Total)"] = +(((row[metric_name] / total_spend) * 100).toFixed(2))
+    }
     rows_with_total.push(row)
   })
 
@@ -449,14 +453,21 @@ script "js_costs_flattened", type: "javascript" do
   // Add the required dimension columns from user input first
   columns = _.pluck(ds_cost_dimensions, 'name').concat([ "Unallocated", "Unallocated Details", metric_name ])
 
+  percent_allocated = 100
+  percent_unallocated = 0
+  if (total_spend != 0) {
+    percent_allocated = Math.round((1 - (unallocated_spend / total_spend)) * 100 * 100) / 100
+    percent_unallocated = Math.round((unallocated_spend / total_spend) * 100 * 100) / 100
+  }
+
   result = {
     "columns": columns,
     "percent_unallocated_column_name": param_cost_metric + " (% of Total)",
     "currency_code": ds_currency['symbol'],
     "total_spend": Math.round(total_spend * 1000) / 1000,
     "unallocated_spend": Math.round(unallocated_spend * 1000) / 1000,
-    "percent_allocated": Math.round((1 - (unallocated_spend / total_spend)) * 100 * 100) / 100,
-    "percent_unallocated": Math.round((unallocated_spend / total_spend) * 100 * 100) / 100,
+    "percent_allocated": percent_allocated,
+    "percent_unallocated": percent_unallocated,
     "rows": rows_with_total,
     "start_at": ds_cost_request_params["start_at"],
     "end_at": ds_cost_request_params["end_at"],
