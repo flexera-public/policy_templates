@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3.10
+
+- Fixed an issue where the policy could fail with an error when reserved instance coverage details were not available for a virtual machine.
+- Fixed an issue where the reported reserved instance coverage could show an invalid value instead of 0% for virtual machines with no measured capacity.
+
 ## v2.3.9
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

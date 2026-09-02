@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2.1
+
+- Fixed an issue where the policy could fail to generate an incident even when the root user had recently signed in or used an access key.
+- Fixed an issue where the policy could fail with an error instead of completing successfully when the root user had a password enabled but had never signed in with it, or had never used one or both access keys.
+
 ## v3.2.0
 
 - Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.

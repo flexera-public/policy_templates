@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Fixed an issue where the policy could fail with an error instead of generating a report when a data disk's utilization metrics were not available from Azure Monitor for one of the requested measurements
+
 ## v3.0.0
 
 - Added a `Recommendation` field to the incident export, describing the recommended disk downgrade action for each resource

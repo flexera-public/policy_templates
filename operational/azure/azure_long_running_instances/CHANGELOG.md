@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.5
+
+- Fixed an issue where the incident summary message could display "NaN%" instead of "0.00%" when no instances were found after filtering.
+
 ## v6.4.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

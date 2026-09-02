@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.2
+
+- Fixed an issue where the incident message could report an incorrect percentage of unused App Service Plans when no App Service Plans were found.
+- Fixed an issue where the incident message could use incorrect singular/plural wording when the number of unused App Service Plans was between 2 and 9.
+
 ## v0.5.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

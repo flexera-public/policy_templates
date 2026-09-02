@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Fixed an issue where child teams could be incorrectly reported as unpermitted top-level teams.
+
 ## v3.1.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
