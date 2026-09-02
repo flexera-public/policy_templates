@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.4
+
+- Fixed an issue where the policy could fail while building incident results for SQL servers that did not return an auditing retention value.
+
 ## v3.3.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed an issue where some virtual machines could be missed by the policy for Google projects with a large number of instances.
+- Fixed an issue where the incident summary could show "NaN%" instead of a percentage when no running instances were found to analyze.
+
 ## v0.2.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

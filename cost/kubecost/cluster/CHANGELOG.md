@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.5
+
+- Fixed an issue where the rightsizing strategy selected for one cluster could incorrectly carry over and affect the recommendation for a subsequent cluster in the same report.
+
 ## v0.5.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
