@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.9
+
+- Fixed an issue where the forecasted usage could show as an invalid value for an instance family that only had one month of historical data.
+
 ## v1.1.8
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

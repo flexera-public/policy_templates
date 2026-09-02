@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Fixed an issue where the reported CPU utilization could incorrectly appear blank for databases with zero average or p95 utilization.
+
 ## v0.3.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
