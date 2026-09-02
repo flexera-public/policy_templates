@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Added support for ElastiCache, OpenSearch Service, Redshift, and Relational Database Service.
+
 ## v3.0.7
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

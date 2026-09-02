@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0.7",
+  version: "3.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -43,6 +43,24 @@ parameter "param_lookback" do
   min_value 7
   max_value 365
   default 7
+end
+
+parameter "param_service" do
+  type "list"
+  category "Reservation Settings"
+  label "Service"
+  description "AWS services to provide coverage information for."
+  allowed_values ["ElastiCache", "Elastic Compute Cloud (EC2)", "OpenSearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
+  default ["Elastic Compute Cloud (EC2)"]
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -125,9 +143,32 @@ datasource "ds_applied_policy" do
   end
 end
 
+datasource "ds_services" do
+  run_script $js_services, $param_service
+end
+
+script "js_services", type: "javascript" do
+  parameters "param_service"
+  result "result"
+  code <<-'EOS'
+  service_table = {
+    "Elastic Compute Cloud (EC2)": "Amazon Elastic Compute Cloud - Compute",
+    "Relational Database Service (RDS)": "Amazon Relational Database Service",
+    "ElastiCache": "Amazon ElastiCache",
+    "Redshift": "Amazon Redshift",
+    "Elasticsearch Service (ES)": "Amazon OpenSearch Service"
+  }
+
+  result = _.map(param_service, function(service) {
+    return service_table[service]
+  })
+EOS
+end
+
 datasource "ds_reservations_coverage" do
+  iterate $ds_services
   request do
-    run_script $js_reservations_coverage, $param_lookback
+    run_script $js_reservations_coverage, $param_lookback, iter_item
   end
   result do
     encoding "json"
@@ -135,11 +176,12 @@ datasource "ds_reservations_coverage" do
     field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
     field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
     field "total_running_hours", jmes_path(response, "Total.CoverageHours.TotalRunningHours")
+    field "service", iter_item
   end
 end
 
 script "js_reservations_coverage", type: "javascript" do
-  parameters "param_lookback"
+  parameters "param_lookback", "service"
   result "request"
   code <<-'EOS'
   end_date = new Date().toISOString().split('T')[0]
@@ -157,7 +199,15 @@ script "js_reservations_coverage", type: "javascript" do
       "X-Amz-Target": "AWSInsightsIndexService.GetReservationCoverage",
       "Content-Type": "application/x-amz-json-1.1",
     },
-    body_fields: { "TimePeriod": { "Start": start_date, "End": end_date } }
+    body_fields: {
+      "TimePeriod": { "Start": start_date, "End": end_date },
+      "Filter": {
+        "Dimensions": {
+          "Key": "SERVICE",
+          "Values": [ iter_item ]
+        }
+      }
+    }
   }
 EOS
 end
@@ -176,16 +226,17 @@ script "js_coverage_report", type: "javascript" do
   start_date.setDate(start_date.getDate() - param_lookback)
   start_date = start_date.toISOString().split('T')[0]
 
-  result = [{
-    total_coverage_hours_percentage: ds_reservations_coverage['total_coverage_hours_percentage'],
-    total_on_demand_hours: ds_reservations_coverage['total_on_demand_hours'],
-    total_reserved_hours: ds_reservations_coverage['total_reserved_hours'],
-    total_running_hours: ds_reservations_coverage['total_running_hours'],
+  result = _.map(ds_reservations_coverage, function(item) {
+    service: item['service'],
+    total_coverage_hours_percentage: item['total_coverage_hours_percentage'],
+    total_on_demand_hours: item['total_on_demand_hours'],
+    total_reserved_hours: item['total_reserved_hours'],
+    total_running_hours: item['total_running_hours'],
     start_date: start_date,
     end_date: end_date,
     policy_name: ds_applied_policy['name'],
     lookback_period: param_lookback
-  }]
+  })
 EOS
 end
 
@@ -199,16 +250,14 @@ policy "pol_coverage_report" do
     detail_template <<-'EOS'
 # AWS Reserved Instances Coverage Report
 ## Date Range: {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}
-
-**Coverage:** {{ with index data 0 }}{{ .total_coverage_hours_percentage }}{{ end }}%\n
-**On Demand Hours:** {{ with index data 0 }}{{ .total_on_demand_hours }}{{ end }}\n
-**Reserved Hours:** {{ with index data 0 }}{{ .total_reserved_hours }}{{ end }}\n
-**Total Running Hours:** {{ with index data 0 }}{{ .total_running_hours }}{{ end }}\n
 EOS
-    check eq(0, 1)
+    check eq(val(item, "service"), "")
     escalate $esc_email
     export do
       resource_level false
+      field "service" do
+        label "Service"
+      end
       field "total_coverage_hours_percentage" do
         label "Coverage (%)"
       end
@@ -239,5 +288,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    # body_table_max_rows: No need for a parameter.
+    # Incident will never have more than 5 rows anyway.
+    body_table_max_rows 50
+  end
 end
