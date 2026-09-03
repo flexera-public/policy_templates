@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added `Account Number` parameter to support meta policies. Basic functionality unchanged.
+
 ## v4.2.0
 
 - Added support for meta parent policy. Basic functionality unchanged.
