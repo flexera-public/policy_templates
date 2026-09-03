@@ -482,6 +482,33 @@ Two mechanisms, depending on how the parameter is consumed:
 
 **Example:** See "Common JavaScript Patterns - Parameter Sanitization" in `data/agent/code_examples.txt`.
 
+> **⚠️ Critical gotcha - never reference a Category B wrapper datasource bare inside a `join([...])` array.** The DSL's `join()` function statically requires its array argument to be "array of strings." Literal strings, built-in variables (`rs_org_id`, `policy_id`), and `$param_x` (a declared `type "string"` parameter) all satisfy that check. A Category B wrapper datasource's `result` is produced by a plain `run_script` with no declared field/type, so the engine treats it as an **untyped/"unknown"** value - mixing it bare into a `join([...])` array with literal strings makes the whole array "array of unknown," and `join()` fails at evaluation time with an error like:
+>
+> ```text
+> invalid argument in join(array,""): first argument must be an array of
+> strings, got array of unknown
+> ```
+>
+> This is a *runtime evaluation* error, not a parse error - `fpt check` will **not** catch it; it only surfaces when the policy is actually applied. It affects `join([...])` used for `host`, `path`, `query`, and `body` values alike.
+>
+> **The fix:** have the wrapper script return a keyed object instead of a bare scalar, then access it with `val()` at every `join([...])` call site (this exact pattern - a `run_script`-only datasource returning an object, consumed via `val($ds_x, "field")` inside `join([...])` - is already proven throughout the catalog, e.g. `val($ds_dates, "period")` in `cost/flexera/cco/fixed_cost_cbi/fixed_cost_cbi.pt`):
+>
+> ```javascript
+> script "js_cbi_endpoint", type: "javascript" do
+>   parameters "param_cbi_endpoint"
+>   result "result"
+>   code <<-'EOS'
+>   result = { value: param_cbi_endpoint.trim() }
+> EOS
+> end
+> ```
+>
+> ```text
+> path join(["/some/path/", val($ds_cbi_endpoint, "value"), "/execute"])
+> ```
+>
+> A bare `$ds_x` reference works fine when it is the **entire** value of a DSL field with nothing else to combine (e.g. `host $ds_kubecost_host`) - the failure is specific to embedding it alongside literal strings inside `join([...])`. When in doubt, always use the object+`val()` form for any Category B wrapper that feeds into a `join([...])` call, even if only one element in the array.
+
 **Architectural exception - "action-only" parameters used exclusively inside `run`/`define` Cloud Workflow blocks** (e.g. `param_tags_to_add`, `param_labels_to_add`, `param_new_name`, `param_new_description`, `param_schedule`, `param_target_bucket`): these cannot be sanitized with either mechanism above. `run "define_name", data, $param_x, ...` invocation lines only ever accept raw `$param_x` references (or reserved words/built-ins) - never a `$ds_x` datasource reference - and `define` blocks have no string-manipulation function equivalent to JavaScript's `.trim()`. Since there is no script in the chain to insert a trim into and no way to substitute a sanitized datasource value into `run`, leave these parameters untrimmed. This is a confirmed language limitation, not an oversight - do not attempt to work around it (for example, by adding a no-op script) purely to satisfy a sanitization audit. `param_aws_account_number` (used only inside `credentials do ... aws_account_number $param_x end` blocks) falls into the same category for the same reason.
 
 **Exclusion - parameters with `allowed_values` or `allowed_pattern`:** Do NOT sanitize any parameter that declares an `allowed_values` or `allowed_pattern` field, even if it is a `string` or `list` type that would otherwise qualify for trimming. Both fields are validated and enforced by the policy engine itself before the template's own code ever runs - `allowed_values` restricts the user to a fixed, exact-match dropdown of choices (no free-text entry is possible), and `allowed_pattern` already enforces a specific format via regex. Adding a `.trim()` wrapper (or a `ds_x`/`js_x` datasource pair) for these parameters is redundant, adds unnecessary complexity, and provides no real protection since malformed/padded input can never reach the template in the first place. This applies regardless of which mechanism (Category A inline trim or Category B wrapper datasource) would otherwise be used. Common examples that must NOT be wrapped: `param_incident_csv` (`allowed_values "true", "false"`), `param_azure_endpoint` (`allowed_values "management.azure.com", "management.chinacloudapi.cn"`), and `param_exclusion_tags_boolean` (`allowed_values "Any", "All"`).

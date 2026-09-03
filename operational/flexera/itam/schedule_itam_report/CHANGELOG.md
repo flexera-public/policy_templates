@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Fixed a bug introduced in v0.2.8 where the policy would fail to evaluate with an "invalid argument in join" error due to how the report ID parameter was sanitized.
+
 ## v0.2.8
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

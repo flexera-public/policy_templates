@@ -310,6 +310,14 @@ end
 # free-text parameters; never wrap a parameter that has `allowed_values`/`allowed_pattern`
 # (see exception below). Name the wrapper datasource/script by dropping the `param_`
 # prefix (ds_cbi_endpoint / js_cbi_endpoint) - never ds_param_cbi_endpoint / js_param_cbi_endpoint.
+#
+# IMPORTANT: the script must return a keyed object ({ value: ... }), NOT a bare scalar.
+# If this datasource is ever combined with literal strings inside a DSL `join([...])`
+# call (for a `host`/`path`/`query`/`body` value), a bare scalar result causes a runtime
+# "invalid argument in join(array,''): ... got array of unknown" evaluation error that
+# `fpt check` will NOT catch (see the Parameter Sanitization warning in policy-dev.agent.md).
+# Always access the wrapper via val($ds_x, "value") at the join() call site, e.g.:
+#   path join(["/some/path/", val($ds_cbi_endpoint, "value"), "/execute"])
 
 datasource "ds_cbi_endpoint" do
   run_script $js_cbi_endpoint, $param_cbi_endpoint
@@ -319,7 +327,7 @@ script "js_cbi_endpoint", type: "javascript" do
   parameters "param_cbi_endpoint"
   result "result"
   code <<-'EOS'
-  result = param_cbi_endpoint.trim()
+  result = { value: param_cbi_endpoint.trim() }
 EOS
 end
 

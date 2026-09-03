@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Fixed a bug introduced in v0.3.1 where the policy would fail to evaluate with an "invalid argument in join" error due to how the primary region parameter was sanitized.
+
 ## v0.3.2
 
 - Fixed an issue where the reported CPU utilization could incorrectly appear blank for databases with zero average or p95 utilization.

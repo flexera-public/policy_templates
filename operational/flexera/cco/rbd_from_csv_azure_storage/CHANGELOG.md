@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed a bug introduced in v0.1.5 where the policy would fail to evaluate with an "invalid argument in join" error due to how the Azure storage account and container parameters were sanitized.
+
 ## v0.1.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
