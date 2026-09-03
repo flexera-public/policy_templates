@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.9
+
+- Fixed a bug introduced in v3.0.8 where the policy would fail to evaluate with an "invalid argument in join" error due to how the GitHub organization, repository, branch, and active policy list path parameters were sanitized.
+
 ## v3.0.8
 
 - Trimmed leading/trailing whitespace from the `GitHub Organization Name`, `GitHub Repository Name`, `GitHub Branch Name`, and `Active Policy JSON Path` parameters to prevent accidental whitespace from causing GitHub requests to fail.

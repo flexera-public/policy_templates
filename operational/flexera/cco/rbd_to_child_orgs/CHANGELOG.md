@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Fixed a bug introduced in v0.1.3 where the policy would fail to evaluate with an "invalid argument in join" error due to how the effective date parameter was sanitized.
+
 ## v0.1.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
