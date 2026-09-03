@@ -12,6 +12,7 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
 - *Look Back Period (Days)* - Specify the number of days of past usage to analyze.
 - *Utilization Threshold* - Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert.
 - *Savings Plan ARNs* - The unique Amazon Resource Names (ARNs) for particular Savings Plans to report on. Leave blank to report on all Savings Plans.
