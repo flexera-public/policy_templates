@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.5
+
+- Fixed an issue where the policy could fail with a "must be a string" error when requesting exchange rates due to how the currency parameters were sanitized.
+
 ## v5.1.4
 
 - Fixed an issue where the policy could fail with an error instead of applying no changes when none of the values entered in the "Dimensions" parameter matched a valid dimension in Flexera CCO.

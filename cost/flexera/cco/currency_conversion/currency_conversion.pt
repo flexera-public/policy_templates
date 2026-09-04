@@ -8,7 +8,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "5.1.4",
+  version: "5.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -121,7 +121,7 @@ script "js_currency_from", type: "javascript" do
   parameters "param_currency_from"
   result "result"
   code <<-'EOS'
-  result = param_currency_from.trim()
+  result = { value: param_currency_from.trim() }
 EOS
 end
 
@@ -133,7 +133,7 @@ script "js_currency_to", type: "javascript" do
   parameters "param_currency_to"
   result "result"
   code <<-'EOS'
-  result = param_currency_to.trim()
+  result = { value: param_currency_to.trim() }
 EOS
 end
 
@@ -198,7 +198,7 @@ script "js_set_org_currency_logic", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = []
-  if (param_set_org_currency == "Yes") { result = [{ currency_code: ds_currency_to }] }
+  if (param_set_org_currency == "Yes") { result = [{ currency_code: ds_currency_to.value }] }
 EOS
 end
 
@@ -303,8 +303,8 @@ datasource "ds_xe_exchange_rates" do
   request do
     host "api.xe-auth.flexeraeng.com"
     path "/prod/{proxy+}"
-    query "from", $ds_currency_from
-    query "to", $ds_currency_to
+    query "from", val($ds_currency_from, "value")
+    query "to", val($ds_currency_to, "value")
     query "amount", "1"
     query "year", iter_item
   end
@@ -326,7 +326,7 @@ script "js_exchange_rates", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = {}
-  currency_code = ds_currency_to.toUpperCase().trim()
+  currency_code = ds_currency_to.value.toUpperCase().trim()
 
   _.each(ds_xe_exchange_rates, function(item) {
     year_num = item['year'].toString()
@@ -477,7 +477,7 @@ script "js_updated_adjustments", type: "javascript" do
           {
             condition: condition,
             cost_multiplier: conversion_rate - 1,
-            label: ds_currency_from + " to " + ds_currency_to
+            label: ds_currency_from.value + " to " + ds_currency_to.value
           }
         ]
       }
@@ -580,7 +580,7 @@ end
 
 policy "pol_currency_conversion" do
   validate_each $ds_new_adjustments do
-    summary_template "Currency Conversion - {{ parameters.ds_currency_from }} to {{ parameters.ds_currency_to }} - {{ with index data 0 }}{{ .dimension }}{{ end }}"
+    summary_template "Currency Conversion - {{ parameters.ds_currency_from.value }} to {{ parameters.ds_currency_to.value }} - {{ with index data 0 }}{{ .dimension }}{{ end }}"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(0, 1)
   end

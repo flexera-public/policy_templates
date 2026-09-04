@@ -35,7 +35,8 @@ Cloud Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd
 
 ### Policy Settings
 
-- *Effective Date* - Year/month you want rules to start applying in YYYY-MM format. Default: `2020-01`.
+- *Effective Date* - Year/month you want rules to start applying in YYYY-MM format. Default: `2020-01`. Only used when *Effective Date Mode* is set to `Static`.
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs. Default: `Static`.
 - *Lowercase Values* - Whether to normalize all RBD output values by converting them to lowercase. Prevents case-collision rejections from the API. Default: `No`.
 - *RBD ID Filter* - If non-empty, only process the listed RBD column IDs from the CSV. Useful for splitting large CSVs across multiple applied policies to avoid BSON size limits.
 - *RBD Name Overrides* - Optional list of RBD ID to display name mappings in `id=Name` format. Example: `rbd_bu=Business Unit`. When empty, display names are auto-derived from the RBD ID.

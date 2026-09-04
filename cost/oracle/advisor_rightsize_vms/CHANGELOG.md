@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Fixed an issue where the policy could fail with a "must be a string" error due to how the root compartment parameter was sanitized.
+
 ## v0.4.2
 
 - Fixed a bug introduced in v0.4.1 where the policy would fail to evaluate with an "invalid argument in join" error due to how the primary region parameter was sanitized.

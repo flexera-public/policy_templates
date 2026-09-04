@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.6
+
+- Fixed an issue where the policy could fail to evaluate with an "invalid request host" error when querying the Kubecost API, due to how the Kubecost Host parameter was internally referenced.
+
 ## v0.5.5
 
 - Fixed an issue where the rightsizing strategy selected for one cluster could incorrectly carry over and affect the recommendation for a subsequent cluster in the same report.

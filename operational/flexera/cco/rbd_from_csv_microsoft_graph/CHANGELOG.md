@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0
+
+- Added the "Effective Date Mode" parameter, which allows the effective date used for rule updates to automatically follow the current month instead of always using a static "Effective Date" value.
+
 ## v0.1.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

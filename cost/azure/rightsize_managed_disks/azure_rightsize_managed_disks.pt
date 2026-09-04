@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.0.1",
+  version: "3.0.2",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -241,33 +241,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Sanitize parameters that are referenced directly by API requests or escalations (instead of
-# being processed by a filtering script) to remove any leading/trailing whitespace a user may
-# have accidentally entered.
-datasource "ds_param_azure_endpoint" do
-  run_script $js_param_azure_endpoint, $param_azure_endpoint
-end
-
-script "js_param_azure_endpoint", type: "javascript" do
-  parameters "param_azure_endpoint"
-  result "result"
-  code <<-'EOS'
-  result = param_azure_endpoint.trim()
-EOS
-end
-
-datasource "ds_param_incident_csv" do
-  run_script $js_param_incident_csv, $param_incident_csv
-end
-
-script "js_param_incident_csv", type: "javascript" do
-  parameters "param_incident_csv"
-  result "result"
-  code <<-'EOS'
-  result = param_incident_csv.trim()
-EOS
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -329,7 +302,7 @@ datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $ds_param_azure_endpoint
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -480,7 +453,7 @@ datasource "ds_azure_disks" do
   request do
     auth $auth_azure
     pagination $pagination_azure
-    host $ds_param_azure_endpoint
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/disks"])
     query "api-version", "2019-07-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -675,7 +648,7 @@ datasource "ds_azure_virtual_machines" do
   iterate $ds_azure_disks_grouped_by_vm
   request do
     auth $auth_azure
-    host $ds_param_azure_endpoint
+    host $param_azure_endpoint
     path val(iter_item, "vmId")
     query "api-version", "2023-07-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -736,7 +709,7 @@ datasource "ds_azure_virtual_machines_with_metrics" do
   batch true
   iterate $ds_azure_virtual_machines_with_disks
   request do
-    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $ds_stats_interval, $ds_param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -746,7 +719,7 @@ datasource "ds_azure_virtual_machines_with_metrics" do
 end
 
 script "js_azure_virtual_machines_with_metrics", type: "javascript" do
-  parameters "vmId", "ds_stats_interval", "ds_param_azure_endpoint", "param_stats_lookback"
+  parameters "vmId", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-'EOS'
   var end_date = new Date()
@@ -765,7 +738,7 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
 
   var request = {
     auth: "auth_azure",
-    host: ds_param_azure_endpoint,
+    host: param_azure_endpoint,
     path: vmId + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
@@ -1336,11 +1309,11 @@ EOS
 end
 
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_currency, $ds_azure_disk_costs_grouped, $ds_azure_disks_rg_filtered, $ds_azure_disks_with_metrics, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $ds_param_incident_csv, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $param_recommend_hdd_tier
+  run_script $js_disk_rightsizing_recommendations, $ds_currency, $ds_azure_disk_costs_grouped, $ds_azure_disks_rg_filtered, $ds_azure_disks_with_metrics, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $param_recommend_hdd_tier, $param_incident_csv
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_currency", "ds_azure_disk_costs_grouped", "ds_azure_disks_rg_filtered", "ds_azure_disks_with_metrics", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "ds_param_incident_csv", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "param_recommend_hdd_tier"
+  parameters "ds_currency", "ds_azure_disk_costs_grouped", "ds_azure_disks_rg_filtered", "ds_azure_disks_with_metrics", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "param_recommend_hdd_tier", "param_incident_csv"
   result "result"
   code <<-'EOS'
   // Remove any leading/trailing whitespace the user may have accidentally entered
@@ -1348,7 +1321,7 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
   param_stats_aggregation_for_disk_throughput = param_stats_aggregation_for_disk_throughput.trim()
   param_recommend_hdd_tier = param_recommend_hdd_tier.trim()
 
-  csv_message = ds_param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -1905,7 +1878,7 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email."
   email $param_email do
-    attach_export_table $ds_param_incident_csv
+    attach_export_table $param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
 end

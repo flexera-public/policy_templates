@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.1.3
+
+- Fixed an issue where the policy could fail with a "must be a string" error when filtering instances by the schedule tag key due to how the tag key parameter was sanitized.
+
 ## v8.1.2
 
 - Fixed an issue where an instance without a Name tag could incorrectly display the name of a different, previously processed instance in the incident report.
