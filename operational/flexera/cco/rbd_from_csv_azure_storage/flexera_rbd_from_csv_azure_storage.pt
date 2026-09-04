@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.6",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -24,9 +24,18 @@ parameter "param_effective_date" do
   type "string"
   category "Policy Settings"
   label "Effective Date"
-  description "Year/month you want rules to start applying in YYYY-MM format."
+  description "Year/month you want rules to start applying in YYYY-MM format. Only used when 'Effective Date Mode' is set to 'Static'."
   allowed_pattern /^\d{4}-\d{2}$/
   default "2020-01"
+end
+
+parameter "param_effective_date_mode" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date Mode"
+  description "Whether to use the static value in the 'Effective Date' parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs."
+  allowed_values "Static", "Current Month"
+  default "Static"
 end
 
 parameter "param_normalize_case" do
@@ -733,13 +742,34 @@ script "js_csv_validated", type: "javascript" do
 EOS
 end
 
+# Determine the effective date to use for the generated rules: either the static value from the
+# 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = { value: year + "-" + month }
+  } else {
+    result = { value: param_effective_date }
+  }
+EOS
+end
+
 # Build RBD rule objects from CSV data
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case, $param_effective_date
+  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $ds_effective_date, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
+  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "ds_effective_date", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case"
   result "result"
   code <<-'EOS'
   // Remove any leading/trailing whitespace the user may have accidentally entered
@@ -834,7 +864,7 @@ script "js_rbds", type: "javascript" do
       result.push({
         id: rbdId,
         name: rbdName,
-        effective_at: param_effective_date,
+        effective_at: ds_effective_date.value,
         rules: rules,
         ruleCount: rules.length
       })
@@ -886,7 +916,7 @@ datasource "ds_existing_rbds_with_rules" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val($ds_effective_date, "value")])
     header "User-Agent", "RS Policies"
     ignore_status [400, 401, 403, 404, 429]
   end
