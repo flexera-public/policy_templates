@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.2
+
+- Fixed an issue where the policy could fail with a "host must be a string" error due to how the Azure endpoint and incident CSV parameters were sanitized.
+
 ## v3.0.1
 
 - Fixed an issue where the policy could fail with an error instead of generating a report when a data disk's utilization metrics were not available from Azure Monitor for one of the requested measurements

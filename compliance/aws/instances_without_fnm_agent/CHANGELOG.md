@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4.5
+
+- Fixed an issue where the policy could fail with a "host must be a string" error when requesting the FlexNet Manager report due to how the report ID parameter was sanitized.
+
 ## v4.4.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

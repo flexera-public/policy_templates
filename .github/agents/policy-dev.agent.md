@@ -482,16 +482,23 @@ Two mechanisms, depending on how the parameter is consumed:
 
 **Example:** See "Common JavaScript Patterns - Parameter Sanitization" in `data/agent/code_examples.txt`.
 
-> **⚠️ Critical gotcha - never reference a Category B wrapper datasource bare inside a `join([...])` array.** The DSL's `join()` function statically requires its array argument to be "array of strings." Literal strings, built-in variables (`rs_org_id`, `policy_id`), and `$param_x` (a declared `type "string"` parameter) all satisfy that check. A Category B wrapper datasource's `result` is produced by a plain `run_script` with no declared field/type, so the engine treats it as an **untyped/"unknown"** value - mixing it bare into a `join([...])` array with literal strings makes the whole array "array of unknown," and `join()` fails at evaluation time with an error like:
+> **⚠️ Critical gotcha - never reference a Category B wrapper datasource bare as a DSL-typed field value, even as the entire value of that field.** Every statically-typed DSL field - `host`, `path`, `query`, `verb`, `body` - requires a `"string"` value, and every element inside a `join([...])` array is held to the same requirement. Literal strings, built-in variables (`rs_org_id`, `policy_id`), and `$param_x` (a declared `type "string"` parameter) all satisfy that check. A Category B wrapper datasource's `result` is produced by a plain `run_script` with no declared field/type, so the engine treats it as an **untyped/"unknown"** value. Referencing it bare fails at evaluation time - **both** when it is mixed into a `join([...])` array alongside literal strings:
 >
 > ```text
 > invalid argument in join(array,""): first argument must be an array of
 > strings, got array of unknown
 > ```
 >
-> This is a *runtime evaluation* error, not a parse error - `fpt check` will **not** catch it; it only surfaces when the policy is actually applied. It affects `join([...])` used for `host`, `path`, `query`, and `body` values alike.
+> **and** when it is used as the *entire* value of a field with nothing else to combine, e.g. `host $ds_s3_bucket_hostname`:
 >
-> **The fix:** have the wrapper script return a keyed object instead of a bare scalar, then access it with `val()` at every `join([...])` call site (this exact pattern - a `run_script`-only datasource returning an object, consumed via `val($ds_x, "field")` inside `join([...])` - is already proven throughout the catalog, e.g. `val($ds_dates, "period")` in `cost/flexera/cco/fixed_cost_cbi/fixed_cost_cbi.pt`):
+> ```text
+> invalid request host
+> host must be a string
+> ```
+>
+> This is a *runtime evaluation* error, not a parse error - `fpt check` will **not** catch it; it only surfaces when the policy is actually applied. It affects `host`, `path`, `query`, `verb`, and `body` alike, whether the bare reference is standalone or embedded inside `join([...])`.
+>
+> **The fix:** have the wrapper script return a keyed object instead of a bare scalar, then access it with `val()` at **every** call site - standalone field values included, not just `join([...])` arrays (this exact pattern - a `run_script`-only datasource returning an object, consumed via `val($ds_x, "field")` - is already proven throughout the catalog, e.g. `val($ds_dates, "period")` in `cost/flexera/cco/fixed_cost_cbi/fixed_cost_cbi.pt`):
 >
 > ```javascript
 > script "js_cbi_endpoint", type: "javascript" do
@@ -504,10 +511,11 @@ Two mechanisms, depending on how the parameter is consumed:
 > ```
 >
 > ```text
+> host val($ds_cbi_endpoint, "value")
 > path join(["/some/path/", val($ds_cbi_endpoint, "value"), "/execute"])
 > ```
 >
-> A bare `$ds_x` reference works fine when it is the **entire** value of a DSL field with nothing else to combine (e.g. `host $ds_kubecost_host`) - the failure is specific to embedding it alongside literal strings inside `join([...])`. When in doubt, always use the object+`val()` form for any Category B wrapper that feeds into a `join([...])` call, even if only one element in the array.
+> **There is no exception for a bare `$ds_x` reference used as the entire value of a field.** Always use the object+`val()` form for any Category B wrapper, with no exceptions - whether it is the sole value of a field or one element combined via `join([...])`.
 
 **Architectural exception - "action-only" parameters used exclusively inside `run`/`define` Cloud Workflow blocks** (e.g. `param_tags_to_add`, `param_labels_to_add`, `param_new_name`, `param_new_description`, `param_schedule`, `param_target_bucket`): these cannot be sanitized with either mechanism above. `run "define_name", data, $param_x, ...` invocation lines only ever accept raw `$param_x` references (or reserved words/built-ins) - never a `$ds_x` datasource reference - and `define` blocks have no string-manipulation function equivalent to JavaScript's `.trim()`. Since there is no script in the chain to insert a trim into and no way to substitute a sanitized datasource value into `run`, leave these parameters untrimmed. This is a confirmed language limitation, not an oversight - do not attempt to work around it (for example, by adding a no-op script) purely to satisfy a sanitization audit. `param_aws_account_number` (used only inside `credentials do ... aws_account_number $param_x end` blocks) falls into the same category for the same reason.
 
