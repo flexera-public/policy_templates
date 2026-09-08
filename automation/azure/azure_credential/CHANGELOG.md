@@ -1,13 +1,5 @@
 # Changelog
 
-## v0.5.0
-
-- Migrated the Meta Parent policy from the legacy governance API to the current Flexera policy API for applied policy management (self policy lookup, published/uploaded template lookup, and child policy create/update/delete). No change in behavior; child policy management, credential status reporting, and the single-child-policy design remain the same. Also added the "Attach CSV To Consolidated Incident Email", "Consolidated Incident Table Rows for Email Body", and "Skip Consolidated Incident" parameters, and a "Delete Child Policies" approval action for child policies that report an error, for consistency with other meta parent policies.
-
-## v0.4.0
-
-- The Meta Parent policy now updates the child policy whenever the "Policy Schedule" parameter is changed, in addition to updating on other parameter changes. Previously, changing the schedule alone did not trigger an update of the child policy's run frequency.
-
 ## v0.3.3
 
 - Improved reliability when consolidating credential test results that may be missing summary details.

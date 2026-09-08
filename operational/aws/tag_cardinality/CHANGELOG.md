@@ -1,9 +1,5 @@
 # Changelog
 
-## v3.4.0
-
-- The Meta Parent policy now updates child policies whenever the "Policy Schedule" parameter is changed, in addition to updating on other parameter changes. Previously, changing the schedule alone did not trigger an update of the child policies' run frequency.
-
 ## v3.3.5
 
 - Combined reports now skip child incidents that do not include result rows instead of failing intermittently.

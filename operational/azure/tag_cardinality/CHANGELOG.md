@@ -1,9 +1,5 @@
 # Changelog
 
-## v3.4.0
-
-- The Meta Parent policy now updates child policies whenever the "Policy Schedule" parameter is changed, in addition to updating on other parameter changes. Previously, changing the schedule alone did not trigger an update of the child policies' run frequency.
-
 ## v3.3.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
