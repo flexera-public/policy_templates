@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.0
+
+- Migrated the Meta Parent policy from the legacy governance API to the current Flexera policy API for managing child policies. No change in behavior for existing users.
+- Added child policy error reporting and a manual "Delete Child Policies" approval action, aligning this policy with the current Meta Parent policy design.
+
+## v0.3.0
+
+- The Meta Parent policy now updates the child policy whenever the "Policy Schedule" parameter is changed, in addition to updating on other parameter changes. Previously, changing the schedule alone did not trigger an update of the child policy's run frequency.
+
 ## v0.2.4
 
 - Improved reliability when summarizing account credential results for child policies with incomplete account details.

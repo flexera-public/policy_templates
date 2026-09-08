@@ -502,6 +502,7 @@ datasource "ds_get_existing_policies" do
       field "options", jmes_path(col_item, "options")
       field "updated_at", jmes_path(col_item, "updatedAt")
       field "status", jmes_path(col_item, "status")
+      field "schedule", jmes_path(col_item, "schedule.rrule")
     end
   end
 end
@@ -602,7 +603,8 @@ script "js_format_existing_policies", type: "javascript" do
         "incident": incident,
         "incident2": incident2,
         "incident3": incident3,
-        "options": options
+        "options": options,
+        "schedule": ds_get_existing_policies[x]["schedule"]
       }
       tracking[aws_account_id] = false
     } else {
@@ -642,7 +644,8 @@ script "js_format_existing_policies", type: "javascript" do
           "incident": incident,
           "incident2": incident2,
           "incident3": incident3,
-          "options": options
+          "options": options,
+          "schedule": ds_get_existing_policies[x]["schedule"]
         }
 
       }
@@ -824,6 +827,12 @@ script "js_take_in_parameters", type: "javascript" do
           should_update = true
         }
       })
+
+      // Also update the child policy if the parent's schedule frequency has changed
+      if (!_.isEqual(frequency, ds_format_existing_policies["formatted"][cur_account_id]["schedule"])) {
+        console.log("Schedule mismatch: " + frequency + " != " + ds_format_existing_policies["formatted"][cur_account_id]["schedule"])
+        should_update = true
+      }
 
       if (should_update) {
         console.log("Child policy needs to be updated: " + JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]))
@@ -1434,7 +1443,8 @@ define update_applied_policy($item, $rs_org_id, $rs_project_id) return $response
     host: $host,
     href: $href,
     body: {
-      "options": $item["options"]
+      "options": $item["options"],
+      "schedule": { "rrule": $item["frequency"] }
     }
   )
 
