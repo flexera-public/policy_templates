@@ -501,6 +501,7 @@ datasource "ds_get_existing_policies" do
       field "options", jmes_path(col_item, "options")
       field "updated_at", jmes_path(col_item, "updatedAt")
       field "status", jmes_path(col_item, "status")
+      field "schedule", jmes_path(col_item, "schedule.rrule")
     end
   end
 end
@@ -601,7 +602,8 @@ script "js_format_existing_policies", type: "javascript" do
         "incident": incident,
         "incident2": incident2,
         "incident3": incident3,
-        "options": options
+        "options": options,
+        "schedule": ds_get_existing_policies[x]["schedule"]
       }
       tracking[subscriptionID] = false
     } else {
@@ -641,7 +643,8 @@ script "js_format_existing_policies", type: "javascript" do
           "incident": incident,
           "incident2": incident2,
           "incident3": incident3,
-          "options": options
+          "options": options,
+          "schedule": ds_get_existing_policies[x]["schedule"]
         }
 
       }
@@ -816,15 +819,22 @@ script "js_take_in_parameters", type: "javascript" do
       should_keep[cur_account_id] = true
 
       // Compare each parent param value against the child's current value to detect drift
-      var should_update = false
+      var options_changed = false
       _.each(ds_format_self.options, function(value, key) {
         if (!_.isEqual(value, ds_format_existing_policies["formatted"][cur_account_id]["options"][key])) {
           console.log("Param mismatch for " + key + ": " + value + " != " + ds_format_existing_policies["formatted"][cur_account_id]["options"][key])
-          should_update = true
+          options_changed = true
         }
       })
 
-      if (should_update) {
+      // Also update the child policy if the parent's schedule frequency has changed
+      var schedule_changed = false
+      if (!_.isEqual(frequency, ds_format_existing_policies["formatted"][cur_account_id]["schedule"])) {
+        console.log("Schedule mismatch: " + frequency + " != " + ds_format_existing_policies["formatted"][cur_account_id]["schedule"])
+        schedule_changed = true
+      }
+
+      if (options_changed || schedule_changed) {
         console.log("Child policy needs to be updated: " + JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]))
         if (grid_and_cwf.to_update.length < max_actions) {
           // Within the action limit - schedule the update and add to the grid
@@ -836,7 +846,9 @@ script "js_take_in_parameters", type: "javascript" do
             "description": description,
             "credentials": ds_format_self.credentials,
             "options": options,
+            "options_changed": options_changed,
             "frequency": frequency,
+            "schedule_changed": schedule_changed,
             "flexera_host": flexera_host
           })
         } else {
@@ -1214,8 +1226,17 @@ EOS
       field "applied_policy_id" do
         label "Applied Policy ID"
       end
+      field "frequency" do
+        label "Frequency"
+      end
       field "options" do
         label "Options"
+      end
+      field "schedule_changed" do
+        label "Frequency Changed"
+      end
+      field "options_changed" do
+        label "Options Changed"
       end
       field "flexera_host" do
         label "Flexera Host"
@@ -1409,27 +1430,48 @@ define update_applied_policy($item, $rs_org_id, $rs_project_id) return $response
   $host = $item["flexera_host"]
   $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["applied_policy_id"]])
   $url = $host + $href
-  task_label("PATCH " + $url)
 
-  $response = http_request(
-    auth: $$auth_flexera,
-    https: true,
-    verb: "patch",
-    host: $host,
-    href: $href,
-    body: {
-      "options": $item["options"]
-    }
-  )
-
-  task_label("Update applied policy response: " + $item["applied_policy_id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
-    raise "Unexpected response updating applied policy: "+ $item["applied_policy_id"] + " " + to_json($response)
-  else
-    task_label("Update applied policy successful: " + $item["applied_policy_id"])
+  # The options and schedule are applied via separate PATCH requests. The API does not reliably
+  # apply a schedule change when it is combined with an options change in the same request body.
+  if $item["options_changed"] == true
+    task_label("PATCH (options) " + $url)
+    $response = http_request(
+      auth: $$auth_flexera,
+      https: true,
+      verb: "patch",
+      host: $host,
+      href: $href,
+      body: {
+        "options": $item["options"]
+      }
+    )
+    task_label("Update applied policy options response: " + $item["applied_policy_id"] + " " + to_json($response))
+    $$all_responses << to_json({"req": "PATCH (options) " + $url, "resp": $response})
+    if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+      raise "Unexpected response updating applied policy options: "+ $item["applied_policy_id"] + " " + to_json($response)
+    end
   end
+
+  if $item["schedule_changed"] == true
+    task_label("PATCH (schedule) " + $url)
+    $response = http_request(
+      auth: $$auth_flexera,
+      https: true,
+      verb: "patch",
+      host: $host,
+      href: $href,
+      body: {
+        "schedule": { "rrule": $item["frequency"] }
+      }
+    )
+    task_label("Update applied policy schedule response: " + $item["applied_policy_id"] + " " + to_json($response))
+    $$all_responses << to_json({"req": "PATCH (schedule) " + $url, "resp": $response})
+    if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+      raise "Unexpected response updating applied policy schedule: "+ $item["applied_policy_id"] + " " + to_json($response)
+    end
+  end
+
+  task_label("Update applied policy successful: " + $item["applied_policy_id"])
 end
 
 define delete_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
