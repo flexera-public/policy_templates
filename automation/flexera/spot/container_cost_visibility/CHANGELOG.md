@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed an issue where applying adjustments could fail with a "415 Unsupported Media Type" error due to the casing of the `Content-Type` header.
+
 ## v0.1.5
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
