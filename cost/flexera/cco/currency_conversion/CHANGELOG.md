@@ -3,7 +3,7 @@
 ## v5.1.6
 
 - Fixed an issue where applying adjustments could fail with a "415 Unsupported Media Type" error due to the casing of the `Content-Type` header.
-- Fixed an issue where the incident name showed "<no value>" instead of the currency codes.
+- Fixed an issue where the incident name showed `<no value>` instead of the currency codes.
 - Fixed an issue where the incident detail showed "[object Object]" instead of the month for each exchange rate.
 
 ## v5.1.5
