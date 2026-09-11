@@ -2,13 +2,14 @@
 
 ## What It Does
 
-This policy compares Azure billing data from 3 days ago to billing data from a user-specified number of days ago (10 by default) to see if any new Marketplace products have been purchased since then. A list of the new products and their estimated monthly cost is raised as an incident and, optionally, emailed.
+This policy compares Azure billing data from 3 days ago to billing data from a user-specified number of days ago (10 by default) to see if any new Marketplace products have been purchased since then. A list of the new products, their purchase dates, and their estimated monthly cost is raised as an incident and, optionally, emailed.
 
 ## How It Works
 
-- The policy leverages the Flexera Cloud Cost Optimization (CCO) APIs to retrieve aggregated amortized costs from each Azure bill source.
+- The policy leverages the Flexera Cloud Cost Optimization (CCO) APIs to retrieve aggregated amortized costs, at a daily granularity, for every day in the Look Back Period, from each Azure bill source.
 - Costs are filtered accordingly based on the kind of Azure bill source. Old bill sources pull the `usage_type` dimension and filter by the `Microsoft.Marketplace` service, while newer bill sources pull the `resource_type` dimension and filter by `manufacturer_name` not containing the substring "Microsoft".
-- The list of products from 3 days ago is compared to the older list to find any new items and their cost.
+- The list of products with cost 3 days ago is compared to the list of products with cost on the first day of the Look Back Period to find any new items and their cost.
+- For each new product, the daily cost history retrieved above is used to find the earliest day within the Look Back Period that the product has cost. This date is reported as the purchase date.
 
 ### Policy Cost Reporting Details
 

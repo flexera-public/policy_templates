@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.0
+
+- Added `Date Purchased`, `Bill Source`, `Vendor Account`, `Vendor Account Name`, and `Resource Group` fields to the incident output.
+
 ## v0.6.5
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
