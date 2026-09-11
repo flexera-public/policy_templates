@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.5
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v4.2.4
 
 - Fixed an issue where Storage Account Tags could always show as blank in the incident output, even when the storage account had tags configured.

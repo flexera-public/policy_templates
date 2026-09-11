@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.6.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v8.6.3
 
 - Fixed an issue where the policy could calculate an invalid unused volume percentage when filters left no Azure volumes to analyze.

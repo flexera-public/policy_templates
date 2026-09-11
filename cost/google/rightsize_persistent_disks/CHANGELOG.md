@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.3.2
 
 - Fixed an issue where the policy could fail when billing data included Compute Engine charges that were not tied to a specific resource.

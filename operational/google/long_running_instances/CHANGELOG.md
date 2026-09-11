@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.2.3
 
 - Fixed an issue where some virtual machines could be missed by the policy for Google projects with a large number of instances.

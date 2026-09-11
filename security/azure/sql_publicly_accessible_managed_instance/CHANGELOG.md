@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.5
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v3.3.4
 
 - Fixed an issue where the policy would fail to generate results when a region filter was configured, instead of correctly filtering the results by region.

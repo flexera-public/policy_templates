@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.6.2
 
 - Fixed an issue where an instance that was recommended for both stopping (idle) and downsizing (underutilized) at the same time could be incorrectly reported in both incidents instead of only the idle one, resulting in duplicated savings being counted for that instance.

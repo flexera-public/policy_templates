@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v6.1.3
 
 - Fixed an issue where instances with an exclusion label value that matches the specified "does not match regex" filter would be incorrectly excluded from policy evaluation instead of being retained.
