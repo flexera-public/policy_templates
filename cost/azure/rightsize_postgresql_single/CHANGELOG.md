@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.2.2
 
 - Fixed an issue where, with "Skip Instance Sizes" set to "Yes", a server that qualified for downsizing more than one size could cause the policy to fail to generate an incident instead of recommending the correct target size.

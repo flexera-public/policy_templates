@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v3.1.3
 
 - Fixed an issue where the policy could produce an invalid percentage in the incident summary when no storage objects were returned for analysis.

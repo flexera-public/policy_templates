@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.6.2
 
 - Fixed an issue where the policy could fail to generate a report when the "Allow/Deny Regions List" filter parameter was used.

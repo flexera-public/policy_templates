@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.1.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v8.1.3
 
 - Fixed an issue where the policy could fail with a "must be a string" error when filtering instances by the schedule tag key due to how the tag key parameter was sanitized.

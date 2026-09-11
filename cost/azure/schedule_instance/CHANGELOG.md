@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.2.5
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v7.2.4
 
 - Fixed an issue where the policy could fail to generate an incident when the Azure directory information for the tenant was unavailable.

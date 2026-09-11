@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.6
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v6.0.5
 
 - Fixed an issue where the policy could fail when account-level tag data was missing for the AWS account.

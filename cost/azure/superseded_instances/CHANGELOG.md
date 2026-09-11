@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v4.4.2
 
 - Fixed an issue where non-USD users would incorrectly see a currency conversion API malfunction warning in the incident details even when currency conversion was working correctly.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.5.2
 
 - Fixed an issue where the policy could fail to generate an incident for a SQL pool if one of its monitoring metrics had no data points during the analysis window.

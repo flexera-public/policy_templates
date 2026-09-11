@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.7.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v5.7.2
 
 - Fixed an issue where resource hourly cost could be invalid when billing data contained zero usage hours for a virtual machine.

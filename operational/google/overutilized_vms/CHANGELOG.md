@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.3.3
 
 - Fixed an issue where the policy could fail to run when CPU utilization metrics were unavailable for a project.

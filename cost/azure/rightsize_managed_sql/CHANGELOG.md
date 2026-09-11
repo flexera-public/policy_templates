@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.7.2
 
 - Fixed an issue where the region filter could exclude or include the wrong SQL Managed Instances when a region allow/deny list was configured.

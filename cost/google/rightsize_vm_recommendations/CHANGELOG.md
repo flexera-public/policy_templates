@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v3.5.2
 
 - Fixed an issue where the policy could fail to run if currency conversion data was unavailable for the organization's configured currency.

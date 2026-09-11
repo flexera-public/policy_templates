@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.4.2
 
 - Fixed an issue where missing CPU or memory statistics from Google monitoring data could cause the policy to fail instead of skipping unavailable measurements.

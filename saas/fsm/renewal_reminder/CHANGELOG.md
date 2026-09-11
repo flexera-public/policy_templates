@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v3.3.3
 
 - Fixed an issue where the policy could fail to generate results for any application if a license term did not have a valid expiration date (such as a perpetual or evergreen license).

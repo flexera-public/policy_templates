@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.8
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
 ## v0.1.7
 
 - Fixed an issue where generating rule-based dimensions could fail with an error when the "Dimensions for Rules" parameter did not match any column in the CSV data.

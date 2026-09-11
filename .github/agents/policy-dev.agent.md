@@ -896,6 +896,10 @@ More broadly, avoid all non-ASCII punctuation and special Unicode characters in 
 
 This rule also applies to all other output you produce: READMEs, CHANGELOGs, and any other files in this repository should not contain em dashes or other non-ASCII punctuation.
 
+### Content-Type Header Casing
+
+**Always write the `Content-Type` header with this exact casing - never `content-type`, `content-Type`, or `Content-type`.** This applies everywhere a `Content-Type` header key appears in a `.pt` file: `header "Content-Type", ...` declarations in `datasource request` blocks, `headers: { "Content-Type": ... }` maps passed to `http_request` (and similar) calls in Cloud Workflow `define` blocks, and any JSON/JavaScript object literal that sets this header. The policy engine defaults to a `Content-Type` of `text/plain`, and that default is only correctly masked when the header key matches the exact `Content-Type` casing - `content-type` (or any other casing) does not reliably override it. When writing new templates or editing existing ones, check for and correct any lowercase or mis-cased `content-type` header keys you encounter, even outside the immediate scope of the requested change.
+
 ### No Alignment Padding
 
 Do **not** pad field names or object keys with extra spaces to visually align values into columns. Use a single space after the field name / colon only.
