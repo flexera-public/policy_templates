@@ -27,17 +27,23 @@ This policy template retrieves MongoDB Atlas invoices and converts them to the F
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- **MongoDB Atlas Digest Credential** (*provider=mongodb_atlas*) - Create a custom Digest credential containing a MongoDB Atlas public/private API key pair. This credential is not able to be created through the normal Flexera user interface. Use Credentials API to create credential with type `digest`:
+- **MongoDB Atlas Digest Credential** (*provider=mongodb_atlas*) - Create a custom Digest credential containing a MongoDB Atlas public/private API key pair. This credential is not able to be created through the normal Flexera user interface.
+  - `Organization Billing Viewer`
+  - `Organization Read-Only`
 
-```sh
-export flexeraAccesstoken="access.token.here"
-export flexeraOrgId="12345"
-export mongoPublicKey="..."
-export mongoPrivateKey="..."
-curl -i -H "Authorization: Bearer ${flexeraAccesstoken}" -X PUT "https://api.flexera.com/cred/v2/orgs/${flexeraOrgId}/credentials/digest/mongodb-atlas" -d "{\"password\": \"${mongoPrivateKey}\",\"username\": \"${mongoPublicKey}\",\"name\": \"MongoDB Atlas\",\"tags\": [{\"key\": \"provider\", \"value\": \"mongodb_atlas\"}]}"
-```
+  Use the [Credentials](https://developer.flexera.com/docs/api/cred/v2#/Digest%20Credential/Digest%20Credential%23create_project) API to create `digest` Credential:
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) with roles that allow viewing billing centers and creating, uploading, and committing CBI bill uploads. The closest standard CBI templates use `billing_center_viewer` and `csm_bill_upload_admin`; a `policy_viewer` role may also be required by the tenant's credential setup.
+  ```sh
+  export flexeraAccesstoken="access.token.here"
+  export flexeraProjectId="123456"
+  export mongoPublicKey="..."
+  export mongoPrivateKey="..."
+  curl -i -H "Content-Type: application/json" -H "Authorization: Bearer ${flexeraAccesstoken}" -X PUT "https://api.flexera.com/cred/v2/projects/${flexeraProjectId}/credentials/digest/mongodb-atlas" -d "{\"password\": \"${mongoPrivateKey}\",\"username\": \"${mongoPublicKey}\",\"name\": \"MongoDB Atlas\",\"tags\": [{\"key\": \"provider\", \"value\": \"mongodb_atlas\"}]}"
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) with roles that allow viewing billing centers and creating, uploading, and committing CBI bill uploads.
+  - `billing_center_viewer`
+  - `csm_bill_upload_admin`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
