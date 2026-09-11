@@ -583,6 +583,9 @@ changed_pt_files.each do |file|
     # Raise error if policy template has invalid heredoc syntax or escape sequences
     test = policy_invalid_heredoc_syntax?(file, file_lines); failures << test if test
 
+    # Raise error if policy template has a "Content-Type" header that is not cased correctly
+    test = policy_bad_content_type_casing?(file, file_lines); failures << test if test
+
     # Raise warning if the README permissions may not match policy template API calls.
     # Only run if the README for this policy template is not itself being tested to avoid duplicate warnings.
     pt_readme_file = File.join(File.dirname(file), "README.md")
