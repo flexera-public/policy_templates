@@ -1,0 +1,418 @@
+name "MongoDB Atlas Common Bill Ingestion"
+rs_pt_ver 20180301
+type "policy"
+short_description "Translate MongoDB Atlas invoices to the Flexera Common Bill Ingestion format and upload them to Flexera. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/mongodb_atlas/cbi_mongodb_atlas/) and [Flexera Automation documentation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/mongodb_atlas/cbi_mongodb_atlas/"
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "MongoDB",
+  service: "Atlas",
+  policy_set: "Common Bill Ingestion",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_mongodb_atlas_org_id" do
+  type "string"
+  category "Policy Settings"
+  label "MongoDB Atlas Organization ID"
+  description "The 24-character ID of the MongoDB Atlas organization whose groups and invoices should be downloaded."
+  allowed_pattern /^[0-9a-f]{24}$/i
+  # No default value, user input required
+end
+
+parameter "param_months" do
+  type "number"
+  category "Policy Settings"
+  label "Months"
+  description "The number of months of invoices to download on each run. Use a larger value for an initial backfill, then reduce it to 1 for regular monthly updates."
+  min_value 1
+  default 1
+end
+
+parameter "param_bill_connect_id" do
+  type "string"
+  category "Policy Settings"
+  label "Bill Connect ID"
+  description "The ID of the existing Flexera Common Bill Ingestion endpoint that receives MongoDB Atlas costs."
+  allowed_pattern /^cbi-oi-optima-[-_0-9a-zA-Z]{1,20}$/
+  default "cbi-oi-optima-mongodb-atlas"
+end
+
+parameter "param_emails" do
+  type "list"
+  category "Incident Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients to notify after MongoDB Atlas invoice data is uploaded."
+  default []
+end
+
+###############################################################################
+# Credentials
+###############################################################################
+
+credentials "auth_mongodb_atlas" do
+  schemes "digest"
+  label "MongoDB Atlas"
+  description "Select the custom Digest credential containing the MongoDB Atlas public and private API keys."
+  tags "provider=mongodb_atlas"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_mongodb_atlas" do
+  get_page_marker do
+    body_path jq(response, '.links[] | select(.rel == "next").href')
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_mongodb_atlas_org_groups" do
+  request do
+    auth $auth_mongodb_atlas
+    pagination $pagination_mongodb_atlas
+    host "cloud.mongodb.com"
+    path join(["/api/atlas/v1.0/orgs/", $param_mongodb_atlas_org_id, "/groups"])
+    query "itemsPerPage", "500"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jq(response, ".results[]") do
+      field "id", from(col_item)
+      field "name", from(col_item)
+    end
+  end
+end
+
+datasource "ds_mongodb_atlas_org_invoices_index" do
+  request do
+    auth $auth_mongodb_atlas
+    pagination $pagination_mongodb_atlas
+    host "cloud.mongodb.com"
+    path join(["/api/atlas/v1.0/orgs/", $param_mongodb_atlas_org_id, "/invoices/"])
+    query "itemsPerPage", "500"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jq(response, ".results[]") do
+      field "id", from(col_item)
+      field "startDate", from(col_item)
+    end
+  end
+end
+
+datasource "ds_mongodb_atlas_org_invoices_for_last_n_months" do
+  run_script $js_mongodb_atlas_org_invoices_for_last_n_months, $param_months, $ds_mongodb_atlas_org_invoices_index
+end
+
+script "js_mongodb_atlas_org_invoices_for_last_n_months", type: "javascript" do
+  parameters "months", "invoicesIndex"
+  result "invoices"
+  code <<-'EOS'
+  // Select the most recent requested number of invoices from the index.
+  var invoices = _.last(_.sortBy(invoicesIndex, "startDate"), months);
+  EOS
+end
+
+datasource "ds_mongodb_atlas_org_invoices" do
+  iterate $ds_mongodb_atlas_org_invoices_for_last_n_months
+  request do
+    auth $auth_mongodb_atlas
+    pagination $pagination_mongodb_atlas
+    host "cloud.mongodb.com"
+    path join(["/api/atlas/v1.0/orgs/", $param_mongodb_atlas_org_id, "/invoices/", val(iter_item, "id")])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    field "id", from(response)
+    field "startDate", from(response)
+    field "currency", jq(response, ".payments[0].currency")
+    field "lineItems" do
+      collect jq(response, ".lineItems[]") do
+        field "startDate", from(col_item)
+        field "endDate", from(col_item)
+        field "cloudProvider", from(col_item)
+        field "groupName", from(col_item)
+        field "groupId", from(col_item)
+        field "clusterName", from(col_item)
+        field "stitchAppName", from(col_item)
+        field "tags", from(col_item)
+        field "note", from(col_item)
+        field "sku", from(col_item)
+        field "discountCents", from(col_item)
+        field "percentDiscount", from(col_item)
+        field "quantity", from(col_item)
+        field "totalPriceCents", from(col_item)
+        field "unit", from(col_item)
+        field "unitPriceDollars", from(col_item)
+      end
+    end
+  end
+end
+
+datasource "ds_mongodb_atlas_cbi_uploads" do
+  run_script $js_mongodb_atlas_cbi_uploads, $ds_mongodb_atlas_org_groups, $ds_mongodb_atlas_org_invoices
+end
+
+script "js_mongodb_atlas_cbi_uploads", type: "javascript" do
+  parameters "groups", "invoices"
+  result "uploads"
+  code <<-'EOS'
+  // Map group IDs to names for the CBI CSV output.
+  var groupNamesByID = {};
+  _.each(groups, function (group) {
+    groupNamesByID[group.id] = group.name;
+  });
+
+  function escapeCSV(value) {
+    if (value == null) {
+      return "";
+    }
+
+    var stringValue = String(value);
+    if (/[,"\r\n]|^\s|\s$/.test(stringValue)) {
+      return '"' + stringValue.replace(/"/g, '""') + '"';
+    }
+    return stringValue;
+  }
+
+  var yearMonthRE = /^(\d+)-(\d+)-.+$/;
+  var periodRE = /^(\d+-\d+)-.+$/;
+  var trailingZeroRE = /\.0$/;
+  var uploads = _.compact(_.map(invoices, function (invoice) {
+    var lineItems = invoice.lineItems || [];
+    var yearMonth = invoice.startDate.replace(yearMonthRE, "$1$2");
+    var csv = "";
+
+    _.each(lineItems, function (lineItem, index) {
+      var groupName = lineItem.groupName || "";
+      var clusterName = lineItem.clusterName || "";
+      var clusterTag = "";
+      if (groupName && clusterName) {
+        clusterTag = groupName + "." + clusterName;
+      } else if (groupName) {
+        clusterTag = groupName;
+      } else if (clusterName) {
+        clusterTag = clusterName;
+      }
+
+      var tagsObject = lineItem.tags || {};
+      if (clusterTag) {
+        tagsObject["mongo-cluster-name"] = clusterTag;
+      }
+      if (lineItem.stitchAppName) {
+        tagsObject["mongo-stitch-app-name"] = lineItem.stitchAppName;
+      }
+      if (lineItem.cloudProvider) {
+        tagsObject["mongo-cloud-provider"] = lineItem.cloudProvider;
+      }
+      var tags = _.keys(tagsObject).length > 0 ? JSON.stringify(tagsObject) : "";
+      var item = {
+        CloudVendorAccountID: lineItem.groupId,
+        CloudVendorAccountName: groupNamesByID[lineItem.groupId],
+        Category: "Database",
+        InstanceType: "",
+        LineItemType: "Usage",
+        Region: "",
+        ResourceGroup: lineItem.groupId,
+        ResourceType: lineItem.sku,
+        ResourceID: clusterName,
+        Service: "MongoDB Atlas",
+        UsageType: lineItem.sku,
+        Tags: tags,
+        UsageAmount: lineItem.quantity,
+        UsageUnit: lineItem.unit,
+        Cost: lineItem.totalPriceCents / 100,
+        CurrencyCode: invoice.currency || "USD",
+        UsageStartTime: lineItem.startDate,
+        InvoiceYearMonth: yearMonth,
+        InvoiceID: invoice.id
+      };
+      var columns = _.keys(item);
+      if (index == 0) {
+        csv += columns.join(",") + "\n";
+      }
+      csv += _.map(columns, function (column) {
+        return escapeCSV(item[column]);
+      }).join(",") + "\n";
+    });
+
+    if (csv.length > 0) {
+      var csvSize;
+      if (csv.length >= 1024) {
+        var exponent = Math.floor(Math.log(csv.length) / Math.log(1024));
+        csvSize = (csv.length / Math.pow(1024, exponent)).toFixed(1).replace(trailingZeroRE, "") + " " + "kMGTP".charAt(exponent - 1) + "iB";
+      } else {
+        csvSize = csv.length + " B";
+      }
+
+      return {
+        period: invoice.startDate.replace(periodRE, "$1"),
+        recordCount: lineItems.length,
+        csv: csv,
+        csvSize: csvSize
+      };
+    }
+  }));
+  EOS
+end
+
+datasource "ds_create_bill_upload" do
+  iterate $ds_mongodb_atlas_cbi_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    body_field "billConnectId", $param_bill_connect_id
+    body_field "billingPeriod", val(iter_item, "period")
+  end
+  result do
+    field "id", from(response)
+    field "period", from(iter_item)
+    field "recordCount", from(iter_item)
+    field "csv", from(iter_item)
+    field "csvSize", from(iter_item)
+  end
+end
+
+datasource "ds_upload_file_to_bill_upload" do
+  iterate $ds_create_bill_upload
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/files/bill-", val(iter_item, "period"), ".csv"])
+    header "User-Agent", "RS Policies"
+    body val(iter_item, "csv")
+  end
+  result do
+    field "id", from(iter_item)
+    field "period", from(iter_item)
+    field "recordCount", from(iter_item)
+    field "csvSize", from(iter_item)
+  end
+end
+
+datasource "ds_commit_bill_upload" do
+  iterate $ds_upload_file_to_bill_upload
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "commit"
+  end
+  result do
+    field "period", from(iter_item)
+    field "recordCount", from(iter_item)
+    field "csvSize", from(iter_item)
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+# policy "debug" do
+#   validate $ds_mongodb_atlas_cbi_uploads do
+#     summary_template "Debug MongoDB Atlas CBI Upload"
+#     detail_template <<-'EOS'
+# Debugging the following MongoDB Atlas invoice data:
+# | Month         | Records            | CSV Size       |
+# | ------------- | ------------------ | -------------- |
+# {{ range data -}}
+# | {{ .period }} | {{ .recordCount }} | {{ .csvSize }} |
+# {{ end }}
+
+# ```
+# {{ data.csv }}
+# ```
+# EOS
+#     check eq(size(data), 0)
+#     export "csv" do
+#       field "CloudVendorAccountID"
+#       field "CloudVendorAccountName"
+#       field "Category"
+#       field "InstanceType"
+#       field "LineItemType"
+#       field "Region"
+#       field "ResourceGroup"
+#       field "ResourceType"
+#       field "ResourceID"
+#       field "Service"
+#       field "UsageType"
+#       field "Tags"
+#       field "UsageAmount"
+#       field "UsageUnit"
+#       field "Cost"
+#       field "CurrencyCode"
+#       field "UsageStartTime"
+#       field "InvoiceYearMonth"
+#       field "InvoiceID"
+#     end
+#   end
+# end
+
+policy "pol_mongodb_atlas_cbi" do
+  validate $ds_commit_bill_upload do
+    summary_template "MongoDB Atlas CBI Upload"
+    detail_template <<-'EOS'
+Uploading the following MongoDB Atlas invoice data to Flexera Common Bill Ingestion:
+| Month         | Records            | CSV Size       |
+| ------------- | ------------------ | -------------- |
+{{ range data -}}
+| {{ .period }} | {{ .recordCount }} | {{ .csvSize }} |
+{{ end }}
+EOS
+    escalate $esc_cbi_upload
+    resolve $res_email
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_cbi_upload" do
+  automatic true
+  label "Report MongoDB Atlas CBI upload"
+  description "Report the result of the MongoDB Atlas CBI upload."
+  resolve_incident
+end
+
+###############################################################################
+# Resolutions
+###############################################################################
+
+resolution "res_email" do
+  automatic true
+  email $param_emails do
+    subject_template "MongoDB Atlas CBI Upload Completed"
+  end
+end
