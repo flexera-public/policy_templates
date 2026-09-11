@@ -2037,3 +2037,45 @@ def policy_invalid_heredoc_syntax?(file, file_lines)
 
   fail_message.empty? ? false : fail_message.strip
 end
+
+### Content-Type Header Casing Test
+# Verify that any "Content-Type" header key found within datasources, scripts, or Cloud Workflow
+# blocks uses this exact casing. Any other casing (e.g. "content-type", "Content-type",
+# "cOnTeNt-TyPe") is flagged, since the policy engine only reliably overrides the default
+# Content-Type value when the header key matches this exact casing.
+def policy_bad_content_type_casing?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has incorrectly cased \"Content-Type\" headers..."
+
+  fail_message = ""
+
+  within_datasource = false
+  within_script = false
+  within_cwf = false
+
+  # Matches "content-type" (any casing) as a quoted string/hash key, e.g.
+  # header "content-type", headers: { "content-type": ... }, "Content-type" => ...
+  content_type_regex = /["']content-type["']/i
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+
+    within_datasource = true if line.start_with?("datasource ")
+    within_script = true if line.start_with?("script ")
+    within_cwf = true if line.start_with?("define ")
+
+    within_datasource = false if within_datasource && line.strip == "end"
+    within_script = false if within_script && (line.strip == "EOS" || line.strip == "EOF")
+    within_cwf = false if within_cwf && line.strip == "end"
+
+    next unless within_datasource || within_script || within_cwf
+
+    line.scan(content_type_regex).each do |match|
+      next if match == '"Content-Type"' || match == "'Content-Type'"
+      fail_message += "Line #{line_number}: Found `#{match}` which should be cased exactly as `\"Content-Type\"`\n"
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-conventions)] Policy Template has a `Content-Type` header that is not cased correctly. The header key must be written exactly as `Content-Type`, since the policy engine only reliably overrides its default Content-Type value when the header key matches this exact casing:\n\n" + fail_message if !fail_message.empty?
+
+  fail_message.empty? ? false : fail_message.strip
+end
