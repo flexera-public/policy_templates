@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.4.5",
+  version: "1.0.0",
   provider: "AWS",
   service: "Marketplace",
   policy_set: "New Marketplace Products",
@@ -33,6 +33,7 @@ parameter "param_lookback" do
   label "Look Back Period (Days)"
   description "How far back, in days, to look at Marketplace product purchases to see if new items have been added."
   min_value 4
+  max_value 30
   default 10
 end
 
@@ -227,42 +228,35 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_current_products" do
+datasource "ds_products_history" do
   request do
-    run_script $js_get_products, $ds_top_level_bcs, 3, rs_org_id, rs_optima_host
+    run_script $js_get_products_history, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
       field "service", jmes_path(col_item, "dimensions.service")
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "timestamp", jmes_path(col_item, "timestamp")
     end
   end
 end
 
-datasource "ds_previous_products" do
-  request do
-    run_script $js_get_products, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "service", jmes_path(col_item, "dimensions.service")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-    end
-  end
-end
-
-script "js_get_products", type: "javascript" do
-  parameters "ds_top_level_bcs", "lookback", "rs_org_id", "rs_optima_host"
+script "js_get_products_history", type: "javascript" do
+  parameters "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // End 2 days ago (exclusive) so the range covers every day from the lookback
+  // cutoff through 3 days ago, the most recent day with reliably finalized cost data.
   end_date = new Date()
-  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date.setDate(end_date.getDate() - 2)
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - lookback)
+  start_date.setDate(start_date.getDate() - param_lookback)
   start_date = start_date.toISOString().split('T')[0]
 
   var request = {
@@ -271,7 +265,7 @@ script "js_get_products", type: "javascript" do
     verb: "POST",
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     body_fields: {
-      dimensions: ["service"],
+      dimensions: ["service", "bill_source", "vendor_account", "vendor_account_name"],
       granularity: "day",
       start_at: start_date,
       end_at: end_date,
@@ -294,11 +288,11 @@ EOS
 end
 
 datasource "ds_new_products" do
-  run_script $js_new_products, $ds_current_products, $ds_previous_products, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_incident_csv
+  run_script $js_new_products, $ds_products_history, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_incident_csv
 end
 
 script "js_new_products", type: "javascript" do
-  parameters "ds_current_products", "ds_previous_products", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_incident_csv"
+  parameters "ds_products_history", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -331,21 +325,50 @@ script "js_new_products", type: "javascript" do
   result = []
   total_cost = 0.0
 
-  old_product_list = _.compact(_.uniq(_.pluck(ds_previous_products, "service")))
+  // Build the two comparison snapshot dates from the continuous daily history:
+  // "current" is 3 days ago (buffer for billing data to finalize), "previous" is
+  // the full lookback period ago. A product is new if it has cost in the current
+  // snapshot but had no cost in the previous snapshot.
+  current_date = new Date()
+  current_date.setDate(current_date.getDate() - 3)
+  current_date_str = current_date.toISOString().split('T')[0]
 
-  valid_products = _.filter(ds_current_products, function(item) {
-    return typeof(item['service']) == 'string' && item['service'] != ''
+  previous_date = new Date()
+  previous_date.setDate(previous_date.getDate() - param_lookback)
+  previous_date_str = previous_date.toISOString().split('T')[0]
+
+  function dayOf(item) {
+    return item['timestamp'] ? item['timestamp'].split('T')[0] : ''
+  }
+
+  valid_history = _.filter(ds_products_history, function(item) {
+    return typeof(item['service']) == 'string' && item['service'] != '' && dayOf(item) != ''
   })
 
-  _.each(valid_products, function(item) {
+  current_products = _.filter(valid_history, function(item) { return dayOf(item) == current_date_str })
+  previous_products = _.filter(valid_history, function(item) { return dayOf(item) == previous_date_str })
+
+  old_product_list = _.compact(_.uniq(_.pluck(previous_products, "service")))
+
+  _.each(current_products, function(item) {
     if (_.contains(old_product_list, item['service']) == false) {
       cost = item['cost'] * 365.25 / 12
 
       if (cost >= param_min_cost) {
         total_cost += cost
 
+        // Find the earliest day within the queried history where this product had
+        // any cost, this is the date the product was purchased.
+        product_history = _.filter(valid_history, function(h) { return h['service'] == item['service'] })
+        product_dates = _.sortBy(_.uniq(_.map(product_history, dayOf)), function(date) { return date })
+        date_purchased = product_dates.length > 0 ? product_dates[0] : current_date_str
+
         result.push({
           product: item['service'],
+          bill_source: item['bill_source'],
+          vendor_account: item['vendor_account'],
+          vendor_account_name: item['vendor_account_name'],
+          date_purchased: date_purchased,
           cost: Number(cost.toFixed(2)),
           currency: ds_currency['symbol'],
           policy_name: ds_applied_policy['name'],
@@ -364,10 +387,6 @@ script "js_new_products", type: "javascript" do
       formatNumber(parseFloat(total_cost).toFixed(2), ds_currency['separator'])
     ].join('')
 
-    start_date = new Date()
-    start_date.setDate(start_date.getDate() - param_lookback)
-    start_date = start_date.toISOString().split('T')[0]
-
     product_noun = "product has"
     product_adj = "This product was"
 
@@ -378,7 +397,7 @@ script "js_new_products", type: "javascript" do
 
     message = [
       result.length, " new AWS Marketplace ", product_noun, " been found. ",
-      product_adj, " not present on ", start_date, " (", param_lookback.toString(), " days ago).\n\n"
+      product_adj, " not present on ", previous_date_str, " (", param_lookback.toString(), " days ago).\n\n"
     ].join('')
 
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
@@ -406,8 +425,20 @@ policy "pol_new_products" do
     hash_exclude "total_cost", "cost", "currency"
     export do
       resource_level false
+      field "bill_source" do
+        label "Bill Source"
+      end
+      field "vendor_account" do
+        label "Vendor Account"
+      end
+      field "vendor_account_name" do
+        label "Vendor Account Name"
+      end
       field "product" do
         label "New Product"
+      end
+      field "date_purchased" do
+        label "Date Purchased"
       end
       field "cost" do
         label "Estimated Monthly Cost"
