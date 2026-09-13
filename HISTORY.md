@@ -6,6 +6,75 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4978](https://github.com/flexera-public/policy_templates/pull/4978): POL-1842 New Marketplace Products: Additional Fields
+
+*Major Update*
+
+#### Description
+
+> Adds additional fields to the incident table for `AWS New Marketplace Products` and `Azure New Marketplace Products` policy templates.
+>
+> This is a major version change because the new logic to locate the specific date the purchase was made means that there is now a cap of 30 days regarding how far back one can look for new products. This is unlikely to actually affect any users (the default was and remains 10 days) but it is technically a breaking change.
+>
+
+#### Metadata
+
+- **Policies**: [AWS New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/marketplace_new_products/README.md), [Azure New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products/README.md)
+- **Merged At**: 2026-09-11 15:07:49 UTC
+
+---
+
+### PR [#4974](https://github.com/flexera-public/policy_templates/pull/4974): POL-1841 Content-Type Update
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Updates all policy templates to use "Content-Type" instead of "content-type" in API request headers. This is to ensure that the policy engine properly masks the default type of "text/plain" when this header is specified explicitly in the policy template; this masking is currently case sensitive.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4974) for these details.
+- **Merged At**: 2026-09-11 13:17:42 UTC
+
+---
+
+### PR [#4970](https://github.com/flexera-public/policy_templates/pull/4970): POL-1836 Currency Conversion Fixes
+
+#### Description
+
+> - Fixed `415 Unsupported Media Type` when applying adjustments - lowercase `content-type` header didn't override the engine's default `text/plain`, so both were sent. Same fix applied to Container Cost Visibility (unverified, but identical code).
+> - Fixed incident name showing `<no value>` instead of the currency codes - `summary_template` referenced a datasource via the `parameters` namespace.
+> - Fixed incident detail showing `[object Object]` instead of the month - concatenated the month loop variable instead of `date['current']`.
+>
+> Versions bumped: Currency Conversion 5.1.6, Container Cost Visibility 0.1.6.
+>
+
+#### Metadata
+
+- **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md), [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
+- **Merged At**: 2026-09-10 14:35:56 UTC
+
+---
+
+### PR [#4966](https://github.com/flexera-public/policy_templates/pull/4966): POL-1835 Meta Parent Frequency Changes
+
+*Minor Update*
+
+#### Description
+
+> Modifies meta parent policy templates so that, if the frequency parameter for child policies is changed, the child policies themselves will be updated accordingly. In doing so, I found and fixed a bug that was preventing similar functionality for when other parameters are changed from working correctly.
+>
+> Also updates the hand-managed meta parents to include this and other changes made to meta parents so that they are up to date.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4966) for these details.
+- **Merged At**: 2026-09-09 12:07:55 UTC
+
+---
+
 ### PR [#4957](https://github.com/flexera-public/policy_templates/pull/4957): POL-1831 RBD from CSV Policy Templates: Current Month Support
 
 *Unpublished, Minor Update*
@@ -1744,86 +1813,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md)
 - **Merged At**: 2026-05-14 19:27:01 UTC
-
----
-
-### PR [#4449](https://github.com/flexera-public/policy_templates/pull/4449): POL-1763 - Additional Dimensions Object Storage
-
-*Minor Update*
-
-#### Description
-
-> Adds multi-cloud rules for Object Storage dimensions
->
->
-> Cloud | Rules | Category Values | Key Patterns
-> -- | -- | -- | --
-> AWS | 7 (unchanged) | Storage, Requests, Data Transfer, Data Retrieval, Management & Analytics, Replication, Other Fees | usage_type patterns
-> Azure | 8 (new) | Same categories + Early Deletion Penalty | usage_type: "Data Stored", "Operations", "Data Transfer", "Geo-Replication", "Early Delete", etc.
-> GCP | 7 (new) | Same categories + Early Deletion Penalty | resource_type: "Storage <location>", "Class A/B Operations", "Transfer/Download", "Retrieval", "Early Delete"
->
->
->
-
-#### Metadata
-
-- **Policies**: [Flexera CCO Additional Dimensions](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/additional_dimensions/README.md)
-- **Merged At**: 2026-05-14 19:26:43 UTC
-
----
-
-### PR [#4385](https://github.com/flexera-public/policy_templates/pull/4385): FOAA-987 - New PT "Container Cost Visibility Setup"
-
-*New Policy Template*
-
-#### Description
-
-> Tool to help users easily complete setup of Container Cost Visibility
->
-> - Create cbi-oi-ocean [Bill Connect](https://app.flexera.com/orgs/36084/optima/cloud-settings/billing-config/cbi-oi-ocean-org-606079870754), "[Kubernetes ..." Tag Dimensions](https://app.flexera.com/orgs/36084/optima/cloud-settings/tag-dimensions), and minimal instructions/command to complete final flexeraCcoIntegration step (Step [5. Spot CCO Export ...](https://app.flexera.com/orgs/36084/automation/incidents/projects/138037?incidentId=69ea8f92c38ccc253645dcc2)). All resources required for CCV costs integration from Spot into Flexera via CBI. Manual steps for flexeraCcoIntegration b/c required Flexera RefreshToken value (sensitive, can't be parameter input)
-> - Create [Container Cost Visibility Dashboard](https://app.flexera.com/orgs/36084/optima/dashboards?costType=cost_amortized_unblended_adj&dashboardID=LUKKQKFR0AY_1e-l8wY_iQ&endDate=2026-05-01&granularity=Monthly&startDate=2026-04-01&valueFormat=%7B%22c5ddbd5d-7f39-4d61-9fec-90016a1758a0%22%3A%22currency%22%2C%22502c4858-8abb-4e21-8ba5-ceeabbd0388b%22%3A%22currency%22%2C%221685697700043%22%3A%22currency%22%7D) (aligns with show/will keep in demo orgs). Gives a starting point for visibility into container usage/spend.  Proportionality within the cluster(s), and trends over time as data accumulates.
-> - [Kubernetes Rightsizing Recommendations](https://app.flexera.com/orgs/36084/automation/incidents/projects/138037?incidentId=69ea85a592f193f0cdb8dfbe) Applied Policy
-> - Optional: [Adjustment Rules to Hide CCV Costs](https://app.flexera.com/orgs/36084/optima/adjustments?datedAdjustment=2026-04) generally (i.e. to prevent these "estimated" costs from showing up in real chargeback/showback report)
->
-
-#### Metadata
-
-- **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md)
-- **Merged At**: 2026-05-14 16:17:35 UTC
-
----
-
-### PR [#4445](https://github.com/flexera-public/policy_templates/pull/4445): POL-1763 New Policy Template: Flexera CCO Additional Dimensions
-
-*Unpublished, New Policy Template, Minor Update*
-
-#### Description
-
-> New policy template `Flexera CCO Additional Dimensions` that creates additional RBDs from pre-created JSON files stored in the `data/custom_dimensions` directory. Currently includes some useful AI dimensions as well as dimensions specific to AWS S3 usage. Also allows the user to specify an external JSON file for custom RBDs.
->
-> Also deprecates the unpublished `AWS S3 Usage Type Rule-Based Dimension` policy template and directs users via its README to this policy template instead.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4445) for these details.
-- **Merged At**: 2026-05-13 17:33:15 UTC
-
----
-
-### PR [#4441](https://github.com/flexera-public/policy_templates/pull/4441): POL-1762 FinOps Dashboards Fix
-
-*Minor Update*
-
-#### Description
-
-> Removes "AI/ML Views" dashboard from the default dashboards applied by this policy template. Also adds some additional information in the README about requirements for this dashboard.
->
-
-#### Metadata
-
-- **Policies**: [FinOps Dashboards](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/finops_dashboards/README.md)
-- **Merged At**: 2026-05-12 18:51:06 UTC
 
 ---
 
