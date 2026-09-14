@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.9
 
 - Fixed an issue where the overall user activity summary table in the report could display "NaN%" values when an organization had zero total users or zero users matching the configured Included User Regex.

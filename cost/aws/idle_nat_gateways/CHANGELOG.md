@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.2
 
 - Fixed an issue where the incident summary could show "NaN%" instead of a percentage when no NAT Gateways were found to analyze.

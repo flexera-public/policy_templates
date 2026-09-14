@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.0.11
 
 - Fixed an issue where the forecast report could show invalid or nonsensical values when the commitment period's start and end date were set to the same month.

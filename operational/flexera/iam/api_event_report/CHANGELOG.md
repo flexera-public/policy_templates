@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.3
 
 - Fixed an issue where the policy could fail to process API events that had no request path or no response code recorded.

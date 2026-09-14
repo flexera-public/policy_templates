@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.2
 
 - Fixed an issue where applying a region filter would cause the policy to fail instead of filtering databases by region.

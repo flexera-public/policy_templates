@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.5.8
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v9.5.7
 
 - Fixed an issue where organizations using a non-USD currency could incorrectly see a currency conversion malfunction disclaimer in the incident message even when currency conversion was working correctly.

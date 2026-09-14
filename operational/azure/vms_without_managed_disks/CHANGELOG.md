@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.3.4
 
 - Fixed an issue where the policy could fail for virtual machines whose disk details were missing from the Azure response.

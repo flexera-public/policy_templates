@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.5.1
 
 - Fixed an issue where license consumption counts could be calculated incorrectly if the source data returned them as text instead of numbers.

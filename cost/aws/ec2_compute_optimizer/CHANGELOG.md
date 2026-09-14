@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.7.2
 
 - Fixed an issue where the policy would fail to run if AWS Compute Optimizer did not return an estimated savings amount for a recommendation.

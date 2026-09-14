@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.3.3
 
 - Fixed an issue where the policy could fail to run when Google Cloud billing data included costs that were not attributed to a specific project.

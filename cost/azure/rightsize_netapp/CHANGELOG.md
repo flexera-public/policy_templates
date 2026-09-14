@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.4.2
 
 - Fixed an issue where the policy could fail to evaluate recommendations for NetApp pools or volumes when the Azure metrics API returned a time series with no valid data points for a resource.

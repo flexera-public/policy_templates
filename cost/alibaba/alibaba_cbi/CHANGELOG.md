@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.8
 
 - Fixed an issue where the policy could incorrectly calculate the number of days in February during centurial non-leap years (such as the year 2100), which could cause an extra, non-existent billing date to be requested.

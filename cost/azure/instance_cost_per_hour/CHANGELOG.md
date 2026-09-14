@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.3
 
 - Fixed an issue where the report could show a duplicate or incorrect month when the policy ran on the 29th, 30th, or 31st of certain months.

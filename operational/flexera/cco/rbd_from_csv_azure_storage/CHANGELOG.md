@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.0
 
 - Added the "Effective Date Mode" parameter, which allows the effective date used for rule updates to automatically follow the current month instead of always using a static "Effective Date" value.

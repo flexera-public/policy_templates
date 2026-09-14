@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.3.5
 
 - Fixed an issue where entering a subscription in the "Subscription Allowed List" parameter that did not match any accessible subscription (for example due to a typo or a subscription that was later renamed or removed) could cause the policy to fail instead of simply skipping that entry.

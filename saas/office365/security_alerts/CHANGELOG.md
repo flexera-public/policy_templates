@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.2
 
 - Fixed an issue where the policy could fail to check for security alerts if no alert severity levels were selected.

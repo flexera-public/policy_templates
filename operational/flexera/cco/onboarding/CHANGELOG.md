@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.14
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.13
 
 - Fixed an issue where the "Enable Automatic Action" check for outdated applied policies always reported as non-compliant, even when the automatic update option was correctly configured.

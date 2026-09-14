@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.2
 
 - Fixed an issue where the incident message could report an incorrect percentage of unused App Service Plans when no App Service Plans were found.

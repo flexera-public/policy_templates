@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v1.1.9
 
 - Fixed an issue where the forecasted usage could show as an invalid value for an instance family that only had one month of historical data.

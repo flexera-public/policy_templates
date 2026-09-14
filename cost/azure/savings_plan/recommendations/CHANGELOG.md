@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.8.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.8.2
 
 - Fixed an issue where the policy could fail to run with "Savings Plan Scope" set to "Shared" if none of the accessible subscriptions had usable resources (for example, when only Visual Studio or Microsoft 365 subscriptions were present).

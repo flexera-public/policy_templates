@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.3
 
 - Fixed an issue where negative monthly cost or moving average values (e.g. due to credits or refunds) could be displayed incorrectly in the incident data table, with the minus sign misplaced relative to the thousands separator.

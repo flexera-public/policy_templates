@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.4
 
 - Fixed an issue where the policy could fail with a "must be a string" error due to how the root compartment parameter was used in some API requests.

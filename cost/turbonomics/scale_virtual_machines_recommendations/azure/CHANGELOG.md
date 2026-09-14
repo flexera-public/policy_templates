@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.11
 
 - Fixed an issue where the Resource ID reported for a recommendation could be malformed when the virtual machine's cloud account could not be cross-referenced against the discovered business units.

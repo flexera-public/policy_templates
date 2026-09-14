@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.11
 
 - Fixed an issue where the Resource ID could be missing from the report for databases that have more than one vendor identifier.

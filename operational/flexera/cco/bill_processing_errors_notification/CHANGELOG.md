@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.7.4
 
 - Fixed an issue where the policy could fail to run when a Common Bill Ingestion (CBI) connection's vendor information was incomplete.

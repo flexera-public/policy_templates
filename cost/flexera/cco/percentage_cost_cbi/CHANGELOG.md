@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.6
 
 - Fixed an issue where the injected cost could be reported as blank/invalid when the calculated monthly spend for the selected billing centers and filters was exactly zero.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.0.4
 
 - Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.

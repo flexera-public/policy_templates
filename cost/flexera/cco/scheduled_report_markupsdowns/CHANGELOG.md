@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.0.6
 
 - Fixed an issue where the Support cost category's dedicated markup/markdown percentage was never applied, causing the general markup/markdown percentage to be used instead.

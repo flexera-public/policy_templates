@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.11
 
 - Fixed an issue where incidents could show a blank or incorrect resource ID when Turbonomic returned more than one vendor ID for a recommended volume.

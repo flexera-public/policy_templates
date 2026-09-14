@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.2.4
 
 - Fixed an issue where the policy could fail to update an existing rule set if one of the rules being scanned did not have a condition defined.

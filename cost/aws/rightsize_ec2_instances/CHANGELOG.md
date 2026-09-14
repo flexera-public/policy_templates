@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.8.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.8.2
 
 - Fixed an issue where instances without CPU or memory utilization data could still be reported as idle or underutilized.

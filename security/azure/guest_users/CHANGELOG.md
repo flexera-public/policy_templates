@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.2
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

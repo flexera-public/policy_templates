@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.7.4
 
 - Fixed an issue where report entries could be displayed out of order instead of grouped and sorted by month when a budget's report included multiple groups.

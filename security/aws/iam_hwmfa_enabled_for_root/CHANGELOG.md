@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.2.0
 
 - Added Meta Policy support so this template can be deployed and managed across multiple AWS accounts via a Meta Parent policy.

@@ -97,6 +97,11 @@ def compile_meta_parent_policy(file_path, specified_parent_pt_path, output_suffi
   enable_child_schedule_options_scan = pt.scan(/enable_child_schedule_options: "(.*?)"/)
   enable_child_schedule_options = "false"
   enable_child_schedule_options = enable_child_schedule_options_scan[0][0] if !enable_child_schedule_options_scan.empty?
+  # get the tags string if it exists, defaulting to empty if not present
+  # The meta parent should always carry the same tags as its child so that catalog filtering/search works consistently
+  tags_scan = pt.scan(/tags: "(.*?)"/)
+  tags = ""
+  tags = tags_scan[0][0] if !tags_scan.empty?
   # Get the parameters
   parameters = pt.scan(/^parameter ".*?" do.*?^end/m)
 
@@ -315,6 +320,14 @@ end
   else
     # Remove the entire line containing hide_skip_approvals
     output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
+    output_pt = output_pt.gsub(/,\s*\)/, "\n)")
+  end
+
+  if !tags.empty?
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_TAGS__", tags)
+  else
+    # Remove the entire line containing tags so the meta parent's info() block stays valid
+    output_pt = output_pt.gsub(/^\s*,?\s*tags: "__PLACEHOLDER_FOR_CHILD_POLICY_TAGS__",?\s*\n/, "")
     output_pt = output_pt.gsub(/,\s*\)/, "\n)")
   end
 

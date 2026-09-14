@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

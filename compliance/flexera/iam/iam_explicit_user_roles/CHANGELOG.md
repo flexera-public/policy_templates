@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.0.9
 
 - Fixed an issue where the policy could fail to generate an incident for users who have never logged in via the API or UI.

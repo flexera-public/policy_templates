@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.11
 
 - Fixed an issue where the current and recommended connection count values for database servers were swapped in the incident details.

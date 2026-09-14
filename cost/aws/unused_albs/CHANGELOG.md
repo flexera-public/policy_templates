@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.2
 
 - Fixed an issue where the policy could fail to evaluate Application Load Balancers when cost data included charges that were not tied to a specific load balancer.

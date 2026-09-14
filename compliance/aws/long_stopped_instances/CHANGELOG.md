@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v6.2.2
 
 - Fixed an issue where the incident summary could display "NaN%" instead of a valid percentage when no EC2 instances were found to analyze.

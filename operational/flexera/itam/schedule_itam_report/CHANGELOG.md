@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.9
 
 - Fixed a bug introduced in v0.2.8 where the policy would fail to evaluate with an "invalid argument in join" error due to how the report ID parameter was sanitized.

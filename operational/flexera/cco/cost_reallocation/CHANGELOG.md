@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.8
 
 - Fixed an issue where the policy could produce invalid allocated cost and usage values for destination cost slices that had no total spend to allocate against.

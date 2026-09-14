@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.5.1
 
 - Fixed an issue where the policy could produce an error when a license record returned by the API had a null or missing expiry date field.

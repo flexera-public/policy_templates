@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.8.3
 
 - Fixed an issue where filtering by resource group could exclude all workspaces, or fail to exclude any, because the filter never matched.

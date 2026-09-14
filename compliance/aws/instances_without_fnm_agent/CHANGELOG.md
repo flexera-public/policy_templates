@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.4.5
 
 - Fixed an issue where the policy could fail with a "host must be a string" error when requesting the FlexNet Manager report due to how the report ID parameter was sanitized.

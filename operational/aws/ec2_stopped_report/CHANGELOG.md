@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.2
 
 - Fixed an issue where the policy could fail to generate the report if a stopped instance did not have a private DNS name assigned.

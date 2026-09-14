@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.2.1
 
 - Fixed an issue where the policy could fail while evaluating CloudTrail buckets that did not have a bucket policy.

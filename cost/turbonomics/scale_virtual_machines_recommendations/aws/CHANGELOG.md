@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.11
 
 - Fixed an issue where the policy could fail to report Reserved Instance coverage details for a virtual machine when that data was not available from Turbonomic, instead of showing a coverage value of zero.

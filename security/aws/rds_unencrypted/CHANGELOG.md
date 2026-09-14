@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.3.2
 
 - Fixed an issue where the policy could miss some RDS instances in regions or accounts with a large number of instances.

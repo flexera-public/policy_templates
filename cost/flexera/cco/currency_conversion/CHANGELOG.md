@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.1.6
 
 - Fixed an issue where applying adjustments could fail with a "415 Unsupported Media Type" error due to the casing of the `Content-Type` header.

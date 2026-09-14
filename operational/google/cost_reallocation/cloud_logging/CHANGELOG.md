@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.8
 
 - Fixed an issue where the policy could fail to calculate cost allocation percentages when total usage for the allocation period was zero.

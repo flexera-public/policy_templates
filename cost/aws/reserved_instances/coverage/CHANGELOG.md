@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.0
 
 - Added support for ElastiCache, OpenSearch Service, Redshift, and Relational Database Service.

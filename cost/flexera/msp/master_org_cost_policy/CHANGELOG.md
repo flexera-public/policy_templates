@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.8
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.0.7
 
 - Fixed an issue where the weekly and monthly spend change percentages could show an invalid value when there was no prior period spend to compare against.

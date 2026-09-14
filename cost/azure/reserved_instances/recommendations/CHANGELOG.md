@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.9.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.9.2
 
 - Fixed an issue where the policy could fail with an error when generating shared-scope recommendations and none of the in-scope subscriptions had eligible usage.

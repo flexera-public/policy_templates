@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.4.2
 
 - Fixed an issue where region filtering could fail when matching regions by name or when using deny mode.
