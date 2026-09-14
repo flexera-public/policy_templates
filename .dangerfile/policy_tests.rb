@@ -2079,3 +2079,44 @@ def policy_bad_content_type_casing?(file, file_lines)
 
   fail_message.empty? ? false : fail_message.strip
 end
+
+### Tags metadata test
+# Return false if the policy template's info() block has a well-formed tags field
+# that only contains tag values found in the canonical data/policy_tags/all_tags.json list
+def policy_bad_tags?(file, file_parsed, valid_tags)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file tags metadata..."
+
+  info = file_parsed.parsed_info
+
+  fail_message = ""
+
+  if info.nil? || info[:tags].nil?
+    fail_message += "Please add a tags field to the info() block. Valid tag values are defined in data/policy_tags/all_tags.json.\n\n"
+  else
+    tags_value = info[:tags]
+
+    if !tags_value.is_a?(String) || tags_value.strip.empty?
+      fail_message += "The tags field must be a non-empty string.\n\n"
+    elsif tags_value != tags_value.strip
+      fail_message += "The tags field should not have leading or trailing whitespace: \"#{tags_value}\"\n\n"
+    elsif tags_value.start_with?(",") || tags_value.end_with?(",") || tags_value.include?(",,")
+      fail_message += "The tags field contains empty tag values (e.g. leading, trailing, or doubled commas): \"#{tags_value}\"\n\n"
+    elsif tags_value.match?(/,\s|\s,/)
+      fail_message += "Tags must be comma-separated with no spaces before or after the comma: \"#{tags_value}\"\n\n"
+    else
+      tags_list = tags_value.split(",")
+
+      # Check for duplicate tags
+      duplicate_tags = tags_list.select { |tag| tags_list.count(tag) > 1 }.uniq
+      fail_message += "The tags field contains duplicate tag values: #{duplicate_tags.join(', ')}\n\n" if !duplicate_tags.empty?
+
+      # Check for tags not present in the canonical tag list
+      invalid_tags = tags_list.reject { |tag| valid_tags.include?(tag) }
+      fail_message += "The tags field contains tag values that are not present in data/policy_tags/all_tags.json: #{invalid_tags.join(', ')}\n\n" if !invalid_tags.empty?
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Bad tags metadata found:\n\n" + fail_message if !fail_message.empty?
+
+  fail_message.empty? ? false : fail_message.strip
+end
