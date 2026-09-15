@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.5
 
 - Fixed an issue where selecting a custom graph dimension could fail when the entered dimension name only differed by whitespace or letter case from the saved dimension name.

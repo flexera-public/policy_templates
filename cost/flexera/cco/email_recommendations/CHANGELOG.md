@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.10.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.10.3
 
 - Fixed an issue where filtering by cloud account could fail with an error for recommendations that do not include a cloud account name.

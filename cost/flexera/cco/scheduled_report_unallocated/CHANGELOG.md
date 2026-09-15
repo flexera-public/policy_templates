@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.3.6
 
 - Fixed an issue where the report could fail or show invalid percentages when the selected filters returned zero total spend.

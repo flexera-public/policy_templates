@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.6
 
 - Fixed an issue where the policy could report blank usage values when cost data did not include the selected dimension.

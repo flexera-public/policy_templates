@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.3
 
 - Fixed an issue where the Linear Regression forecast formula could produce an invalid (blank/NaN) forecast when the "Look Back Months" parameter was set to 1 month.

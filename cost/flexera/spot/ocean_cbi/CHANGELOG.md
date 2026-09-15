@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.9
 
 - Fixed an issue where very large reallocations could fail to split billing data into multiple upload files, which could cause upload failures for some environments.
