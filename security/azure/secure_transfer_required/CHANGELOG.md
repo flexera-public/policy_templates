@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.3.4
 
 - Fixed an issue where the policy could fail to generate results if a storage account's secure transfer setting was not explicitly reported by Azure.

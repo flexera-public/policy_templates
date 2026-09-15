@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.2.3
 
 - Fixed an issue where the policy could fail to run when a security contact did not have role-based notifications configured.
