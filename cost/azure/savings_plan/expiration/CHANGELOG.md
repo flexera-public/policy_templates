@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.5
 
 - Fixed an issue where the policy could fail to generate a report if a Savings Plan was missing a purchase date.
