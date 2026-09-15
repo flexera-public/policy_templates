@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.3
 
 - Combined reports now skip child incidents that do not include result rows instead of failing intermittently.
