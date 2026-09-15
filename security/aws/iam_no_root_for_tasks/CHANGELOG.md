@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.2.1
 
 - Fixed an issue where the policy could fail to generate an incident even when the root user had recently signed in or used an access key.
