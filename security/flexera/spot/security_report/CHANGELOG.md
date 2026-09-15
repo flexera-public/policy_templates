@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.8
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.7
 
 - Fixed an issue where selecting "Deny" for the account filter parameter did not actually exclude the listed accounts from the report.
