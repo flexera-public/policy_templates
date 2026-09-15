@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.9
+
+- Updated the incident summary to include the policy name for clearer identification. Functionality unchanged.
+
+## v1.1.8
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v1.1.7
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

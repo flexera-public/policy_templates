@@ -2,6 +2,10 @@
 
 ## v0.3.3
 
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
+## v0.3.3
+
 - Improved reliability when consolidating credential test results that may be missing summary details.
 
 ## v0.3.2

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.3.3
 
 - Fixed an issue where unattributed or unallocated cloud billing data could be incorrectly reported as a missing Azure subscription.

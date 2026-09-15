@@ -2,6 +2,10 @@
 
 ## v0.2.4
 
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
+## v0.2.4
+
 - Improved reliability when summarizing account credential results for child policies with incomplete account details.
 
 ## v0.2.3

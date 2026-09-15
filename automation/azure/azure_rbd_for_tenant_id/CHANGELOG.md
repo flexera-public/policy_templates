@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.3
 
 - Fixed an issue where the policy's 12 month data lookback window could be shifted by one month when the policy ran on February 29th (leap day).
