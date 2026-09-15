@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.3
 
 - Fixed an issue where filtering anomalies by a specific billing center could cause the policy to fail instead of returning results.

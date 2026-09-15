@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.6
 
 - Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when listing or downloading cost files from S3, caused by an internal hostname value not being passed to the request correctly.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.9
 
 - Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when downloading cost files from Azure Blob Storage, caused by an internal hostname value not being passed to the request correctly.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.7.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v7.7.2
 
 - Fixed an issue where the incident summary could display "NaN%" instead of a valid percentage when no IP addresses were found to analyze.
