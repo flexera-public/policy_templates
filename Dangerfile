@@ -86,6 +86,8 @@ puts Time.now.strftime("%H:%M:%S.%L") + " * Loading file-based assets..."
 
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
 
+valid_policy_tags = JSON.parse(File.read('data/policy_tags/all_tags.json')).map { |tag_entry| tag_entry["tag"] }
+
 active_policy_url = 'https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/active_policy_list/active_policy_list.json'
 active_policy_list = JSON.parse(URI.open(active_policy_url).read)["policies"]
 
@@ -484,6 +486,9 @@ changed_pt_files.each do |file|
 
       # Test for invalidly abbreviated fields
       info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
+
+      # Raise error if policy template's tags field is missing, malformed, or contains invalid tag values
+      info_test = policy_bad_tags?(file, file_parsed, valid_policy_tags); failures << info_test if info_test
     end
 
     # Raise error if policy template version number does not use semantic versioning

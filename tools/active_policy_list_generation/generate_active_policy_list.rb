@@ -53,6 +53,7 @@ Dir['**/*.pt'].each do |file|
     publish = pp.parsed_info[:publish]
     deprecated = pp.parsed_info[:deprecated]
     hide_skip_approvals = pp.parsed_info[:hide_skip_approvals]
+    tags = pp.parsed_info[:tags]
 
     # 'publish' defaults to true unless explicitly set to false
     publish = !(publish == 'false' || publish == false)
@@ -60,6 +61,8 @@ Dir['**/*.pt'].each do |file|
     deprecated = deprecated == 'true' || deprecated == true
     # 'hide_skip_approvals' defaults to false unless explicitly set to true
     hide_skip_approvals = hide_skip_approvals == 'true' || hide_skip_approvals == true
+    # 'tags' is a comma-separated string in the info() block; convert to an array of strings
+    tags = tags.nil? || tags.strip.empty? ? [] : tags.split(',')
   end
 
   # Fall back to extracting version from the long description if not set in the header
@@ -107,7 +110,8 @@ Dir['**/*.pt'].each do |file|
       "updated_at": updated_at,
       "generally_recommended": generally_recommended,
       "deprecated": deprecated,
-      "hide_skip_approvals": hide_skip_approvals
+      "hide_skip_approvals": hide_skip_approvals,
+      "tags": tags
     }
   end
 end

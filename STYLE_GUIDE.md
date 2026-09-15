@@ -349,6 +349,7 @@ The following guidelines should be used when specifying policy template metadata
   - _recommendation_type_: Only required for policy templates intended to be scraped by the Optimization Dashboard. Should be set to either "Usage Reduction" (deleting or downsizing resources) or "Rate Reduction" (buying/adjusting commitments to lower cost without changing resources themselves) based on the type of recommendations the policy template produces.
   - _deprecated_: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
   - _publish_: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
+  - _tags (required)_: A comma-separated string (no spaces) of discrete, discoverable use-case tags that let users filter/search the catalog by what a policy template does (cloud provider, specific service, use case, recommendation type, etc). Every value used must be present in the canonical list at [data/policy_tags/all_tags.json](data/policy_tags/all_tags.json); do not invent new tags without adding them there first. List the most general tags first (e.g. provider, then service), followed by more specific use-case tags. Include every tag that legitimately applies, even if that means overlapping/redundant-seeming tags (for example, a cross-family rightsizing policy should include both `Rightsizing` and `Cross-Family Rightsizing`). _Example_: `AWS,EC2,Rightsizing`
 
 - __tenancy__
   - This metadata field is defunct and should not be specified in any policy template.
@@ -371,7 +372,8 @@ info(
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
   recommendation_type: "Usage Reduction",
-  hide_skip_approvals: "true"
+  hide_skip_approvals: "true",
+  tags: "AWS,EC2,Rightsizing"
 )
 ```
 

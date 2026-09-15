@@ -782,6 +782,7 @@ Some policies require external data sets to function. These data sets are stored
 * [Google VM Instance Types](https://github.com/flexera-public/policy_templates/blob/master/data/google/google_compute_instance_types.json)
 * [Google VM Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/google/google_vm_pricing.json)
 * [Currency Reference](https://github.com/flexera-public/policy_templates/blob/master/data/currency/currency_reference.json)
+* [Policy Tags](https://github.com/flexera-public/policy_templates/blob/master/data/policy_tags/all_tags.json)
 * [TZ Database Timezone List](https://github.com/flexera-public/policy_templates/blob/master/data/tz_database/timezones_list.json)
 
 ## How To Upload
