@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.3
 
 - Fixed an issue where the "Allow/Deny Resource Groups List" filter never matched any resource group, causing recommendations to be incorrectly excluded (or included) when this filter was configured.

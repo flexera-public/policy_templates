@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.3.4
 
 - Fixed an issue where the incident notification could be missing its recommendation details when the AHUB core usage or virtual machine count was exactly equal to the licensed amount.

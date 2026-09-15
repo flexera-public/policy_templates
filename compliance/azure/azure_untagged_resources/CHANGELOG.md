@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.0.4
 
 - Fixed an issue where the policy could fail to run if the subscription filter excluded every subscription in the account.
