@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.2.2
 
 - Fixed an issue where the incident message would omit the number of hours when the statistic lookback period was set to 1 hour.

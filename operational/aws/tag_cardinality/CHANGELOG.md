@@ -2,6 +2,10 @@
 
 ## v3.3.5
 
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
+## v3.3.5
+
 - Combined reports now skip child incidents that do not include result rows instead of failing intermittently.
 
 ## v3.3.4

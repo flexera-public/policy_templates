@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.5
 
 - Fixed an issue where reallocated support costs could be calculated incorrectly for a billing period in which the rest of the organization had no other recorded costs.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v1.0.0
 
 - Added `Date Purchased`, `Bill Source`, `Vendor Account`, and `Vendor Account Name` fields to the incident output.
