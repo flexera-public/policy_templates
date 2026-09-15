@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.2
 
 - Fixed an issue where some recommendations could report negative savings when a newer instance class cost more than the current one in certain regions or engine configurations.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.3.2
 
 - Fixed an issue where the policy could error out entirely when an instance type had no available replacement in the selected recommendation category, instead of simply skipping that instance.

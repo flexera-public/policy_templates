@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.0
 
 - Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.

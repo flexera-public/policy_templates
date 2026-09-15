@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.7.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v6.7.2
 
 - Fixed an issue where the policy could error out when a load balancer had no attached instances reported by AWS.
