@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v1.1.8
 
 - Fixed an issue where the reported start of the usage period could be off by a month when the policy ran near the end of certain calendar months.

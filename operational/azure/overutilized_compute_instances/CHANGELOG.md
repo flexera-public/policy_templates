@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.5
 
 - Fixed an issue where the policy could fail to generate a report when a virtual machine's power state could not be determined.

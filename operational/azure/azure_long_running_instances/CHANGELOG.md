@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.6
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v6.4.5
 
 - Fixed an issue where the incident summary message could display "NaN%" instead of "0.00%" when no instances were found after filtering.

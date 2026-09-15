@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.4
 
 - Fixed an issue where the policy could fail to generate a result for a virtual machine whose power state could not be determined from the Azure API response.
