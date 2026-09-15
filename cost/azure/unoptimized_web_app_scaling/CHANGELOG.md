@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.3
 
 - Fixed an issue where setting the Minimum Capacity parameter to -1 to disable that check did not work as documented, and instead caused a "Reduce Minimum Capacity" recommendation to be generated for every autoscaling-enabled app.
