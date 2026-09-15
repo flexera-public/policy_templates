@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.3
 
 - Fixed an issue where repositories intentionally excluded via the repository filter parameter could still be incorrectly reported as having no associated team.

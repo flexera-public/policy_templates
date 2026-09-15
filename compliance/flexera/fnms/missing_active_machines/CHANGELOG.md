@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.5.0
 
 - Added support for attaching CSV files to incident emails.

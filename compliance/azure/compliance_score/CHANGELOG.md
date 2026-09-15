@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.1.3
 
 - Fixed an issue where the compliance score could display as an invalid value for a compliance standard with no assessable controls.
