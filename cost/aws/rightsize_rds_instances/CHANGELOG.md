@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.12.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v5.12.2
 
 - Fixed an issue where the reported vCPU count for an RDS instance could be missing when the instance did not have explicit processor configuration data available.

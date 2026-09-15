@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.2
 
 - Fixed an issue where approving the "Downsize ElastiCache Nodes" action would always fail to resize any clusters.

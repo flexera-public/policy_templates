@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.2
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.9.1
 
 - Fixed an issue where the incident message could omit the currency information when Flexera's internal currency conversion service was temporarily unavailable.

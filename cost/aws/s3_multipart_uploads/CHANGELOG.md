@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.8
 
 - Fixed bug where the "Exclusion Tags" parameter incorrectly included matching resources in the results instead of excluding them, and fixed a related error that occurred whenever any exclusion tag was entered.

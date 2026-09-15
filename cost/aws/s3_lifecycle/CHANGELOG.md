@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.8
 
 - Fixed bug where the policy would fail with a `'resource' is not defined` error whenever the `Exclusion Tags` parameter was used.

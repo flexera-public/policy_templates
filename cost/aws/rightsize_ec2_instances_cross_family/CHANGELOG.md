@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.2
 
 - Fixed an issue where the CPU and memory utilization chart could be generated with no data displayed for instances that only had memory utilization data available.

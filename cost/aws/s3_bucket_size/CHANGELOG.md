@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.9
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.0.8
 
 - Fixed an issue where the policy could report an outdated bucket size measurement instead of the most recent one when multiple data points were returned for the same bucket.

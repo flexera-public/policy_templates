@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.4.2
 
 - Fixed an issue where the CPU p90 and p99 statistics could be swapped when determining whether a cluster is underutilized, which could lead to incorrect recommendations when the "Threshold Statistic" parameter was set to p90 or p99.
