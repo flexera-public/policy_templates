@@ -8,7 +8,7 @@ severity "high"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "1.1.8",
+  version: "1.1.9",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -165,14 +165,15 @@ datasource "ds_self_terminate" do
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_second_execution, $ds_self_terminate
+  run_script $js_incident, $ds_second_execution, $ds_self_terminate, $ds_applied_policy
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_second_execution", "ds_self_terminate"
+  parameters "ds_second_execution", "ds_self_terminate", "ds_applied_policy"
   result "result"
   code <<-'EOS'
   result = ds_second_execution
+  result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
 
@@ -182,7 +183,7 @@ end
 
 policy "pol_delete_bcs" do
   validate_each $ds_incident do
-    summary_template "Deleting Billing Centers"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Deleting Billing Centers"
     check eq(0, 1)
     escalate $esc_delete_billing_centers
     export do

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Updated the incident summary to include the policy name for clearer identification. Functionality unchanged.
+
 ## v0.2.2
 
 - Added tags to the policy template to support filtering and discovery in the policy catalog.
