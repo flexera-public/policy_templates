@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.11
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.1.10
 
 - Fixed an issue where the policy could automatically delete all previously created billing centers instead of only the ones no longer needed, if no cost or dimension data was available at the time the policy ran.

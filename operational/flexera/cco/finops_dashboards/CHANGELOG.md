@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.3
 
 - Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.

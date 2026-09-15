@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.1.4
 
 - Fixed an issue where the child policy error report could fail to run, and could incorrectly include non-child policies, when reporting on child policy errors was enabled.
