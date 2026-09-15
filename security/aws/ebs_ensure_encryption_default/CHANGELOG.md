@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.2.0
 
 - Added a region-error-reporting incident that alerts if the policy is unable to check the EBS default encryption setting in one or more AWS regions due to permission or configuration errors.

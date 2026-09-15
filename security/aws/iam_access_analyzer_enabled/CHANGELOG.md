@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.2.0
 
 - Added logic required for 'Meta Policy' use-cases.
