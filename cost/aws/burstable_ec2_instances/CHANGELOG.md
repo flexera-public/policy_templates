@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.6.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v4.6.2
 
 - Fixed an issue where the policy could fail to recommend a larger instance size for the smallest burstable EC2 instance types when surplus CPU credits exceeded the configured threshold.

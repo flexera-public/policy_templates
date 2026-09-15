@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.5
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v1.2.4
 
 - Fixed an issue where selecting "Deny" for the Billing Center filter could fail to exclude the specified billing centers, causing them to still be included in the report.

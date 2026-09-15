@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.3.2
 
 - Fixed an issue where changing the "Statistic Lookback Period" parameter away from its default value could cause the policy to analyze the wrong number of days of read/write activity, potentially causing file systems to be incorrectly flagged (or not flagged) as idle.

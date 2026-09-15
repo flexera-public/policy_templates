@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.2.2
 
 - Fixed an issue where the policy could fail to complete if tag information could not be retrieved for one or more Lambda functions.
