@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.7.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v6.7.2
 
 - Fixed an issue where the policy could fail with an error if a virtual machine's power state could not be determined.

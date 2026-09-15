@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.3
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.2
 
 - Fixed an issue where the region filter would fail to correctly include or exclude SQL Managed Instances when a region allow/deny list was specified, causing all instances to be incorrectly filtered out or included regardless of their region.
