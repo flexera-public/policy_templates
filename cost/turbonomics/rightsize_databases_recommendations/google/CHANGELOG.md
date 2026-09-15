@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.5.11
 
 - Fixed an issue where the policy could error out or report a missing resource ID for a recommendation whose underlying resource had more than one associated cloud identifier.

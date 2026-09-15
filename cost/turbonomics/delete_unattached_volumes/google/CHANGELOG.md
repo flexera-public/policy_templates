@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.11
 
 - Fixed an issue where the policy could fail with an error when a recommended volume did not include a resource identifier.

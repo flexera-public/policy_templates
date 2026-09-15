@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.11
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.3.10
 
 - Fixed an issue where the policy could fail with an error when reserved instance coverage details were not available for a virtual machine.

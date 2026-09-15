@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.4
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.6.3
 
 - Fixed an issue where the policy could fail to evaluate with an "invalid request host" error when querying the Kubecost API, due to how the Kubecost Host parameter was internally referenced.

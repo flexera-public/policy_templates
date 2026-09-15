@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.8
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v3.3.7
 
 - Fixed an issue where the status message could fail to generate immediately after a new bill upload was created with no files yet.

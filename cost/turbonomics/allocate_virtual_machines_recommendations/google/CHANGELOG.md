@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v2.3.11
 
 - Fixed an issue where the policy could fail to calculate RI coverage values for certain virtual machines when the Turbonomic action details response did not include RI coverage data for those actions.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.12
+
+- Added tags to the policy template to support filtering and discovery in the policy catalog.
+
 ## v0.3.11
 
 - Fixed an issue where the policy could fail to generate results for a recommendation whose reserved instance utilization data was not available.
