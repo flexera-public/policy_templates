@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.4.0
+
+- Performance enhancement to avoid 429 throttling error when calling Azure Storage API.
+- Additional permission `Microsoft.ResourceGraph/resources/read` is required due to above enhancement.
+
 ## v3.3.4
 
 - Fixed an issue where the policy could fail to generate an incident when a non-compliant blob container was found.

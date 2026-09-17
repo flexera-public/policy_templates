@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.5.2",
+  version: "0.6.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Storage Accounts",
@@ -412,36 +412,154 @@ script "js_no_subscriptions_error", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_storage_accounts" do
-  iterate $ds_azure_subscriptions_filtered
+# Build query for Azure Resource Graph API. Every 1000 subscriptions will generate one query.
+datasource "ds_azure_resource_graph_queries" do
+  run_script $js_azure_resource_graph_queries, $ds_azure_subscriptions_filtered
+end
+
+script "js_azure_resource_graph_queries", type: "javascript" do
+  parameters "ds_azure_subscriptions_filtered"
+  result "result"
+  code <<-'EOS'
+  batch_size = 1000
+  result = []
+  subscription_ids = _.pluck(ds_azure_subscriptions_filtered, 'id')
+
+  for (var i = 0; i < subscription_ids.length; i += batch_size) {
+    result.push({
+      subscriptions: subscription_ids.slice(i, i + batch_size),
+      skip: 0 # Hard-coding to 0. This query is for getting the first page of results.
+    })
+  }
+EOS
+end
+
+# Retrieve the first page of storage accounts for each batch of subscriptions.
+datasource "ds_azure_resource_graph_page_one" do
+  iterate $ds_azure_resource_graph_queries
   request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Storage/storageAccounts"])
-    query "api-version", "2024-01-01"
-    header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
+    run_script $js_azure_resource_graph_request, val(iter_item, "subscriptions"), val(iter_item, "skip"), $param_azure_endpoint
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "kind", jmes_path(col_item, "kind")
-      field "region", jmes_path(col_item, "location")
-      field "name", jmes_path(col_item, "name")
-      field "sku_name", jmes_path(col_item, "sku.name")
-      field "sku_tier", jmes_path(col_item, "sku.tier")
-      field "tags", jmes_path(col_item, "tags")
-      field "type", jmes_path(col_item, "type")
-      field "creationTime", jmes_path(col_item, "properties.creationTime")
-      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
-      field "supportsHttpsTrafficOnly", jmes_path(col_item, "properties.supportsHttpsTrafficOnly")
-      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "subscriptionID", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
-    end
+    field "subscriptions", val(iter_item, "subscriptions")
+    field "totalRecords", jmes_path(response, "totalRecords")
+    field "data", jmes_path(response, "data")
   end
+end
+
+script "js_azure_resource_graph_request", type: "javascript" do
+  parameters "subscriptions", "skip", "param_azure_endpoint"
+  result "request"
+  code <<-'EOS'
+  // Sort by ID so that paging via $skip returns a consistent, non-overlapping set of rows.
+  query = [
+    "Resources",
+    "| where type =~ 'microsoft.storage/storageaccounts'",
+    "| project id, name, location, resourceGroup, subscriptionId, kind, sku, tags, properties",
+    "| order by id asc"
+  ].join(' ')
+
+  var request = {
+    auth: "auth_azure",
+    verb: "POST",
+    host: param_azure_endpoint,
+    path: "/providers/Microsoft.ResourceGraph/resources",
+    query_params: { "api-version": "2022-10-01" },
+    headers: { "User-Agent": "RS Policies", "Content-Type": "application/json" },
+    body_fields: {
+      subscriptions: subscriptions,
+      query: query,
+      options: { resultFormat: "objectArray", "$top": 1000, "$skip": skip }
+    },
+    ignore_status: [403, 404]
+  }
+EOS
+end
+
+# Custom pagination.
+# ARG API requires that the skip token lives at `options.$skipToken` in the request body.
+# Our policy pagination only supports setting skip token as a top-level body field.
+# Thus we are creating this datasource for manual pagination.
+datasource "ds_azure_resource_graph_extra_queries" do
+  run_script $js_azure_resource_graph_extra_queries, $ds_azure_resource_graph_page_one
+end
+
+script "js_azure_resource_graph_extra_queries", type: "javascript" do
+  parameters "ds_azure_resource_graph_page_one"
+  result "result"
+  code <<-'EOS'
+  page_size = 1000
+  result = []
+
+  _.each(ds_azure_resource_graph_page_one, function(page) {
+    total_records = page['totalRecords'] || 0
+
+    for (var skip = page_size; skip < total_records; skip += page_size) {
+      result.push({ subscriptions: page['subscriptions'], skip: skip })
+    }
+  })
+EOS
+end
+
+# Custom pagination.
+datasource "ds_azure_resource_graph_extra_pages" do
+  iterate $ds_azure_resource_graph_extra_queries
+  request do
+    run_script $js_azure_resource_graph_request, val(iter_item, "subscriptions"), val(iter_item, "skip"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    field "data", jmes_path(response, "data")
+  end
+end
+
+datasource "ds_azure_storage_accounts" do
+  run_script $js_azure_storage_accounts, $ds_azure_resource_graph_page_one, $ds_azure_resource_graph_extra_pages, $ds_azure_subscriptions_filtered
+end
+
+script "js_azure_storage_accounts", type: "javascript" do
+  parameters "ds_azure_resource_graph_page_one", "ds_azure_resource_graph_extra_pages", "ds_azure_subscriptions_filtered"
+  result "result"
+  code <<-'EOS'
+  // Azure Resource Graph returns the subscription ID but not its display name, so the name
+  // is taken from the list of subscriptions retrieved separately.
+  subscription_names = {}
+
+  _.each(ds_azure_subscriptions_filtered, function(subscription) {
+    subscription_names[String(subscription['id']).toLowerCase()] = subscription['name']
+  })
+
+  pages = ds_azure_resource_graph_page_one.concat(ds_azure_resource_graph_extra_pages)
+  accounts = _.flatten(_.compact(_.pluck(pages, 'data')), true)
+
+  result = _.map(accounts, function(account) {
+    sku = account['sku'] || {}
+    properties = account['properties'] || {}
+    subscription_id = account['subscriptionId']
+
+    return {
+      id: account['id'],
+      kind: account['kind'],
+      region: account['location'],
+      name: account['name'],
+      sku_name: sku['name'],
+      sku_tier: sku['tier'],
+      tags: account['tags'],
+      // Azure Resource Graph normalizes the resource type to lowercase, so the casing
+      // returned by the Azure Resource Manager API is used to keep results unchanged.
+      type: "Microsoft.Storage/storageAccounts",
+      creationTime: properties['creationTime'],
+      provisioningState: properties['provisioningState'],
+      supportsHttpsTrafficOnly: properties['supportsHttpsTrafficOnly'],
+      // Derived from the resource ID because the Azure Resource Graph resourceGroup column
+      // is normalized to lowercase, which would break case-sensitive resource group filters.
+      resourceGroup: String(account['id']).split('/')[4],
+      subscriptionID: subscription_id,
+      subscriptionName: subscription_names[String(subscription_id).toLowerCase()]
+    }
+  })
+EOS
 end
 
 datasource "ds_azure_storage_accounts_tag_filtered" do

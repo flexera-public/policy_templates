@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.4.0
+
+- Performance enhancement to avoid 429 throttling error when calling Azure Storage API.
+- Additional permission `Microsoft.ResourceGraph/resources/read` is required due to above enhancement.
+
 ## v4.3.4
 
 - Fixed an issue where the policy could fail to identify any storage accounts missing a lifecycle management policy, even when such accounts existed.
