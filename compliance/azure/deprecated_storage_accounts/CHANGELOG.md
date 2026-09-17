@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.0
+
+- Performance enhancement to avoid 429 throttling error when calling Azure Storage API.
+- Additional permission `Microsoft.ResourceGraph/resources/read` is required due to above enhancement.
+
 ## v0.4.3
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
