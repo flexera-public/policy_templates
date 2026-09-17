@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.0
+
+- Added support for specifying a dimension ID, in addition to a dimension name, for the `Custom Graph Dimension` and `Filter Dimensions` parameters.
+- Added a new incident that reports an error when an invalid dimension name or ID is specified for the `Custom Graph Dimension` or `Filter Dimensions` parameters. The incident lists the invalid parameter(s) and value(s), along with a table of valid dimension names and IDs.
+
 ## v4.1.5
 
 - Fixed an issue where selecting a custom graph dimension could fail when the entered dimension name only differed by whitespace or letter case from the saved dimension name.

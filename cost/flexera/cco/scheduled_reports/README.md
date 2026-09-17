@@ -8,6 +8,8 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 
 *Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.*
 
+If an invalid dimension name or ID is specified for the `Custom Graph Dimension` or `Filter Dimensions` parameters, a separate error incident is generated. This incident lists which parameter(s) and value(s) were invalid, along with a table of all valid dimension names and IDs for reference.
+
 ## Example Incident
 
 ![Example Incident](example.png "Example Incident")
@@ -17,9 +19,9 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 - *Email Addresses* - Email addresses of the recipients you wish to send the scheduled report to.
 - *Cost Metric* - Select the cost metric for your report. This determines whether to build the report using amortized or unamortized costs, and whether to blend AWS costs or not.
 - *Graph Dimension* - Select which dimension you'd like to be broken out on the graph in the report. Select `Custom` to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension, or the name of any dimension not on the list.
-- *Custom Graph Dimension* - Specify the name of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if `Custom` is selected for the Graph Dimension.
+- *Custom Graph Dimension* - Specify the name or ID of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if `Custom` is selected for the Graph Dimension.
 - *Graph Dimension Value Count* - The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values. Warning: Displaying all values may result in a graph that is difficult to interpret.
-- *Filter Dimensions* - Specify the names of the dimensions you wish to filter the costs by along with their values in dimension=value format. These can be built-in dimensions, Custom Tags or Custom Rule-Based Dimensions. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe
+- *Filter Dimensions* - Specify the names or IDs of the dimensions you wish to filter the costs by along with their values in dimension=value format. These can be built-in dimensions, Custom Tags or Custom Rule-Based Dimensions. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe
 - *Filter Functionality* - Whether to filter for costs that meet all of the criteria specified in `Filter Dimensions` or costs that meet any of the criteria. Only applicable if at least two values are entered for `Filter Dimensions`.
 - *Date Range (Months)* - Select how many months back you'd like to display on the graph in the report.
 - *Ignore Current Month* - Whether or not to ignore the current month and begin reporting from the previous month instead.
