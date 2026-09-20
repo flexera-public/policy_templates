@@ -6,6 +6,39 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5021](https://github.com/flexera-public/policy_templates/pull/5021): POL-1846 Meta Parent Blank Value Bug Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes issue where meta parents would raise children with empty values for cloud account if the Optima API returns any costs without a value for vendor_account.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/5021) for these details.
+- **Merged At**: 2026-09-18 15:36:12 UTC
+
+---
+
+### PR [#5016](https://github.com/flexera-public/policy_templates/pull/5016): POL-1845 Scheduled Report: Dimension ID Support
+
+*Minor Update*
+
+#### Description
+
+> `Scheduled Report`
+> - Added support for specifying a dimension ID, in addition to a dimension name, for the `Custom Graph Dimension` and `Filter Dimensions` parameters.
+> - Added a new incident that reports an error when an invalid dimension name or ID is specified for the `Custom Graph Dimension` or `Filter Dimensions` parameters.
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
+- **Merged At**: 2026-09-17 18:24:00 UTC
+
+---
+
 ### PR [#4978](https://github.com/flexera-public/policy_templates/pull/4978): POL-1842 New Marketplace Products: Additional Fields
 
 *Major Update*
@@ -1780,39 +1813,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
 - **Merged At**: 2026-05-18 15:19:54 UTC
-
----
-
-### PR [#4404](https://github.com/flexera-public/policy_templates/pull/4404): POL-1756 - Fix "Allow/Deny" param and add graceful error detection to Kubernetes Rightsizing Recommendations
-
-*Bug Fix*
-
-#### Description
-
-> - Added error detection for Ocean clusters that fail to return rightsizing recommendations, with a separate incident that includes the specific error code, affected cluster details, troubleshooting steps, and links to Spot documentation
-> - Fixed Allow/Deny Spot Accounts filter so that the "Deny" option correctly excludes the listed accounts
->
-
-#### Metadata
-
-- **Policies**: [Kubernetes - Rightsizing Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_recommendations/README.md)
-- **Merged At**: 2026-05-14 19:27:40 UTC
-
----
-
-### PR [#4454](https://github.com/flexera-public/policy_templates/pull/4454): POL-0000 - fix: flexeraOrganizationId from string to int
-
-*Bug Fix*
-
-#### Description
-
-> Hotfix to fix curl/powershell output
->
-
-#### Metadata
-
-- **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md)
-- **Merged At**: 2026-05-14 19:27:01 UTC
 
 ---
 
