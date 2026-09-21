@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution, most likely to occur when billing files were found and uploaded successfully for the selected period.
+
 ## v0.2.9
 
 - Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when downloading cost files from Azure Blob Storage, caused by an internal hostname value not being passed to the request correctly.

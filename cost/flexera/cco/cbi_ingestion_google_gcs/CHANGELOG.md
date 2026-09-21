@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution, most likely to occur when billing files were found and uploaded successfully for the selected period.
+
 ## v0.1.4
 
 - Fixed an issue where the policy would fail with an "invalid argument in join" error when downloading cost files from Google Cloud Storage, caused by an internal bucket name value not being passed to the request correctly.

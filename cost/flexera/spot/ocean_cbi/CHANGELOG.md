@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
 ## v0.2.9
 
 - Fixed an issue where very large reallocations could fail to split billing data into multiple upload files, which could cause upload failures for some environments.

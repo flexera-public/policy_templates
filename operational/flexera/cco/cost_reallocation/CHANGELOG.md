@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
 ## v0.1.8
 
 - Fixed an issue where the policy could produce invalid allocated cost and usage values for destination cost slices that had no total spend to allocate against.
