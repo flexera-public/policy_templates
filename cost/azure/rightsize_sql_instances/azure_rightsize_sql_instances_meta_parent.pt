@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "6.4.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "7.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -186,6 +186,35 @@ parameter "param_stats_underutil_threshold_dtu_value" do
   min_value 0
   max_value 100
   default 60
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Unused Instance CPU Threshold (%)"
+  description "Only used when the 'Unused Instance Detection Method' parameter is set to 'Activity-Based'. The CPU usage floor below which a vCore-model SQL database is considered part of its idle duty cycle. A database is only flagged as unused if its CPU usage stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task (an automatic index build, statistics update, vulnerability scan, etc.) from masking real query activity. Only applies to vCore-model SQL databases (GeneralPurpose, BusinessCritical, Hyperscale)."
+  min_value 0
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_dtu_value" do
+  type "number"
+  category "Statistics"
+  label "Unused Instance DTU Threshold (%)"
+  description "Only used when the 'Unused Instance Detection Method' parameter is set to 'Activity-Based'. The DTU usage floor below which a DTU-model SQL database is considered part of its idle duty cycle. A database is only flagged as unused if its DTU usage stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task (an automatic index build, statistics update, vulnerability scan, etc.) from masking real query activity. DTU-model databases have much smaller absolute capacity than vCore-model databases (as low as 5 DTUs on the Basic tier), so a higher default floor is used here to avoid mistaking a trivial background task for real activity. Only applies to DTU-model SQL databases (Basic, Standard, Premium)."
+  min_value 0
+  max_value 100
+  default 10
+end
+
+parameter "param_idle_detection_method" do
+  type "string"
+  category "Statistics"
+  label "Unused Instance Detection Method"
+  description "The method used to determine if a SQL database is 'unused' and therefore eligible for a Delete recommendation. 'Activity-Based' (the default) flags a database as unused only if its CPU or DTU usage stays at or below the applicable 'Unused Instance Threshold' parameter for the 95th percentile of the lookback period; this reflects actual query workload and is not defeated by connection pooling or long-lived persistent connections, which reuse a connection instead of frequently establishing new ones. 'Connection-Based' instead flags a database as unused solely because it recorded zero new successful connections during the lookback period; this method is known to produce false positives for databases that use connection pooling or persistent connections, since such databases can be actively queried while establishing few or no new connections. Select 'Connection-Based' only if you specifically want unused determination based solely on new connection counts."
+  allowed_values "Activity-Based", "Connection-Based"
+  default "Activity-Based"
 end
 
 parameter "param_stats_threshold" do
@@ -1373,6 +1402,12 @@ policy "policy_scheduled_report" do
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "dtuP95" do
+        label "DTU p95"
       end
       field "type" do
         label "Type"

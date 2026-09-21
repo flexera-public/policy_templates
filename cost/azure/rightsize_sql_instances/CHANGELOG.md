@@ -1,5 +1,10 @@
 # Changelog
 
+## v7.0.0
+
+- Fixed a false-positive issue where databases using connection pooling or persistent connections could be incorrectly recommended for deletion.
+- Serverless databases are now excluded from the unused determination, since they legitimately read near-zero CPU while auto-paused.
+
 ## v6.4.3
 
 - Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.6.3",
+  version: "1.0.0",
   provider: "Azure",
   service: "MySQL",
   policy_set: "Rightsize Database Instances",
@@ -159,6 +159,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_stats_query_threshold" do
+  type "number"
+  category "Statistics"
+  label "Unused Server Query Threshold"
+  description "The query throughput floor, in total queries per statistic interval, below which a MySQL Flexible Server is considered part of its idle duty cycle. A server is only flagged as unused if its query throughput stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task (a backup, replication check-in, monitoring probe, etc.) from masking real query activity. Query throughput is not defeated by connection pooling or long-lived persistent connections, since actively-queried servers continue generating query throughput even while establishing few or no new connections. Run the policy once and inspect the `Query Activity p95` column to calibrate the threshold for your environment."
+  min_value 0
+  default 35
 end
 
 parameter "param_downsize_multiple" do
@@ -686,7 +695,7 @@ datasource "ds_azure_mysql_metrics" do
   end
 end
 
-# https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-sql-servers-databases-metrics
+# https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-dbformysql-flexibleservers-metrics
 script "js_azure_mysql_metrics", type: "javascript" do
   parameters "resource_id", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
@@ -713,7 +722,7 @@ script "js_azure_mysql_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "metricnames": "cpu_percent,total_connections",
+      "metricnames": "cpu_percent,Queries",
       "aggregation": "Average,Minimum,Maximum,count",
       "interval": ds_stats_interval["api"]
     },
@@ -735,11 +744,11 @@ datasource "ds_azure_mysql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_mysql_metrics, $ds_azure_mysql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
+  run_script $js_merged_metrics, $ds_azure_mysql_metrics, $ds_azure_mysql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_query_threshold, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_mysql_metrics", "ds_azure_mysql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
+  parameters "ds_azure_mysql_metrics", "ds_azure_mysql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_query_threshold", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Function to calculate percentiles from metrics
@@ -793,12 +802,12 @@ script "js_merged_metrics", type: "javascript" do
       capacity: getCapacityFromSKU(db['skuName'])
     }
 
-    connection_metrics = null
+    query_metrics = null
     cpu_metrics = null
 
     _.each(db['value'], function(metric) {
-      if (metric['name']['value'] == 'total_connections') {
-        connection_metrics = metric['timeseries'][0]['data']
+      if (metric['name']['value'] == 'Queries') {
+        query_metrics = metric['timeseries'][0]['data']
       }
 
       if (metric['name']['value'] == 'cpu_percent') {
@@ -806,24 +815,30 @@ script "js_merged_metrics", type: "javascript" do
       }
     })
 
-    if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
-      max_connections = 0
+    // A server is considered unused only if its query throughput stayed at or below a small idle
+    // floor for the 95th percentile of the lookback period. This measures actual query workload
+    // instead of new connection counts, so connection pooling and long-lived persistent
+    // connections no longer cause false positives, and a single brief maintenance blip (backup,
+    // replication check-in, monitoring probe, etc.) cannot by itself trigger a false "unused"
+    // result. The floor is not tested for exactly zero because internal/replication/monitoring
+    // activity puts a small nonzero floor on query throughput even on a truly idle server.
+    if (query_metrics != null && param_unused_or_underutilized != "Underutilized") {
+      query_averages = _.pluck(query_metrics, 'average').filter(function(item) { return typeof item === 'number' })
 
-      _.each(connection_metrics, function(metric) {
-        if (typeof(metric['maximum']) == 'number' && metric['maximum'] > max_connections) {
-          max_connections = metric['maximum']
+      if (query_averages.length > 0) {
+        query_percentile = percentile(query_averages, 95)
+        instance['query_p95'] = query_percentile
+
+        if (query_percentile <= param_stats_query_threshold) {
+          instance['recommendationType'] = 'Delete'
+          instance['newResourceType'] = 'Delete'
+
+          instance["recommendationDetails"] = [
+            "Delete Azure MySQL Flexible Server ", instance["name"], " ",
+            "in Azure Subscription ", instance["subscriptionName"], " ",
+            "(", instance["subscriptionID"], ")"
+          ].join('')
         }
-      })
-
-      if (max_connections == 0) {
-        instance['recommendationType'] = 'Delete'
-        instance['newResourceType'] = 'Delete'
-
-        instance["recommendationDetails"] = [
-          "Delete Azure MySQL Flexible Server ", instance["name"], " ",
-          "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionID"], ")"
-        ].join('')
       }
     }
 
@@ -1147,15 +1162,14 @@ script "js_downsize_mysql_incident", type: "javascript" do
   if (param_unused_or_underutilized == 'Underutilized') {
     context_message = [
       "An Azure MySQL Flexible Server is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
-      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period. ",
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   } else {
     context_message = [
-      "An Azure MySQL Flexible Server is considered underutilized if it has had at least one connection to it ",
-      "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
+      "An Azure MySQL Flexible Server is considered underutilized if it does not already qualify as unused (see below) ",
+      "and has an average CPU usage below ",
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   }
@@ -1208,11 +1222,11 @@ EOS
 end
 
 datasource "ds_unused_mysql_incident" do
-  run_script $js_unused_mysql_incident, $ds_merged_metrics, $ds_azure_mysql_rg_filtered, $ds_mysql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
+  run_script $js_unused_mysql_incident, $ds_merged_metrics, $ds_azure_mysql_rg_filtered, $ds_mysql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_query_threshold, $param_incident_csv
 end
 
 script "js_unused_mysql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_mysql_rg_filtered", "ds_mysql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_mysql_rg_filtered", "ds_mysql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_query_threshold", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1280,6 +1294,7 @@ script "js_unused_mysql_incident", type: "javascript" do
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
+        queryActivityP95: db['query_p95'] ? Math.round(db['query_p95'] * 100) / 100 : "",
         lookbackPeriod: db['lookbackPeriod'],
         threshold: db['threshold'],
         policy_name: db['policy_name'],
@@ -1316,8 +1331,11 @@ script "js_unused_mysql_incident", type: "javascript" do
   if (param_stats_lookback > 1) { day_message += "s" }
 
   context_message = [
-    "An Azure MySQL Flexible Server is considered unused if it has not had any connections ",
-    "for at least ", param_stats_lookback, " ", day_message, ". "
+    "An Azure MySQL Flexible Server is considered unused if its total query throughput remained at or below ",
+    param_stats_query_threshold, " queries per statistic interval for the 95th percentile of the last ", param_stats_lookback, " ", day_message,
+    ". This means the server was not meaningfully queried during that period, even accounting for brief background maintenance tasks such as backups, ",
+    "replication check-ins, or monitoring probes. Query throughput is not defeated by connection pooling or long-lived persistent connections, since ",
+    "actively-queried servers continue generating query throughput even while establishing few or no new connections. "
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
@@ -1344,6 +1362,7 @@ script "js_unused_mysql_incident", type: "javascript" do
     accountName: "",
     recommendationType: "",
     recommendationDetails: "",
+    queryActivityP95: "",
     thresholdType: "",
     lookbackPeriod: "",
     threshold: "",
@@ -1487,7 +1506,7 @@ policy "pol_azure_mysql_utilization" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_delete_servers
-    hash_exclude "savings", "savingsCurrency", "tags", "policy_name"
+    hash_exclude "savings", "savingsCurrency", "tags", "policy_name", "queryActivityP95"
     export do
       resource_level true
       field "accountID" do
@@ -1511,6 +1530,9 @@ policy "pol_azure_mysql_utilization" do
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "queryActivityP95" do
+        label "Query Activity p95"
       end
       field "tier" do
         label "Tier"

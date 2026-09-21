@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.4.3",
+  version: "7.0.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -150,6 +150,35 @@ parameter "param_stats_underutil_threshold_dtu_value" do
   min_value 0
   max_value 100
   default 60
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Unused Instance CPU Threshold (%)"
+  description "Only used when the 'Unused Instance Detection Method' parameter is set to 'Activity-Based'. The CPU usage floor below which a vCore-model SQL database is considered part of its idle duty cycle. A database is only flagged as unused if its CPU usage stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task (an automatic index build, statistics update, vulnerability scan, etc.) from masking real query activity. Only applies to vCore-model SQL databases (GeneralPurpose, BusinessCritical, Hyperscale)."
+  min_value 0
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_dtu_value" do
+  type "number"
+  category "Statistics"
+  label "Unused Instance DTU Threshold (%)"
+  description "Only used when the 'Unused Instance Detection Method' parameter is set to 'Activity-Based'. The DTU usage floor below which a DTU-model SQL database is considered part of its idle duty cycle. A database is only flagged as unused if its DTU usage stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task (an automatic index build, statistics update, vulnerability scan, etc.) from masking real query activity. DTU-model databases have much smaller absolute capacity than vCore-model databases (as low as 5 DTUs on the Basic tier), so a higher default floor is used here to avoid mistaking a trivial background task for real activity. Only applies to DTU-model SQL databases (Basic, Standard, Premium)."
+  min_value 0
+  max_value 100
+  default 10
+end
+
+parameter "param_idle_detection_method" do
+  type "string"
+  category "Statistics"
+  label "Unused Instance Detection Method"
+  description "The method used to determine if a SQL database is 'unused' and therefore eligible for a Delete recommendation. 'Activity-Based' (the default) flags a database as unused only if its CPU or DTU usage stays at or below the applicable 'Unused Instance Threshold' parameter for the 95th percentile of the lookback period; this reflects actual query workload and is not defeated by connection pooling or long-lived persistent connections, which reuse a connection instead of frequently establishing new ones. 'Connection-Based' instead flags a database as unused solely because it recorded zero new successful connections during the lookback period; this method is known to produce false positives for databases that use connection pooling or persistent connections, since such databases can be actively queried while establishing few or no new connections. Select 'Connection-Based' only if you specifically want unused determination based solely on new connection counts."
+  allowed_values "Activity-Based", "Connection-Based"
+  default "Activity-Based"
 end
 
 parameter "param_stats_threshold" do
@@ -831,11 +860,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_dtu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_dtu_value, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_dtu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple, $param_idle_detection_method
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_dtu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_dtu_value", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_dtu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple", "param_idle_detection_method"
   result "result"
   code <<-'EOS'
   // Function to calculate percentiles from metrics
@@ -908,22 +937,63 @@ script "js_merged_metrics", type: "javascript" do
       instance['lastAccessed'] = new Date(timeStamps[0]).toISOString().split('T')[0]
     }
 
-    if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
-      total_connections = 0
+    // Serverless General Purpose databases auto-pause and legitimately read near-zero CPU while
+    // paused. Their SKU name contains "_S_" (e.g. "GP_S_Gen5"), which distinguishes them from
+    // provisioned SKUs (e.g. "GP_Gen5") using data already gathered above; no new API call needed.
+    is_serverless = instance['sku'] != undefined && typeof(instance['sku']['name']) == 'string' && instance['sku']['name'].indexOf('_S_') != -1
 
-      _.each(connection_metrics, function(metric) {
-        if (typeof(metric['count']) == 'number') { total_connections += metric['count'] }
-      })
+    if (param_idle_detection_method == "Connection-Based") {
+      // Legacy method (pre-7.0.0), kept as an opt-out: a database is unused only if it recorded
+      // zero new successful connections during the entire lookback period. This is prone to false
+      // positives for databases using connection pooling or long-lived persistent connections,
+      // since those reuse a connection instead of frequently establishing new ones.
+      if (connection_metrics != null && param_unused_or_underutilized != "Underutilized") {
+        total_connections = 0
 
-      if (total_connections == 0) {
-        instance['recommendationType'] = 'Delete'
-        instance['newResourceType'] = 'Delete'
+        _.each(connection_metrics, function(metric) {
+          if (typeof(metric['count']) == 'number') { total_connections += metric['count'] }
+        })
 
-        instance["recommendationDetails"] = [
-          "Delete Azure SQL database ", instance["name"], " ",
-          "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionID"], ")"
-        ].join('')
+        if (total_connections == 0) {
+          instance['recommendationType'] = 'Delete'
+          instance['newResourceType'] = 'Delete'
+
+          instance["recommendationDetails"] = [
+            "Delete Azure SQL database ", instance["name"], " ",
+            "in Azure Subscription ", instance["subscriptionName"], " ",
+            "(", instance["subscriptionID"], ")"
+          ].join('')
+        }
+      }
+    } else if ((cpu_metrics != null || dtu_metrics != null) && !is_serverless && param_unused_or_underutilized != "Underutilized") {
+      // Activity-based method (default): a database is unused only if its CPU/DTU usage stayed at
+      // or below a small idle floor for the 95th percentile of the lookback period. This measures
+      // actual work performed instead of new connection counts, so connection pooling and
+      // persistent connections no longer cause false positives, and a single brief maintenance
+      // blip (index rebuild, statistics update, vulnerability scan, etc.) cannot by itself trigger
+      // a false "unused" result. Serverless databases are excluded above since they auto-pause and
+      // legitimately read near-zero CPU while paused.
+      idle_metrics = cpu_metrics ? cpu_metrics : dtu_metrics
+
+      idle_averages = _.pluck(idle_metrics, 'average').filter(function(item) { return typeof item === 'number' })
+
+      if (idle_averages.length > 0) {
+        idle_percentile = percentile(idle_averages, 95)
+        idle_threshold = cpu_metrics ? param_stats_idle_threshold_cpu_value : param_stats_idle_threshold_dtu_value
+
+        if (cpu_metrics) { instance['cpu_p95'] = idle_percentile }
+        if (dtu_metrics) { instance['dtu_p95'] = idle_percentile }
+
+        if (idle_percentile <= idle_threshold) {
+          instance['recommendationType'] = 'Delete'
+          instance['newResourceType'] = 'Delete'
+
+          instance["recommendationDetails"] = [
+            "Delete Azure SQL database ", instance["name"], " ",
+            "in Azure Subscription ", instance["subscriptionName"], " ",
+            "(", instance["subscriptionID"], ")"
+          ].join('')
+        }
       }
     }
 
@@ -1261,23 +1331,21 @@ script "js_downsize_sql_incident", type: "javascript" do
   if (param_unused_or_underutilized == 'Underutilized') {
     context_message = [
       "A vCore-based Azure SQL Database is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
-      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period. ",
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n",
       "A DTU-based Azure SQL Database is considered underutilized if it has a DTU usage " + param_stats_threshold.toLowerCase() + " below ",
-      param_stats_underutil_threshold_dtu_value, "% for the last ", param_stats_lookback, " ", day_message,
-      ", regardless of whether it has had any connections to it in that same time period. ",
+      param_stats_underutil_threshold_dtu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   } else {
     context_message = [
-      "A vCore-based Azure SQL Database is considered underutilized if it has had at least one connection to it ",
-      "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
-      param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
+      "A vCore-based Azure SQL Database is considered underutilized if it does not already qualify as unused (see below) ",
+      "and has an average CPU usage below ",
+      param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n",
-      "A DTU-based Azure SQL Database is considered underutilized if it has had at least one connection to it ",
-      "in the last ", param_stats_lookback, " ", day_message, " but has an average DTU usage below ",
-      param_stats_underutil_threshold_dtu_value, "% for that same time period. ",
+      "A DTU-based Azure SQL Database is considered underutilized if it does not already qualify as unused (see below) ",
+      "and has an average DTU usage below ",
+      param_stats_underutil_threshold_dtu_value, "% for the last ", param_stats_lookback, " ", day_message, ". ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   }
@@ -1353,11 +1421,11 @@ EOS
 end
 
 datasource "ds_unused_sql_incident" do
-  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_rg_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_minimum_age, $param_incident_csv
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_rg_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_dtu_value, $param_idle_detection_method, $param_minimum_age, $param_incident_csv
 end
 
 script "js_unused_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_rg_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_minimum_age", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_rg_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_dtu_value", "param_idle_detection_method", "param_minimum_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1425,6 +1493,8 @@ script "js_unused_sql_incident", type: "javascript" do
         accountName: db['subscriptionName'],
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
+        cpuP95: db['cpu_p95'] ? Math.round(db['cpu_p95'] * 100) / 100 : "",
+        dtuP95: db['dtu_p95'] ? Math.round(db['dtu_p95'] * 100) / 100 : "",
         lookbackPeriod: db['lookbackPeriod'],
         threshold: db['threshold'],
         policy_name: db['policy_name'],
@@ -1461,10 +1531,23 @@ script "js_unused_sql_incident", type: "javascript" do
   day_message = "day"
   if (param_stats_lookback > 1) { day_message += "s" }
 
-  context_message = [
-    "An Azure SQL Database is considered unused if it has not had any connections ",
-    "for at least ", param_stats_lookback, " ", day_message, ". "
-  ].join('')
+  if (param_idle_detection_method == "Connection-Based") {
+    context_message = [
+      "An Azure SQL Database is considered unused if it has not had any new successful connections ",
+      "for at least ", param_stats_lookback, " ", day_message, ". ",
+      "Note that this method can produce false positives for databases ",
+      "that use connection pooling or long-lived persistent connections, since such databases may be actively queried while establishing ",
+      "few or no new connections. Set the 'Unused Instance Detection Method' parameter to 'Activity-Based' (the default) to avoid this issue. "
+    ].join('')
+  } else {
+    context_message = [
+      "An Azure SQL Database is considered unused if its CPU usage (vCore-model databases) or DTU usage (DTU-model databases) remained at or below ",
+      param_stats_idle_threshold_cpu_value, "% / ", param_stats_idle_threshold_dtu_value, "% respectively for the 95th percentile of the last ", param_stats_lookback, " ", day_message,
+      ". This means the database was not meaningfully queried during that period, even accounting for brief background maintenance tasks such as automatic index rebuilds, ",
+      "statistics updates, or vulnerability scans. Serverless databases are excluded from this determination since they can legitimately auto-pause and read near-zero CPU while paused. ",
+      "Set the 'Unused Instance Detection Method' parameter to 'Connection-Based' to instead determine unused status solely from new connection counts. "
+    ].join('')
+  }
 
   min_age_message = "Results were not filtered by age.\n\n"
 
@@ -1497,6 +1580,8 @@ script "js_unused_sql_incident", type: "javascript" do
     accountName: "",
     recommendationType: "",
     recommendationDetails: "",
+    cpuP95: "",
+    dtuP95: "",
     lookbackPeriod: "",
     threshold: "",
     policy_name: "",
@@ -1665,7 +1750,7 @@ policy "pol_azure_sql_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
     escalate $esc_email
     escalate $esc_delete_instances
-    hash_exclude "savings", "savingsCurrency", "tags", "policy_name"
+    hash_exclude "savings", "savingsCurrency", "tags", "policy_name", "cpuP95", "dtuP95"
     export do
       resource_level true
       field "accountID" do
@@ -1695,6 +1780,12 @@ policy "pol_azure_sql_utilization" do
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "dtuP95" do
+        label "DTU p95"
       end
       field "type" do
         label "Type"
