@@ -17,7 +17,7 @@ If an invalid dimension name or ID is specified for the `Custom Graph Dimension`
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the scheduled report to.
-- *Cost Metric* - Select the cost metric for your report. This determines whether to build the report using amortized or unamortized costs, and whether to blend AWS costs or not.
+- *Cost Metric* - Select the cost metric for your report. This determines whether to build the report using amortized or unamortized costs, and whether to blend AWS costs or not. Cost metrics labeled 'v2' should be avoided for most use cases; these are specifically for specialty Flexera organizations using a different version of the Cloud Cost Optimization product.
 - *Graph Dimension* - Select which dimension you'd like to be broken out on the graph in the report. Select `Custom` to specify the name of a custom dimension, such as a Custom Tag or Custom Rule-Based Dimension, or the name of any dimension not on the list.
 - *Custom Graph Dimension* - Specify the name or ID of the custom dimension you want to break costs out by. Spelling and capitalization must match what is shown in the Flexera CCO platform. Only applicable if `Custom` is selected for the Graph Dimension.
 - *Graph Dimension Value Count* - The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values. Warning: Displaying all values may result in a graph that is difficult to interpret.

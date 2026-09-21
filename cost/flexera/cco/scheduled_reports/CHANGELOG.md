@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.0
+
+- Added support for Cloud Cost Optimization V2-specific cost metrics.
+
 ## v4.2.0
 
 - Added support for specifying a dimension ID, in addition to a dimension name, for the `Custom Graph Dimension` and `Filter Dimensions` parameters.
