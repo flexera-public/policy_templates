@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.0
+
+- Fixed a false-positive issue where servers using connection pooling or persistent connections could be incorrectly recommended for deletion.
+
 ## v0.6.3
 
 - Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
