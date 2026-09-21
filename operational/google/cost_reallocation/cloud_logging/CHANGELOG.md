@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.9
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
 ## v0.1.8
 
 - Fixed an issue where the policy could fail to calculate cost allocation percentages when total usage for the allocation period was zero.

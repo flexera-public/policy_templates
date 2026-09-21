@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
 ## v0.1.5
 
 - Fixed an issue where reallocated support costs could be calculated incorrectly for a billing period in which the rest of the organization had no other recorded costs.
