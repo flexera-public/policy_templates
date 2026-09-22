@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.17
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v4.0.16
 
 - Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.

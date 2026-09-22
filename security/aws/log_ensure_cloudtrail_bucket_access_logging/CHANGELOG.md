@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v3.2.0
 
 - Added Meta Policy support, allowing this policy to be deployed as a child policy from a Meta Parent Policy across multiple AWS accounts.
