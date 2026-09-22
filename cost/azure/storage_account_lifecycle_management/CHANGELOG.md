@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.4.0
+## v5.0.0
 
 - Performance enhancement to avoid 429 throttling error when calling Azure Storage API.
 - Additional permission `Microsoft.ResourceGraph/resources/read` is required due to above enhancement.
