@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.12
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v4.2.11
 
 - Fixed bug where the "Exclusion Tags" parameter incorrectly included matching resources in the results instead of excluding them, and fixed a related error that occurred whenever any exclusion tag was entered.

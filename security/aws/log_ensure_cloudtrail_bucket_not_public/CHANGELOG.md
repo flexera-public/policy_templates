@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.2
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v3.2.1
 
 - Fixed an issue where the policy could fail while evaluating CloudTrail buckets that did not have a bucket policy.

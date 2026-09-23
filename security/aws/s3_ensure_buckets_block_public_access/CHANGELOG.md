@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.5
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v3.1.4
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

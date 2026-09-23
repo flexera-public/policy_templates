@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v0.2.8
 
 - Fixed bug where the policy would fail with a `'resource' is not defined` error whenever the `Exclusion Tags` parameter was used.

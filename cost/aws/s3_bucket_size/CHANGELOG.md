@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.9
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
 ## v4.0.8
 
 - Fixed an issue where the policy could report an outdated bucket size measurement instead of the most recent one when multiple data points were returned for the same bucket.
