@@ -6,6 +6,87 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5042](https://github.com/flexera-public/policy_templates/pull/5042): FOPTS-30968 Use dot-style S3 endpoints for per-bucket requests
+
+*Unpublished, Bug Fix*
+
+#### Description
+
+> This PR changes the S3 endpoints from legacy dash style (e.g. "**s3-ap**-southeast-3.amazonaws.com") to the modern dot style (e.g. "**s3.ap**-southeast-3.amazonaws.com").
+>
+> The reason to change to modern dot style is that the legacy dash style S3 URL is only supported by regions launched before 2019, meaning that newer regions especially the opt-in regions do not support the legacy dash style URL.
+>
+> (Note: there is still issue with AWS STS token for opt-in regions. This PR does not fix the STS token issue)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/5042) for these details.
+- **Merged At**: 2026-09-23 12:33:01 UTC
+
+---
+
+### PR [#5038](https://github.com/flexera-public/policy_templates/pull/5038): POL-1849 Scheduled Report: V2 Support
+
+*Minor Update*
+
+#### Description
+
+> `Scheduled Report`
+> - Adds support for two new cost metrics added with CCO V2: "Billed Cost" and "Modified Billed Cost"
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
+- **Merged At**: 2026-09-21 19:41:00 UTC
+
+---
+
+### PR [#5034](https://github.com/flexera-public/policy_templates/pull/5034): POL-1848 CBI Policy Regression Fix
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Fixes a regression in several CBI policies that causes them to sometimes fail due to an existing policy engine bug. The fix, which had already been implemented about a year ago, simply works around the policy engine bug by avoiding the condition that triggers it. The policy bug was reintroduced, ironically, due to a bug fix pass on the entire catalog due to additional logic that was added to guard against variables with invalid or empty values.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/5034) for these details.
+- **Merged At**: 2026-09-21 18:26:38 UTC
+
+---
+
+### PR [#5030](https://github.com/flexera-public/policy_templates/pull/5030): POL-1847 Azure Rightsize SQL Databases / Rightsize MySQL Flexible Servers Unused Fix
+
+*Major Update*
+
+#### Description
+
+> Updates the `Azure Rightsize SQL Databases` and `Azure Rightsize MySQL Flexible Servers` policy templates to avoid false positives when reporting unused SQL instances.
+>
+> `Azure Rightsize SQL Databases`
+> - Previous behavior: Relied purely on whether "connection_successful" had a value > 0. If it did not, it was presumed that the instance was idle.
+> - Pitfall: A long-term connection can be maintained, making valid queries, while new connections are not happening at all. This means a database can have a value of 0 for "connection_successful" while still being in active use.
+> - New behavior: CPU/DTU metrics are checked instead; "connection_successful" is not used since a zombie instance may still have connections that aren't doing real work. A new parameter allows the user to revert to the previous behavior if desired.
+>
+> `Azure Rightsize MySQL Flexible Servers`
+> - Previous behavior: Relied purely on whether "total_connections" had a value > 0. If it did not, it was presumed that the instance was idle.
+> - Pitfall: A long-term connection can be maintained, making valid queries, while new connections are not happening at all. This means a database can have a value of 0 for "total_connections" while still being in active use.
+> - New behavior: The "total_connections" metric has been replaced with the "Queries" metric. Now a server will only be reported as unused if there were no actual queries made.
+>
+> Note: No equivalent to the "Queries" metric exists for SQL Databases; this is why the `Azure Rightsize SQL Databases` policy template relies on CPU/DTU metrics instead.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Meta Parent: Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2026-09-21 14:40:51 UTC
+
+---
+
 ### PR [#5021](https://github.com/flexera-public/policy_templates/pull/5021): POL-1846 Meta Parent Blank Value Bug Fix
 
 *Minor Update*
@@ -1745,74 +1826,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md), [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
 - **Merged At**: 2026-06-04 13:39:12 UTC
-
----
-
-### PR [#4477](https://github.com/flexera-public/policy_templates/pull/4477): POL-1564 Resource Group Filtering / Metas
-
-*Unpublished, Minor Update*
-
-#### Description
-
-> This makes two changes to Azure policy templates throughout the catalog:
-> - Adds Resource Group level filtering, similar to the existing Subscription filtering parameters.
-> - Adds *unpublished* meta policies that create a child policy per Resource Group instead of Subscription. This is intended for rare situations where even individual Subscriptions have too many resources for the policy engine to handle but likely has its own downsides. Should be used with caution and only with guidance from someone at Flexera.
->
-> It also makes some tweaks to the Dangerfile to avoid false positives. Remaining Dangerfile warnings are false positives unrelated to the above changes.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4477) for these details.
-- **Merged At**: 2026-06-03 12:43:54 UTC
-
----
-
-### PR [#4493](https://github.com/flexera-public/policy_templates/pull/4493): POL-1772 Update "Flexera One User Access Report" Policy Template to use api.flexera.com
-
-*Minor Update*
-
-#### Description
-
-> Updates "Flexera One User Access Report" Policy Template to use api.flexera.com when listing groups. The GRS API currently used is being deprecated and was only used at the time because api.flexera.com did not yet support listing groups or their membership.
->
-
-#### Metadata
-
-- **Policies**: [Flexera One User Access Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/iam_user_report/README.md)
-- **Merged At**: 2026-06-02 18:08:26 UTC
-
----
-
-### PR [#4481](https://github.com/flexera-public/policy_templates/pull/4481): POL-1768 Meta Policies: New Option To Skip Consolidated Incidents
-
-#### Description
-
-> This adds a new parameter to meta policies to allow the user to opt out of consolidated incidents. This can be useful in situations where the consolidated incident would exceed the 64MB limit, causing the meta policy to fail. Recommendations for the Optimization dashboard are scraped from the child policies regardless.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4481) for these details.
-- **Merged At**: 2026-05-22 17:27:21 UTC
-
----
-
-### PR [#4459](https://github.com/flexera-public/policy_templates/pull/4459): POL-849 Google Committed Use Discount Recommender: Billing Account Support
-
-*Minor Update*
-
-#### Description
-
-> Adds support for Billing Account-level recommendations for the `Google Committed Use Discount Recommender` policy template.
->
-> (Dangerfile warning is a false positive)
->
-
-#### Metadata
-
-- **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
-- **Merged At**: 2026-05-18 15:19:54 UTC
 
 ---
 
