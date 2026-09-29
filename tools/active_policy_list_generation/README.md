@@ -42,5 +42,6 @@ The output JSON contains a top-level `policies` array. Each entry includes:
 - `generally_recommended` - Whether the template is in the generally-recommended list for its provider
 - `deprecated` - Whether the template is marked as deprecated
 - `hide_skip_approvals` - Whether the "Skip Approval" UI button is hidden
+- `cloud_workflow` - Whether the policy template contains cloud workflow define blocks
 
 The policies array is sorted alphabetically by name to minimize diffs between runs.
