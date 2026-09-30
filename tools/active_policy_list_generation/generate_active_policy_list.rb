@@ -62,6 +62,8 @@ Dir['**/*.pt'].each do |file|
     hide_skip_approvals = hide_skip_approvals == 'true' || hide_skip_approvals == true
   end
 
+  cloud_workflow = pp.parsed_cloud_workflow
+
   # Fall back to extracting version from the long description if not set in the header
   if version.nil? && pp.parsed_long_description =~ /Version/
     version = pp.parsed_long_description.split(':').last.strip.chomp('"')
@@ -107,7 +109,8 @@ Dir['**/*.pt'].each do |file|
       "updated_at": updated_at,
       "generally_recommended": generally_recommended,
       "deprecated": deprecated,
-      "hide_skip_approvals": hide_skip_approvals
+      "hide_skip_approvals": hide_skip_approvals,
+      "cloud_workflow": cloud_workflow
     }
   end
 end

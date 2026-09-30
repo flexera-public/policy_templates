@@ -1,10 +1,13 @@
 class PolicyParser
   DEFINITION_REGEX = /^[[:blank:]]*define[[:blank:]]*([\w_\.]+)[[:blank:]]*\([@$\w _,]*\)[[:blank:]]*.*do/.freeze
 
-  attr_reader :parsed_info,  :parsed_category, :parsed_name, :parsed_severity, :parsed_doc_link, :parsed_long_description, :parsed_short_description, :parsed_default_frequency
+  attr_reader :parsed_info,  :parsed_category, :parsed_name, :parsed_severity, :parsed_doc_link, :parsed_long_description, :parsed_short_description, :parsed_default_frequency, :parsed_cloud_workflow
 
   def parse(file)
     source = File.read(file)
+
+    # Check if the file contains any define blocks
+    @parsed_cloud_workflow = DEFINITION_REGEX.match?(source)
 
     # we assume that all of the metadata is before any declarations
     # especially RCL defines which are not parsable as Ruby
