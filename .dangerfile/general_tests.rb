@@ -131,6 +131,7 @@ def general_bad_urls?(file, file_diff)
     'ec2.amazonaws.com',
     'storage.azure.com', # Not a legitimate URL but used in request headers for generating Azure tokens
     'contoso.sharepoint.com', # Not legitimate URL but used in Microsoft Graph API docs/examples
+    'api.flexera.com',
   ]
 
   regex = /(^\+)/
