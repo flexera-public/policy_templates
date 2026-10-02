@@ -19,6 +19,41 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients to notify when MongoDB Atlas invoice data is uploaded."
+  default []
+end
+
+parameter "param_billing_period" do
+  type "string"
+  category "Policy Settings"
+  label "Month To Ingest"
+  description "Month to process MongoDB Atlas invoices for."
+  allowed_values "Current Month", "Previous Month", "Specific Month"
+  default "Current Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Period"
+  description "Billing period to process in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
+  default "2020-01"
+end
+
+parameter "param_cbi_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Flexera CBI Endpoint"
+  description "The ID of the existing Flexera Common Bill Ingestion endpoint that receives MongoDB Atlas costs."
+  allowed_pattern /^cbi-oi-optima-[-_0-9a-zA-Z]{1,20}$/
+  default "cbi-oi-optima-mongodb-atlas"
+end
+
 parameter "param_mongodb_atlas_org_id" do
   type "string"
   category "Policy Settings"
@@ -28,34 +63,8 @@ parameter "param_mongodb_atlas_org_id" do
   # No default value, user input required
 end
 
-parameter "param_months" do
-  type "number"
-  category "Policy Settings"
-  label "Months"
-  description "The number of months of invoices to download on each run. Use a larger value for an initial backfill, then reduce it to 1 for regular monthly updates."
-  min_value 1
-  default 1
-end
-
-parameter "param_bill_connect_id" do
-  type "string"
-  category "Policy Settings"
-  label "Bill Connect ID"
-  description "The ID of the existing Flexera Common Bill Ingestion endpoint that receives MongoDB Atlas costs."
-  allowed_pattern /^cbi-oi-optima-[-_0-9a-zA-Z]{1,20}$/
-  default "cbi-oi-optima-mongodb-atlas"
-end
-
-parameter "param_emails" do
-  type "list"
-  category "Incident Settings"
-  label "Email Addresses"
-  description "Email addresses of the recipients to notify after MongoDB Atlas invoice data is uploaded."
-  default []
-end
-
 ###############################################################################
-# Credentials
+# Authentication
 ###############################################################################
 
 credentials "auth_mongodb_atlas" do
@@ -123,21 +132,30 @@ datasource "ds_mongodb_atlas_org_invoices_index" do
   end
 end
 
-datasource "ds_mongodb_atlas_org_invoices_for_last_n_months" do
-  run_script $js_mongodb_atlas_org_invoices_for_last_n_months, $param_months, $ds_mongodb_atlas_org_invoices_index
+datasource "ds_mongodb_atlas_org_invoices_for_period" do
+  run_script $js_mongodb_atlas_org_invoices_for_period, $param_billing_period, $param_specific_period, $ds_mongodb_atlas_org_invoices_index
 end
 
-script "js_mongodb_atlas_org_invoices_for_last_n_months", type: "javascript" do
-  parameters "months", "invoicesIndex"
+script "js_mongodb_atlas_org_invoices_for_period", type: "javascript" do
+  parameters "billingPeriod", "specificPeriod", "invoicesIndex"
   result "invoices"
   code <<-'EOS'
-  // Select the most recent requested number of invoices from the index.
-  var invoices = _.last(_.sortBy(invoicesIndex, "startDate"), months);
+  var period = specificPeriod;
+
+  if (billingPeriod != "Specific Month") {
+    var now = new Date();
+    var monthOffset = billingPeriod == "Previous Month" ? -1 : 0;
+    period = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, 1)).toISOString().substring(0, 7);
+  }
+
+  var invoices = _.filter(invoicesIndex, function (invoice) {
+    return invoice.startDate && invoice.startDate.substring(0, 7) == period;
+  });
   EOS
 end
 
 datasource "ds_mongodb_atlas_org_invoices" do
-  iterate $ds_mongodb_atlas_org_invoices_for_last_n_months
+  iterate $ds_mongodb_atlas_org_invoices_for_period
   request do
     auth $auth_mongodb_atlas
     pagination $pagination_mongodb_atlas
@@ -287,7 +305,7 @@ datasource "ds_create_bill_upload" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
-    body_field "billConnectId", $param_bill_connect_id
+    body_field "billConnectId", $param_cbi_endpoint
     body_field "billingPeriod", val(iter_item, "period")
   end
   result do
@@ -338,49 +356,9 @@ end
 # Policy
 ###############################################################################
 
-# policy "debug" do
-#   validate $ds_mongodb_atlas_cbi_uploads do
-#     summary_template "Debug MongoDB Atlas CBI Upload"
-#     detail_template <<-'EOS'
-# Debugging the following MongoDB Atlas invoice data:
-# | Month         | Records            | CSV Size       |
-# | ------------- | ------------------ | -------------- |
-# {{ range data -}}
-# | {{ .period }} | {{ .recordCount }} | {{ .csvSize }} |
-# {{ end }}
-
-# ```
-# {{ data.csv }}
-# ```
-# EOS
-#     check eq(size(data), 0)
-#     export "csv" do
-#       field "CloudVendorAccountID"
-#       field "CloudVendorAccountName"
-#       field "Category"
-#       field "InstanceType"
-#       field "LineItemType"
-#       field "Region"
-#       field "ResourceGroup"
-#       field "ResourceType"
-#       field "ResourceID"
-#       field "Service"
-#       field "UsageType"
-#       field "Tags"
-#       field "UsageAmount"
-#       field "UsageUnit"
-#       field "Cost"
-#       field "CurrencyCode"
-#       field "UsageStartTime"
-#       field "InvoiceYearMonth"
-#       field "InvoiceID"
-#     end
-#   end
-# end
-
 policy "pol_mongodb_atlas_cbi" do
   validate $ds_commit_bill_upload do
-    summary_template "MongoDB Atlas CBI Upload"
+    summary_template "{{ .policy_name }}: {{ with index data 0 }}{{ .period }}{{ end }}"
     detail_template <<-'EOS'
 Uploading the following MongoDB Atlas invoice data to Flexera Common Bill Ingestion:
 | Month         | Records            | CSV Size       |
@@ -389,9 +367,8 @@ Uploading the following MongoDB Atlas invoice data to Flexera Common Bill Ingest
 | {{ .period }} | {{ .recordCount }} | {{ .csvSize }} |
 {{ end }}
 EOS
-    escalate $esc_cbi_upload
-    resolve $res_email
     check eq(size(data), 0)
+    escalate $esc_cbi_upload
   end
 end
 
@@ -403,16 +380,7 @@ escalation "esc_cbi_upload" do
   automatic true
   label "Report MongoDB Atlas CBI upload"
   description "Report the result of the MongoDB Atlas CBI upload."
-  resolve_incident
-end
-
-###############################################################################
-# Resolutions
-###############################################################################
-
-resolution "res_email" do
-  automatic true
-  email $param_emails do
+  email $param_email do
     subject_template "MongoDB Atlas CBI Upload Completed"
   end
 end

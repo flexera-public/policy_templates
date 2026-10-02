@@ -6,17 +6,18 @@ This policy template retrieves MongoDB Atlas invoices and converts them to the F
 
 ## How It Works
 
-- The policy template uses the MongoDB Atlas API to retrieve organization groups and invoices for the requested number of months.
+- The policy template uses the MongoDB Atlas API to retrieve organization groups and invoices for the selected billing period.
 - MongoDB Atlas invoice line items are converted to CBI CSV records and uploaded in the order required by Flexera: create an upload, upload the CSV file, and commit the upload.
-- The default lookback is one month. For an initial backfill, temporarily increase *Months* (for example, to 12), then return it to 1 for regular monthly operation.
-- MongoDB Atlas invoice amounts use the currency reported by the first invoice payment. If the API does not return a payment currency, the template falls back to `USD`.
+- Select the current month, previous month, or a specific month. Use *Billing Period* to provide a month in `YYYY-MM` format when *Month To Ingest* is set to *Specific Month*.
+- MongoDB Atlas invoice amounts are written with `USD` as the currency code. This template assumes the MongoDB Atlas billing API data being retrieved is billed in USD; validate this assumption if your organization uses another billing currency.
 
 ## Input Parameters
 
-- *MongoDB Atlas Organization ID* - The 24-character MongoDB Atlas organization ID to query. This value is required and has no customer-specific default.
-- *Months* - The number of months of invoices to retrieve on each run. Use a larger value for the initial backfill and use 1 for normal monthly updates.
-- *Bill Connect ID* - The existing Flexera CBI endpoint that should receive the MongoDB Atlas costs. The endpoint must be created before this policy template is applied, and the value must match the endpoint's ID.
 - *Email Addresses* - Email addresses of recipients to notify after invoice data is uploaded.
+- *Month To Ingest* - Select whether to retrieve invoices for the current month, previous month, or a specific month.
+- *Billing Period* - The month to retrieve in `YYYY-MM` format. This parameter is used only when *Month To Ingest* is *Specific Month*.
+- *Flexera CBI Endpoint* - The ID of the existing Flexera CBI endpoint that should receive MongoDB Atlas costs. This value is required and must match the endpoint's ID.
+- *MongoDB Atlas Organization ID* - The 24-character MongoDB Atlas organization ID to query. This value is required and has no customer-specific default.
 
 ## Policy Actions
 
@@ -31,17 +32,18 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `Organization Billing Viewer`
   - `Organization Read-Only`
 
-  Use the [Credentials](https://developer.flexera.com/docs/api/cred/v2#/Digest%20Credential/Digest%20Credential%23create_project) API to create `digest` Credential:
+  Use the [Credentials](https://developer.flexera.com/docs/api/cred/v2#/Digest%20Credential/Digest%20Credential%23create_project) API to create a `digest` credential:
 
   ```sh
   export flexeraAccesstoken="access.token.here"
   export flexeraProjectId="123456"
   export mongoPublicKey="..."
   export mongoPrivateKey="..."
-  curl -i -H "Content-Type: application/json" -H "Authorization: Bearer ${flexeraAccesstoken}" -X PUT "https://api.flexera.com/cred/v2/projects/${flexeraProjectId}/credentials/digest/mongodb-atlas" -d "{\"password\": \"${mongoPrivateKey}\",\"username\": \"${mongoPublicKey}\",\"name\": \"MongoDB Atlas\",\"tags\": [{\"key\": \"provider\", \"value\": \"mongodb_atlas\"}]}"
+  export flexeraApiHost="https://api.flexera.com"
+  curl -i -H "Content-Type: application/json" -H "Authorization: Bearer ${flexeraAccesstoken}" -X PUT "${flexeraApiHost}/cred/v2/projects/${flexeraProjectId}/credentials/digest/mongodb-atlas" -d '{"password": "'"${mongoPrivateKey}"'","username": "'"${mongoPublicKey}"'","name": "MongoDB Atlas","tags": [{"key": "provider", "value": "mongodb_atlas"}]}'
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) with roles that allow viewing billing centers and creating, uploading, and committing CBI bill uploads.
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `csm_bill_upload_admin`
 
@@ -49,9 +51,9 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 ### Additional Requirements
 
-Create the MongoDB CBI endpoint before running this policy template. Use the endpoint ID as the *Bill Connect ID* value. The endpoint's displayed cloud vendor name can be set to MongoDB (or another name suitable for your organization).
+Create the MongoDB CBI endpoint before running this policy template by following the [Flexera Common Bill Ingestion setup instructions](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/). Use the endpoint ID as the *Flexera CBI Endpoint* value. The endpoint's displayed cloud vendor name can be set to MongoDB (or another name suitable for your organization).
 
-The generated `Tags` field preserves MongoDB Atlas line-item tags and adds `mongo-cluster-name` when a group name or cluster name is available. Its value is `groupName.clusterName` when both are present, or the available name when only one is present. The template also adds `mongo-stitch-app-name` and `mongo-cloud-provider` when Atlas returns those values. Create matching custom tags in Flexera if you use these values for allocation. The CBI dimensions are mapped as follows: the Atlas project ID and name populate `CloudVendorAccountID`/`CloudVendorAccountName` and `ResourceGroup`; `Category` is `Database`; `ResourceType` and `UsageType` use the Atlas SKU; `ResourceID` uses the cluster name; and `Service` is `MongoDB Atlas`. Atlas invoice details do not provide a reliable `InstanceType` or `Region`, so those columns remain blank.
+The generated `Tags` field includes the custom tag key `mongo-cluster-name` when a group name or cluster name is available. Its value is `groupName.clusterName` when both are present, or the available name when only one is present. Create a matching custom tag in Flexera if you use this value for allocation. If your allocation model does not use this tag, adapt or remove that tag mapping in a copy of the template; the account and resource fields remain available for allocation.
 
 ## Supported Clouds
 
