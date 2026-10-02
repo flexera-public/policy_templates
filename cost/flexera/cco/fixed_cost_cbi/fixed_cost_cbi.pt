@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.3.4",
+  version: "0.3.8",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -179,7 +179,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -187,7 +187,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -195,12 +195,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -232,6 +240,10 @@ script "js_dates", type: "javascript" do
     date.setDate(date.getDate() - 1)
 
     if (param_month_billing == 'Previous Month') {
+      // Set the day to the 1st before subtracting a month so that the calculation
+      // cannot roll over into the wrong month when the current day-of-month (e.g. 30 or 31)
+      // does not exist in the target month (e.g. February)
+      date.setDate(1)
       date.setMonth(date.getMonth() - 1)
     }
 
@@ -308,6 +320,15 @@ script "js_cost_csv", type: "javascript" do
   parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags", "param_amortization"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_metadata_cloud_vendor_account_id = param_metadata_cloud_vendor_account_id.trim()
+  param_metadata_cloud_vendor_account_name = param_metadata_cloud_vendor_account_name.trim()
+  param_metadata_category = param_metadata_category.trim()
+  param_metadata_service = param_metadata_service.trim()
+  param_metadata_region = param_metadata_region.trim()
+  param_metadata_resourcetype = param_metadata_resourcetype.trim()
+  param_metadata_instancetype = param_metadata_instancetype.trim()
+  param_metadata_tags = _.compact(_.map(param_metadata_tags, function(item) { return item.trim() }))
   // Set static field values. These will be the same for every entry in the CSV file
   CloudVendorAccountID = param_metadata_cloud_vendor_account_id.trim().replace(/,/g, '_')
   CloudVendorAccountName = param_metadata_cloud_vendor_account_name.trim().replace(/,/g, '_')
@@ -397,6 +418,8 @@ script "js_cbi_endpoint_id", type: "javascript" do
   parameters "param_cbi_endpoint", "param_cbi_cloud_vendor"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
   result = param_cbi_endpoint
 
   if (param_cbi_endpoint == "") {
@@ -439,6 +462,8 @@ script "js_to_create_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
   result = []
 
   existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
@@ -618,7 +643,7 @@ end
 
 datasource "ds_cbi_commit_bill_upload" do
   request do
-    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_file, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -632,14 +657,14 @@ datasource "ds_cbi_commit_bill_upload" do
 end
 
 script "js_cbi_commit_bill_upload", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_file", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], '/operations'].join(''),
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_upload_file["billUploadId"], '/operations'].join(''),
     headers: { "User-Agent": "RS Policies" },
     body_fields: {"operation": "commit" }
   }
@@ -654,6 +679,8 @@ script "js_incident", type: "javascript" do
   parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_cost_csv", "param_cost_amount", "param_cbi_cloud_vendor"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
   result = [{
     policy_name: ds_applied_policy['name'],
     id: ds_cbi_commit_bill_upload['id'],

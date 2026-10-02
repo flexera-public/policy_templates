@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.7.3",
+  version: "5.8.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -42,7 +42,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_downsize_multiple" do
@@ -240,7 +240,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -248,7 +248,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -256,12 +256,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -282,7 +290,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'api')
+    host val($ds_flexera_api_hosts, "api")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -677,7 +685,7 @@ datasource "ds_region_check" do
     query 'MaxResults', '5' #Only 5 results (minimum), we just want to see which regions are accessible
     header 'User-Agent', 'RS Policies'
     header 'Content-Type', 'text/xml'
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml" # Prevent policy engine error attempting to parse response
@@ -740,6 +748,8 @@ script "js_instances", type: "javascript" do
   parameters "ds_instance_sets", "ds_aws_instance_types_map", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_filter_gpu"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -1562,6 +1572,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   underutil_list = []
   idle_list = []
 
+  underutil_analysis_message = ""
+  idle_analysis_message = ""
+  lookback_message = ""
+  disclaimer = ""
+
   // Only bother doing anything if we're checking at least one metric
   if (checking_cpu || checking_mem) {
     // Loop through metrics data, appending cost data
@@ -1583,10 +1598,13 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       // Determine if the instance is idle or underutilized for each category.
       // Store boolean result for later use.
-      is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
-      is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
-      is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
-      is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
+      has_cpu_value = cpu_value != null
+      has_mem_value = mem_value != null
+
+      is_idle_cpu = has_cpu_value && cpu_value < param_stats_idle_threshold_cpu_value
+      is_underutil_cpu = has_cpu_value && cpu_value < param_stats_underutil_threshold_cpu_value
+      is_idle_mem = has_mem_value && mem_value < param_stats_idle_threshold_mem_value
+      is_underutil_mem = has_mem_value && mem_value < param_stats_underutil_threshold_mem_value
 
       // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
       if (!checking_mem) { is_idle = is_idle_cpu }
@@ -1722,11 +1740,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   if (checking_cpu || checking_mem) {
-    instances_total = ds_instances.length.toString()
-    underutil_instances_total = underutil_list.length.toString()
-    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
-    idle_instances_total = idle_list.length.toString()
-    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    instances_total = ds_instances.length
+    underutil_instances_total = underutil_list.length
+    idle_instances_total = idle_list.length
+    underutil_instances_percentage = instances_total > 0 ? (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%' : '0.00%'
+    idle_instances_percentage = instances_total > 0 ? (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%' : '0.00%'
+    instances_total = instances_total.toString()
+    underutil_instances_total = underutil_instances_total.toString()
+    idle_instances_total = idle_instances_total.toString()
 
     underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
@@ -2503,7 +2524,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

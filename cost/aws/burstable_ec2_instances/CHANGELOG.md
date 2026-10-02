@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.6.2
+
+- Fixed an issue where the policy could fail to recommend a larger instance size for the smallest burstable EC2 instance types when surplus CPU credits exceeded the configured threshold.
+
+## v4.6.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.6.0
+
+- Added a region error-reporting check that surfaces a clear incident when the policy is unable to access one or more AWS regions, instead of silently omitting data from those regions.
+
+## v4.5.6
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.5.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.5.4
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

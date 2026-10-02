@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.1.9
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
+## v0.1.8
+
+- Fixed an issue where the policy could fail to calculate cost allocation percentages when total usage for the allocation period was zero.
+
+## v0.1.7
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.1.6
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.1.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.4
 
 - Updated documentation link in policy description. Functionality unchanged.

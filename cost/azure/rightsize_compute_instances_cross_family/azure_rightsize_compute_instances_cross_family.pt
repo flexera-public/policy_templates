@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -43,7 +43,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_exclusion_tags" do
@@ -255,6 +255,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -394,6 +402,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -538,6 +548,8 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -614,6 +626,8 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -672,6 +686,8 @@ script "js_azure_instances_rg_filtered", type: "javascript" do
   parameters "ds_azure_instances_status_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_instances_status_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -968,7 +984,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
           cpu_avg_count += 1
         }
 
-        // Use only maximum per interval for p95 — most conservative sizing metric
+        // Use only maximum per interval for p95 - most conservative sizing metric
         if (item["maximum"] != undefined && item["maximum"] != null) {
           cpu_all_stats.push(item["maximum"])
         }
@@ -987,7 +1003,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
 
     if (mem_stats != null && mem_stats != undefined) {
       _.each(mem_stats, function(item) {
-        // minimum available % = maximum used % — most conservative sizing metric
+        // minimum available % = maximum used % - most conservative sizing metric
         if (item["minimum"] != undefined && item["minimum"] != null) {
           mem_all_stats.push(100 - item["minimum"])
         }
@@ -1261,7 +1277,7 @@ script "js_azure_available_sizes", type: "javascript" do
     // Only consider VM SKUs; the Resource SKUs API returns all compute resource types
     if (size['resourceType'] !== 'virtualMachines') { return }
 
-    // Exclude SKUs with a NotAvailableForSubscription restriction — these cannot be deployed
+    // Exclude SKUs with a NotAvailableForSubscription restriction - these cannot be deployed
     var is_restricted = _.any(size['restrictions'] || [], function(r) {
       return r['reasonCode'] === 'NotAvailableForSubscription'
     })
@@ -1428,7 +1444,7 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     return false
   }
 
-  // Tiered idle CPU threshold based on vCPU count — larger instances need less % utilization
+  // Tiered idle CPU threshold based on vCPU count - larger instances need less % utilization
   // to constitute "real" usage, so the threshold scales down as core count grows.
   function getIdleCpuThreshold(vcpus) {
     if (vcpus <= 2) { return 5 }
@@ -1478,7 +1494,7 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     var net_avg_bytes_per_day = (param_stats_lookback > 0) ? (net_total_bytes / param_stats_lookback) : 0
     var is_net_idle = !has_net_data || (net_avg_bytes_per_day < network_idle_threshold_bytes)
 
-    // Skip VMs with no CPU metrics — we cannot determine idle state or rightsizing requirements
+    // Skip VMs with no CPU metrics - we cannot determine idle state or rightsizing requirements
     if (!has_cpu_data) { return }
 
     // Tags
@@ -2319,7 +2335,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

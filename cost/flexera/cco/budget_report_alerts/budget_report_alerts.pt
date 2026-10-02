@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.6.0",
+  version: "3.7.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -95,6 +95,15 @@ parameter "param_incident_csv" do
   category "Incident Settings"
   label "Attach CSV To Incident Email"
   description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying budget data within the body of the incident, in addition to the summary details. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email."
   allowed_values "true", "false"
   default "false"
 end
@@ -210,6 +219,8 @@ script "js_filters", type: "javascript" do
   parameters "ds_dimensions", "param_filter"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_filter = _.compact(_.map(param_filter, function(item) { return item.trim() }))
   result = {}
   dimensions = _.invert(ds_dimensions)
 
@@ -255,6 +266,8 @@ script "js_filtered_budgets", type: "javascript" do
   parameters "ds_budgets", "param_budget_name_id"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_budget_name_id = param_budget_name_id.trim()
   current_month = new Date().toISOString().substring(0, 7)
 
   result = _.filter(ds_budgets, function(budget) {
@@ -366,15 +379,65 @@ EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, $param_incident_data_table, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "param_incident_data_table", "f1_app_host"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_budget_name_id = param_budget_name_id.trim()
+  param_filter = _.compact(_.map(param_filter, function(item) { return item.trim() }))
   function convert_bc_name(id) {
     return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
+  }
+
+  function format_number(number, separator, symbol) {
+    // Round to 2 decimal places first, then format the sign, symbol, and digits separately so
+    // that negative values (e.g. a negative Remaining Amount) group and display correctly (e.g.
+    // "-$500.26" instead of "$-,500.26") and every value always shows exactly 2 decimal places,
+    // per local currency convention. Some currencies (e.g. BRL, ARS, CLP) use "." as the
+    // thousands separator, so the decimal point must switch to "," in that case to avoid
+    // ambiguous output like "10.345.123.33".
+    number = Math.round((number || 0) * 100) / 100
+    negative = number < 0
+    parts = Math.abs(number).toFixed(2).split(".")
+    formatted_number = parts[0]
+    decimal_point = separator == "." ? "," : "."
+
+    if (separator) {
+      with_separator = ""
+
+      for (var i = 0; i < formatted_number.length; i++) {
+        if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+        with_separator += formatted_number[i]
+      }
+
+      formatted_number = with_separator
+    }
+
+    formatted_number = (symbol || "") + formatted_number + decimal_point + parts[1]
+    if (negative) { formatted_number = "-" + formatted_number }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| Group | Budget | Actual Spend | Projected (prorated) Spend | Remaining Amount | % of Budget Spent | Details |"
+    divider = "| --- | ---: | ---: | ---: | ---: | ---: | --- |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item['group'] +
+        " | " + format_number(item['budgetAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['spendAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['forecastedAmount'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + format_number(item['remaining'], ds_currency['separator'], ds_currency['symbol']) +
+        " | " + (item['spentPercent'] || "") +
+        " | " + item['details'] + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
   }
 
   function forecasted(curr) {
@@ -432,7 +495,7 @@ script "js_aggregated", type: "javascript" do
       item['monthYear'] = monthYear
       item['forecasted'] = ""
       item['currency'] = ds_currency['code']
-      item['forecastedAmount'] = item['spendAmount']
+      item['forecastedAmount'] = Math.round(item['spendAmount'] * 100) / 100
       date = new Date(item['timestamp'])
       item['date'] = date.toLocaleDateString()
       now = new Date()
@@ -517,6 +580,11 @@ script "js_aggregated", type: "javascript" do
 
   if (result['exceeded'].length > 0) { result['exceeded'][0]['message'] = csv_message }
   if (result['forecasted'].length > 0) { result['forecasted'][0]['message'] = csv_message }
+
+  if (param_incident_data_table == "true") {
+    if (result['exceeded'].length > 0) { result['exceeded'][0]['data_table'] = build_data_table(result['exceeded']) }
+    if (result['forecasted'].length > 0) { result['forecasted'][0]['data_table'] = build_data_table(result['forecasted']) }
+  }
 EOS
 end
 
@@ -566,7 +634,7 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
 
 {{ if parameters.param_filter }}
-Target Groups: \n
+Target Groups:
 {{ range parameters.param_filter }}
   * **{{ . }}**
 {{ end }}
@@ -575,6 +643,12 @@ Target Groups: \n
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 
 {{ with index data 0 }}{{ .message }}{{ end }}
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ with index data 0 }}{{ .data_table }}{{ end }}
+{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email
@@ -618,7 +692,7 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
 
 {{ if parameters.param_filter }}
-Target Groups: \n
+Target Groups:
 {{ range parameters.param_filter }}
   * **{{ . }}**
 {{ end }}
@@ -627,6 +701,12 @@ Target Groups: \n
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 
 {{ with index data 0 }}{{ .message }}{{ end }}
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ with index data 0 }}{{ .data_table }}{{ end }}
+{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email

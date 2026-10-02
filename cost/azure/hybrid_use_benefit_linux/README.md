@@ -19,7 +19,7 @@ This policy template identifies Azure Linux virtual machines running SUSE Linux 
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the virtual machine has Azure Hybrid Use Benefit applied to it.
 
-- The `Estimated Monthly Savings` is calculated as `license_hourly_price × 24 × 365.25 / 12`, where `license_hourly_price` is the hourly Linux license cost sourced from the Azure Retail Prices API and stored in [azure_linux_license_pricing.json](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_linux_license_pricing.json).
+- The `Estimated Monthly Savings` is calculated as `license_hourly_price x 24 x 365.25 / 12`, where `license_hourly_price` is the hourly Linux license cost sourced from the Azure Retail Prices API and stored in [azure_linux_license_pricing.json](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_linux_license_pricing.json).
 - For **SUSE** virtual machines, the `SUSE Linux Enterprise Server Standard` product is used. The license tier is determined by the number of vCPUs: `1-2 vCPU` ($0.065/hr), `3-4 vCPU` ($0.125/hr), or `5+ vCPU` ($0.15/hr).
 - For **RHEL** virtual machines, the `Red Hat Enterprise Linux` product is used. The license price is looked up by the exact vCPU count; if the exact count is not in the pricing table, the nearest lower count is used.
 - The vCPU count is derived from the virtual machine's size name (e.g., `Standard_D2s_v3` = 2 vCPUs). If the count cannot be determined, the `Estimated Monthly Savings` will be 0 and the virtual machine will still appear in the incident.

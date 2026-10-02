@@ -1,5 +1,26 @@
 # Changelog
 
+## v6.2.2
+
+- Fixed an issue where the incident summary could display "NaN%" instead of a valid percentage when no EC2 instances were found to analyze.
+- Fixed an issue where the policy could fail to generate an incident for stopped instances that do not have a private DNS name assigned.
+
+## v6.2.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v6.2.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+
+## v6.1.7
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v6.1.6
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v6.1.5
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

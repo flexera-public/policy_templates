@@ -1,6 +1,6 @@
 source "https://rubygems.org"
 
-gem "json", "~> 2.10"
+gem "json", "~> 2.19"
 gem "jsonlint", "~> 0.4"
 gem "yaml", "~> 0.4"
 gem "yaml-lint", "~> 0.1"

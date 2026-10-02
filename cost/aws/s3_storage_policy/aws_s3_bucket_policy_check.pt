@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "4.2.5",
+  version: "4.2.12",
   provider: "AWS",
   service: "Storage",
   policy_set: "Object Store Optimization",
@@ -19,6 +19,7 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   type "list"
   category "Policy Settings"
@@ -131,7 +132,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -139,7 +140,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -147,12 +148,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -218,7 +227,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -396,7 +405,7 @@ datasource "ds_region_check" do
     host join(['s3.', val(iter_item, 'region'), '.amazonaws.com'])
     path "/"
     header "User-Agent", "RS Policies"
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml"
@@ -450,16 +459,15 @@ script "js_aws_buckets_sanitized", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.map(ds_aws_buckets_with_region, function(bucket) {
-    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
-      region = 'us-east-1'
-      host = 's3.amazonaws.com'
-    } else if (bucket['region'] == 'EU') {
-      region = 'eu-west-1'
-      host = 's3-eu-west-1.amazonaws.com'
-    } else {
+    var region = 'us-east-1'
+
+    if (typeof(bucket['region']) == 'string' && bucket['region'].trim() != '') {
       region = bucket['region'].toLowerCase().trim()
-      host = 's3-' + region + '.amazonaws.com'
     }
+
+    if (region == 'eu') { region = 'eu-west-1' }
+
+    var host = 's3.' + region + '.amazonaws.com'
 
     return {
       name: bucket['name'],
@@ -529,6 +537,8 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
   parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   // Logic to ensure any buckets skipped because of a 404 response due to no tags
   // are still included in the final result
   tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
@@ -572,11 +582,11 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.filter(aws_buckets, function(bucket) {
+    result = _.reject(aws_buckets, function(bucket) {
       resource_tags = {}
 
-      if (typeof(resource['tags']) == 'object') {
-        _.each(resource['tags'], function(tag) {
+      if (typeof(bucket['tags']) == 'object') {
+        _.each(bucket['tags'], function(tag) {
           resource_tags[tag['key']] = tag['value']
         })
       }
@@ -906,7 +916,7 @@ script "js_combined_bucket_info", type: "javascript" do
 
     var savings = null;
     if (_.isNumber(ds_costs_grouped_by_resource_id[ bucket['name'] ])) {
-      // These figures come from AWS’s official page
+      // These figures come from AWS's official page
       // https://aws.amazon.com/s3/storage-classes/intelligent-tiering/
       //     40% savings for infrequent access
       //     68% savings for archive access
@@ -988,7 +998,7 @@ EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "tags", "savings"
+    hash_exclude "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -1093,7 +1103,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

@@ -1,6 +1,6 @@
 # Policy Permissions List
 
-This directory contains auto-generated files listing all permissions required by policy templates in the catalog. **Do not manually modify these files** — they are regenerated automatically.
+This directory contains auto-generated files listing all permissions required by policy templates in the catalog. **Do not manually modify these files** - they are regenerated automatically.
 
 See [`tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) for the scripts that produce these files.
 

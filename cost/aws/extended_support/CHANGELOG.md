@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.3.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v1.3.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v1.2.3
+
+- Updated policy logic for internal consistency; no functional or user-facing changes.
+
+## v1.2.2
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v1.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v1.2.0
+
+- Updated cost estimation to reflect AWS's tiered Extended Support pricing: a lower rate for years 1-2 and a higher rate starting in year 3, selected automatically based on the current date.
+- Estimated savings for Multi-AZ RDS instances now account for both the primary and standby instance vCPUs, since AWS bills extended support for both.
+- Added a `Rate Tier` field to the incident export showing which pricing tier applies to each resource.
+- ElastiCache Extended Support is now correctly modeled as a percentage premium on the node's on-demand rate rather than a flat node-hour fee.
+- MariaDB instances are no longer reported by this policy; they are not eligible for AWS RDS Extended Support.
+
 ## v1.1.0
 
 - Updated incident/export region reporting to use AWS API region identifiers (for example, `us-east-1`) for consistency with other AWS optimization policy sets.

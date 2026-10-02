@@ -4,7 +4,7 @@
 
 This policy template reports AWS SageMaker real-time inference endpoints in `InService` status that have zero or near-zero invocations over a configurable lookback window. Idle endpoints represent ongoing waste because dedicated compute instances are billed continuously by the hour regardless of whether predictions are being served. The policy optionally deletes reported endpoints after manual or automatic approval.
 
-Endpoints configured for [SageMaker Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) are excluded from results — serverless endpoints do not provision dedicated instances and incur no continuous compute cost, so there is no spend to eliminate by deleting them.
+Endpoints configured for [SageMaker Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) are excluded from results - serverless endpoints do not provision dedicated instances and incur no continuous compute cost, so there is no spend to eliminate by deleting them.
 
 ## How It Works
 
@@ -16,7 +16,7 @@ Endpoints configured for [SageMaker Serverless Inference](https://docs.aws.amazo
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the idle SageMaker endpoint is deleted.
 
-- The `Estimated Monthly Savings` is calculated by summing, across all production variants, the product of the on-demand hourly rate × instance count × 730.5 (average hours per month). This equals the full monthly cost of keeping the endpoint running.
+- The `Estimated Monthly Savings` is calculated by summing, across all production variants, the product of the on-demand hourly rate x instance count x 730.5 (average hours per month). This equals the full monthly cost of keeping the endpoint running.
 - On-demand hourly rates are sourced from [`data/aws/aws_sagemaker_pricing.json`](../../../data/aws/aws_sagemaker_pricing.json), which is generated weekly from the [AWS Price List API](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/price-changes.html).
 - If a production variant's instance type is not present in the pricing data, its cost contribution is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -26,7 +26,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Account Number* - Leave blank; this is for automated use with Meta Policies. See README for more details.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 0.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1.
 - *Statistic Lookback Period* - How many days back to look at CloudWatch invocation data. Minimum: 1, Maximum: 90. Default: 30.
 - *Minimum Invocations Threshold* - Endpoints with total invocations at or below this number over the lookback period are considered idle. Set to 0 (default) to report only endpoints with zero invocations. Increase this value to also capture near-zero usage endpoints.
 - *Allow/Deny Regions* - Allow or Deny entered regions. See the README for more details.

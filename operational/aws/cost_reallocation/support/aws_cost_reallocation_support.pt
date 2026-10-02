@@ -8,7 +8,7 @@ severity "critical"
 default_frequency "daily"
 category "Operational"
 info(
-  version: "0.1.2",
+  version: "0.1.6",
   provider: "AWS",
   service: "Support",
   category: "Operational",
@@ -97,6 +97,10 @@ script "js_flexera_api_hosts", type: "javascript" do
     "api.optima-apac.flexeraeng.com": {
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com"
+    },
+    "api.optima.flexeraengdev.com": {
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com"
     }
   }
 
@@ -250,7 +254,7 @@ end
 datasource "ds_rule_based_dimensions" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
   end
   result do
@@ -289,7 +293,7 @@ datasource "ds_rule_based_dimensions_rules" do
   iterate $ds_rule_based_dimensions_effectiveAt_list
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effectiveAt")])
   end
 end
@@ -328,7 +332,7 @@ datasource "ds_tag_dimensions_used_in_rbd_rules_tag_key" do
   iterate $ds_tag_dimensions_used_in_rbd_rules
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions/", iter_item])
   end
   result do
@@ -794,7 +798,12 @@ script "js_calculated_proportions", type: "javascript" do
   // Calculate proportion of shared cost to other costs
   _.each(_.keys(ds_cleaned_costs['other_costs']), function(other_cost_day) {
     _.each(ds_cleaned_costs['other_costs'][other_cost_day], function(other_cost) {
-      var allocation_percentage = other_cost['costs'] / ds_cleaned_costs['other_costs_total']
+      // Guard against a zero total (possible if all other costs for the period are $0, e.g. free tier
+      // usage) which would otherwise produce a NaN allocation_percentage that bypasses the != 0 check below
+      var allocation_percentage = 0
+      if (ds_cleaned_costs['other_costs_total'] != 0) {
+        allocation_percentage = other_cost['costs'] / ds_cleaned_costs['other_costs_total']
+      }
       if (allocation_percentage >= 1) {
         console.log("Warning: allocation_percentage >= 1.  This is not expected.") // Excluded from console.log test
         console.log("vendor_account=" + other_cost['vendor_account'] + " costs=" + other_cost['costs'] + " total_cost_for_day=" + total_cost_for_day + " allocation_percentage=" + allocation_percentage) // Excluded from console.log test
@@ -1171,19 +1180,19 @@ end
 
 datasource "ds_cbi_commit" do
   request do
-    run_script $js_cbi_commit, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit, $ds_cbi_upload_file, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_commit", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_file", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_create_bill_upload["id"] + '/operations',
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_upload_file["billUploadId"] + '/operations',
     headers: {
       "User-Agent": "RS Policies",
     },

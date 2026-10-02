@@ -1,5 +1,34 @@
 # Changelog
 
+## v7.0.0
+
+- Fixed a false-positive issue where databases using connection pooling or persistent connections could be incorrectly recommended for deletion.
+- Serverless databases are now excluded from the unused determination, since they legitimately read near-zero CPU while auto-paused.
+
+## v6.4.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v6.4.2
+
+- Fixed an issue where the incident summary could display an invalid percentage value when there were no SQL databases found to analyze.
+
+## v6.4.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v6.4.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v6.3.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v6.3.2
+
+- Expanded the incident disclaimer to explain the difference between CPU metrics (vCore-based databases) and DTU metrics (DTU-based databases) shown in the incident table
+
 ## v6.3.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

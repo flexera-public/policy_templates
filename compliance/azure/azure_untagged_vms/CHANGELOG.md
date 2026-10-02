@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v2.0.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v2.0.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v2.0.1
 
 - Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.

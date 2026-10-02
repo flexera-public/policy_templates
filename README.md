@@ -536,6 +536,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Container Cost Visibility Setup](./automation/flexera/spot/container_cost_visibility)
   * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
+  * [Flexera Billing Center Report](./operational/flexera/cco/bc_report)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
   * [Flexera CCO Additional Dimensions](./automation/flexera/additional_dimensions)
   * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)

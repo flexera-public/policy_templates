@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.2.7",
+  version: "3.3.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -60,7 +60,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_exclusion_tags" do
@@ -189,7 +189,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -197,7 +197,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -205,12 +205,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -231,7 +239,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -581,7 +589,7 @@ datasource "ds_region_check" do
     query 'MaxResults', '5'
     header 'User-Agent', 'RS Policies'
     header 'Content-Type', 'text/xml'
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml"
@@ -636,6 +644,8 @@ script "js_instances", type: "javascript" do
   parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -873,6 +883,8 @@ script "js_superseded_instances", type: "javascript" do
     superseded_type = null
     instance_type_price = null
     superseded_type_price = null
+    instance_type_price_map = null
+    superseded_type_price_map = null
     instance_size_rank = null
     superseded_size_rank = null
     savings = 0.0
@@ -905,9 +917,13 @@ script "js_superseded_instances", type: "javascript" do
       instance_size_rank = ds_aws_instance_type_map[instance_type]['size_rank']
       superseded_table = ds_aws_instance_type_map[instance_type]['superseded']
 
-      if (typeof(superseded_table) == 'object') {
+      if (typeof(superseded_table) == 'object' && superseded_table != null) {
         superseded_type = superseded_table[superseded_parameter]
-        superseded_size_rank = ds_aws_instance_type_map[superseded_type]['size_rank']
+
+        if (typeof(superseded_type) == 'string' && ds_aws_instance_type_map[superseded_type] != undefined) {
+          superseded_size_rank = ds_aws_instance_type_map[superseded_type]['size_rank']
+        }
+
         recommendationType = param_instance_type
       }
     }
@@ -918,7 +934,7 @@ script "js_superseded_instances", type: "javascript" do
       if (ds_aws_instance_type_map[instance_type]) {
         superseded_table = ds_aws_instance_type_map[instance_type]['superseded']
 
-        if (typeof(superseded_table) == 'object') {
+        if (typeof(superseded_table) == 'object' && superseded_table != null) {
           superseded_type = superseded_table[superseded_parameter]
           recommendationType = param_fallback_instance_type
         }
@@ -1078,7 +1094,7 @@ script "js_superseded_instances", type: "javascript" do
 
   api_disclaimer = "\n\n"
 
-  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+  if ((ds_currency_conversion.length == 0 || ds_currency_conversion[0]['to'] == undefined) && ds_currency['code'] != 'USD') {
     api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\n\n"
   }
 
@@ -1531,7 +1547,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

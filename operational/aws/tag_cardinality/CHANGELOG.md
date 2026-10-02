@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.3.5
+
+- Combined reports now skip child incidents that do not include result rows instead of failing intermittently.
+
+## v3.3.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v3.3.3
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v3.3.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.3.1
 
 - Updated AWS Organizations API calls to ensure compatibility with upcoming changes to AWS APIs. Functionality unchanged.

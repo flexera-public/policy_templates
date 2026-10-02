@@ -1,5 +1,31 @@
 # Changelog
 
+## v5.8.2
+
+- Fixed an issue where instances without CPU or memory utilization data could still be reported as idle or underutilized.
+- Fixed an issue where percentage summaries could show invalid values when no EC2 instances matched the policy scope.
+- Fixed an issue where the policy could fail during incident generation when all CPU and memory thresholds were disabled.
+
+## v5.8.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v5.8.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v5.7.6
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v5.7.5
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v5.7.4
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.7.3
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

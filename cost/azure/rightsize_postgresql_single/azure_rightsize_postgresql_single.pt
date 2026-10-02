@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.3",
   provider: "Azure",
   service: "PostgreSQL",
   policy_set: "Rightsize Database Instances",
@@ -43,7 +43,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -252,7 +252,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -260,7 +260,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -268,12 +268,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -440,6 +448,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -533,6 +543,8 @@ script "js_azure_postgresql_tag_filtered", type: "javascript" do
   parameters "ds_azure_postgresql_system_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -609,6 +621,8 @@ script "js_azure_postgresql_region_filtered", type: "javascript" do
   parameters "ds_azure_postgresql_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_postgresql_tag_filtered, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -629,6 +643,8 @@ script "js_azure_postgresql_rg_filtered", type: "javascript" do
   parameters "azure_postgresql_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
   if (param_resource_groups_list.length > 0) {
     result = _.filter(azure_postgresql_region_filtered, function(resource) {
       rg = resource['resourceGroup']
@@ -876,12 +892,13 @@ script "js_merged_metrics", type: "javascript" do
                 instance['newResourceType'] = ds_azure_postgresql_resize_map[instance['skuTier']][instance['skuName']]['down']
 
                 if (param_downsize_multiple == "Yes") {
-                  type = instance['skuName'] + '_' + instance['newResourceType']
+                  skuPrefix = instance['skuName'].substring(0, instance['skuName'].lastIndexOf('_') + 1)
+                  type = skuPrefix + instance['newResourceType']
 
-                  while (typeof(ds_azure_postgresql_resize_map[instance['skuTier']][type]['down']) == 'string' && cpu_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
+                  while (ds_azure_postgresql_resize_map[instance['skuTier']][type] != undefined && typeof(ds_azure_postgresql_resize_map[instance['skuTier']][type]['down']) == 'string' && cpu_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
                     cpu_test_value = cpu_test_value * 2
                     instance['newResourceType'] = ds_azure_postgresql_resize_map[instance['skuTier']][type]['down']
-                    type = instance['skuName'] + '_' + instance['newResourceType']
+                    type = skuPrefix + instance['newResourceType']
                   }
                 }
 
@@ -1647,7 +1664,7 @@ define downsize_server($instance, $param_azure_endpoint) return $response do
     query_strings: { "api-version": "2017-12-01" },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "sku": {
@@ -1698,7 +1715,7 @@ define delete_server($instance, $param_azure_endpoint) return $response do
     query_strings: { "api-version": "2017-12-01" },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1734,7 +1751,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

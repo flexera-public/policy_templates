@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.4.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v4.4.2
+
+- Fixed an issue where non-USD users would incorrectly see a currency conversion API malfunction warning in the incident details even when currency conversion was working correctly.
+
+## v4.4.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.4.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v4.3.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.3.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

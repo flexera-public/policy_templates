@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.0
+
+- Added `Date Purchased`, `Bill Source`, `Vendor Account`, and `Vendor Account Name` fields to the incident output.
+
+## v0.4.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.4.4
 
 - Fixed issue with incident table that cause policy execution to fail

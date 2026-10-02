@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0.12",
+  version: "4.0.17",
   provider: "AWS",
   service: "Storage",
   policy_set: "Object Store Optimization",
@@ -155,7 +155,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -163,7 +163,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -171,12 +171,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -197,7 +205,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -277,6 +285,8 @@ script "js_aws_buckets_name_filtered", type: "javascript" do
   parameters "ds_get_aws_buckets", "param_bucket_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bucket_list = _.compact(_.map(param_bucket_list, function(item) { return item.trim() }))
   if (param_bucket_list.length > 0) {
     result = _.filter(ds_get_aws_buckets, function(bucket) {
       return _.contains(param_bucket_list, bucket['name'])
@@ -336,16 +346,15 @@ script "js_aws_buckets", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.map(ds_aws_buckets_region_filtered, function(bucket) {
-    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
-      region = 'us-east-1'
-      host = 's3.amazonaws.com'
-    } else if (bucket['region'] == 'EU') {
-      region = 'eu-west-1'
-      host = 's3-eu-west-1.amazonaws.com'
-    } else {
+    var region = 'us-east-1'
+
+    if (typeof(bucket['region']) == 'string' && bucket['region'].trim() != '') {
       region = bucket['region'].toLowerCase().trim()
-      host = 's3-' + region + '.amazonaws.com'
     }
+
+    if (region == 'eu') { region = 'eu-west-1' }
+
+    var host = 's3.' + region + '.amazonaws.com'
 
     return {
       name: bucket['name'],
@@ -728,7 +737,7 @@ define update_object($object) return $response do
     href: $href,
     host: $host,
     headers: {
-      'content-type': 'application/x-amz-json-1.1',
+      'Content-Type': 'application/x-amz-json-1.1',
       'x-amz-copy-source': $copy_source,
       'x-amz-storage-class': $storage_class
     }
@@ -831,7 +840,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.7",
+  version: "0.6.2",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -70,7 +70,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -217,7 +217,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -225,7 +225,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -233,12 +233,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -259,7 +267,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -555,7 +563,7 @@ datasource "ds_region_check" do
     query 'MaxResults', '5'
     header 'User-Agent', 'RS Policies'
     header 'Content-Type', 'text/xml'
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml"
@@ -710,6 +718,8 @@ script "js_volumes_type_filtered", type: "javascript" do
   parameters "ds_volumes_list", "param_exclusion_types"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_types = _.compact(_.map(param_exclusion_types, function(item) { return item.trim() }))
   exclusion_types = _.map(param_exclusion_types, function(item) { return item.toLowerCase().trim() })
 
   result = _.reject(ds_volumes_list, function(volume) {
@@ -726,6 +736,8 @@ script "js_volumes_tag_filtered", type: "javascript" do
   parameters "ds_volumes_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -1137,6 +1149,8 @@ script "js_underutilized_volumes", type: "javascript" do
       // Can only be calculated if the volume has existing IOPS to adjust
       if (volume["iops"] > 0) {
         volume["new_iops_percent_change"] = parseFloat((((volume["new_iops"] - parseInt(volume['iops'])) / parseInt(volume['iops'])) * 100).toFixed(2))
+      } else {
+        volume["new_iops_percent_change"] = 0
       }
       volume["message"] = volume["utilized_ops_percent"].toString()+"% utilization of read/write operations detected during lookback period which is below the threshold of "+param_utilization_threshold+"%."
       volume["message"] += " Recommended IOPS: "+volume["new_iops"]+" ("+volume["new_iops_percent_change"]+"% change)."
@@ -2081,7 +2095,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

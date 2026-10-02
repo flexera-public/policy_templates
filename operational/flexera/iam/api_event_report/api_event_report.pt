@@ -8,10 +8,11 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.3",
   provider: "Flexera",
   service: "Identity & Access Management",
-  policy_set: "Identity & Access Management"
+  policy_set: "Identity & Access Management",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -135,7 +136,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -143,7 +144,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -151,12 +152,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -226,12 +235,14 @@ script "js_api_events_url_filtered", type: "javascript" do
   parameters "ds_api_events", "param_url_allow_or_deny", "param_url_filter_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_url_filter_list = _.compact(_.map(param_url_filter_list, function(item) { return item.trim() }))
   if (param_url_filter_list.length > 0) {
     result = _.filter(ds_api_events, function(event) {
       include_event = false
 
       _.each(param_url_filter_list, function(item) {
-        if (event['requestPath'].indexOf(item) != -1) { include_event = true }
+        if (event['requestPath'] != null && event['requestPath'].indexOf(item) != -1) { include_event = true }
       })
 
       if (param_url_allow_or_deny == "Deny") { include_event = !include_event }
@@ -252,6 +263,8 @@ script "js_api_events_email_filtered", type: "javascript" do
   parameters "ds_api_events_url_filtered", "param_email_allow_or_deny", "param_email_filter_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_email_filter_list = _.compact(_.map(param_email_filter_list, function(item) { return item.trim() }))
   if (param_email_filter_list.length > 0) {
     result = _.filter(ds_api_events_url_filtered, function(event) {
       include_event = false
@@ -275,7 +288,7 @@ script "js_api_events_status_filtered", type: "javascript" do
   code <<-'EOS'
   result = _.filter(ds_api_events_email_filtered, function(event) {
     include_event = false
-    code_letter = event['responseCode'].toString().substring(0, 1)
+    code_letter = event['responseCode'] == null ? '' : event['responseCode'].toString().substring(0, 1)
 
     if ((code_letter == 2 || code_letter == 3) && _.contains(param_response_type, "Good")) { include_event = true }
     if ((code_letter != 2 && code_letter != 3) && _.contains(param_response_type, "Bad")) { include_event = true }

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed an issue where the policy could fail to process API events that had no request path or no response code recorded.
+
+## v0.2.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.0
 
 - Added support for attaching CSV files to incident emails.

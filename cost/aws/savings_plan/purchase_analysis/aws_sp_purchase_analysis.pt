@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -179,6 +179,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_region" do
+  run_script $js_region, $param_region
+end
+
+script "js_region", type: "javascript" do
+  parameters "param_region"
+  result "result"
+  code <<-'EOS'
+  result = param_region.trim()
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -190,7 +202,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -198,7 +210,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -206,12 +218,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -274,7 +294,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -330,7 +350,7 @@ end
 
 datasource "ds_start_analysis" do
   request do
-    run_script $js_start_analysis, $ds_aws_account, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_region, $param_instance_family, $param_offering_id
+    run_script $js_start_analysis, $ds_aws_account, $ds_region, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_instance_family, $param_offering_id
   end
   result do
     encoding "json"
@@ -341,9 +361,12 @@ datasource "ds_start_analysis" do
 end
 
 script "js_start_analysis", type: "javascript" do
-  parameters "ds_aws_account", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_region", "param_instance_family", "param_offering_id"
+  parameters "ds_aws_account", "ds_region", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_instance_family", "param_offering_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_instance_family = param_instance_family.trim()
+  param_offering_id = param_offering_id.trim()
   option_table = {
     "No Upfront": "NO_UPFRONT",
     "Partial Upfront": "PARTIAL_UPFRONT",
@@ -411,7 +434,7 @@ script "js_start_analysis", type: "javascript" do
     body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansTargetCoverage"] = param_target_coverage
   }
 
-  if (param_region) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = param_region }
+  if (ds_region) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = ds_region }
   if (param_instance_family) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["InstanceFamily"] = param_instance_family }
   if (param_offering_id) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id }
 
@@ -587,13 +610,16 @@ EOS
 end
 
 datasource "ds_analysis_incident" do
-  run_script $js_analysis_incident, $ds_collect_analysis, $ds_currency, $ds_conditional_currency_conversion, $ds_aws_account, $ds_applied_policy, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_region, $param_instance_family, $param_offering_id, $param_incident_csv
+  run_script $js_analysis_incident, $ds_collect_analysis, $ds_currency, $ds_conditional_currency_conversion, $ds_currency_conversion, $ds_aws_account, $ds_applied_policy, $ds_region, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_instance_family, $param_offering_id, $param_incident_csv
 end
 
 script "js_analysis_incident", type: "javascript" do
-  parameters "ds_collect_analysis", "ds_currency", "ds_conditional_currency_conversion", "ds_aws_account", "ds_applied_policy", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_region", "param_instance_family", "param_offering_id", "param_incident_csv"
+  parameters "ds_collect_analysis", "ds_currency", "ds_conditional_currency_conversion", "ds_currency_conversion", "ds_aws_account", "ds_applied_policy", "ds_region", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_instance_family", "param_offering_id", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_instance_family = param_instance_family.trim()
+  param_offering_id = param_offering_id.trim()
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -640,6 +666,7 @@ script "js_analysis_incident", type: "javascript" do
 
   // Messaging for currency conversion
   currency = ds_currency['code']
+  exchange_rate = ds_currency['exchange_rate']
 
   if (ds_conditional_currency_conversion[0] != undefined) {
     currency = ds_conditional_currency_conversion[0]['from']
@@ -655,7 +682,9 @@ script "js_analysis_incident", type: "javascript" do
   }
 
   if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
-    conversion_message = "Currency values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+    conversion_message = [
+      "Currency values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+    ].join('')
   }
 
   scope_display = param_scope == "Automatic (Linked Account Credentials)" ? "Automatic (Linked Account Credentials - Inferred by AWS)" : param_scope
@@ -673,7 +702,7 @@ script "js_analysis_incident", type: "javascript" do
 
   if (param_analysis_type == "Custom Commitment") { message.push("- Hourly Commitment: ", param_hourly_commitment, "\n") }
   if (param_analysis_type == "Target Average Coverage") { message.push("- Target Coverage Percentage: ", param_target_coverage, "%\n") }
-  if (param_region) { message.push("- Region: ", param_region, "\n") }
+  if (ds_region) { message.push("- Region: ", ds_region, "\n") }
   if (param_instance_family) { message.push("- Instance Family: ", param_instance_family, "\n") }
   if (param_offering_id) { message.push("- Offering ID: ", param_offering_id, "\n") }
 
@@ -719,7 +748,7 @@ script "js_analysis_incident", type: "javascript" do
     service: service_table[param_savings_plan_type],
     scope: param_scope,
     hourly_commitment: param_hourly_commitment,
-    region: param_region,
+    region: ds_region,
     instance_family: param_instance_family,
     offering_id: param_offering_id,
     policy_name: ds_applied_policy['name'],

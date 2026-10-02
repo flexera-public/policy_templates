@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.9.2
+
+- Fixed an issue where the policy could fail with an error when generating shared-scope recommendations and none of the in-scope subscriptions had eligible usage.
+- Fixed an issue where the estimated break-even period could show an invalid value for recommendations with no on-demand cost baseline to compare against.
+
+## v4.9.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.9.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v4.8.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.8.0
 
 - Added `Any` option to `Reservation Term` parameter to return combined results for both 1 Year and 3 Year term lengths

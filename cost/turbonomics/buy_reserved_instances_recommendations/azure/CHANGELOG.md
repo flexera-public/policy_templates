@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.11
+
+- Fixed an issue where the policy could fail to generate reserved instance purchase recommendations when utilization data was missing for a recommendation.
+
+## v0.3.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.3.9
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
+## v0.3.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+
 ## v0.3.7
 
 - Updated documentation link in policy description. Functionality unchanged.

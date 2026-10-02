@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
+## v0.1.5
+
+- Fixed an issue where reallocated support costs could be calculated incorrectly for a billing period in which the rest of the organization had no other recorded costs.
+
+## v0.1.4
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.1.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

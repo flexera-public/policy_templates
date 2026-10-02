@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "1.1.5",
+  version: "1.1.8",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report",
@@ -115,7 +115,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -123,7 +123,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -131,12 +131,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -180,6 +188,8 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -228,8 +238,11 @@ script "js_usage_data", type: "javascript" do
   parameters "ds_billing_centers_filtered", "param_regions_allow_or_deny", "param_regions_list", "param_months_back", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   // Get Start and End dates
   start_date = new Date()
+  start_date.setDate(1)
   start_date.setMonth(start_date.getMonth() - param_months_back)
   start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
 
@@ -423,6 +436,8 @@ script "js_chart_creation", type: "javascript" do
   parameters "ds_instance_units_per_family", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list", "param_unit_time", "param_unit_instance", "param_months_back"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   instance_unit = { "Normalized Units (NFUs)": "NFU", "vCPUs": "vCPU", "Memory (GiB)": "Memory (GiB)" }
 
   // Get list of months from data and create chart X axis labels
@@ -480,6 +495,18 @@ script "js_chart_creation", type: "javascript" do
       months_back: param_months_back
     }
   })
+
+  // If there is no usage data, add a placeholder row so the incident can still be generated
+  if (result.length == 0) {
+    result.push({
+      month: "",
+      instance_family: "",
+      total_instance_units: "",
+      time_unit: param_unit_time,
+      instance_unit: instance_unit[param_unit_instance],
+      months_back: param_months_back
+    })
+  }
 
   result[0]['chart_dimensions'] = chart
   result[0]['policy_name'] = ds_applied_policy['name']

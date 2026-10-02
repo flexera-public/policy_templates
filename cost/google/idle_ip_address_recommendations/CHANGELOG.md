@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.6.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v4.6.2
+
+- Fixed an issue where the policy could fail to calculate savings and stop processing recommendations for a project or region if a specific idle IP address recommendation did not include cost duration information.
+
+## v4.6.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v4.5.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.5.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

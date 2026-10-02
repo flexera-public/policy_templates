@@ -35,7 +35,8 @@ Cloud Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd
 
 ### Policy Settings
 
-- *Effective Date* - Year/month you want rules to start applying in YYYY-MM format. Default: `2020-01`.
+- *Effective Date* - Year/month you want rules to start applying in YYYY-MM format. Default: `2020-01`. Only used when *Effective Date Mode* is set to `Static`.
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs. Default: `Static`.
 - *Lowercase Values* - Whether to normalize all RBD output values by converting them to lowercase. Prevents case-collision rejections from the API. Default: `No`.
 - *RBD ID Filter* - If non-empty, only process the listed RBD column IDs from the CSV. Useful for splitting large CSVs across multiple applied policies to avoid BSON size limits.
 - *RBD Name Overrides* - Optional list of RBD ID to display name mappings in `id=Name` format. Example: `rbd_bu=Business Unit`. When empty, display names are auto-derived from the RBD ID.
@@ -67,8 +68,8 @@ These settings are only used when Drive ID is left empty.
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Microsoft Graph Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) (*provider=azure_graph*) which has the following Microsoft Graph API permissions:
-  - `Files.Read.All` (Application permission) — required for all modes
-  - `Sites.Read.All` (Application permission) — required only for SharePoint mode
+  - `Files.Read.All` (Application permission) - required for all modes
+  - `Sites.Read.All` (Application permission) - required only for SharePoint mode
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
@@ -76,7 +77,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-### OneDrive Mode — Finding Your Drive ID
+### OneDrive Mode - Finding Your Drive ID
 
 To find your OneDrive drive ID, you can use the Microsoft Graph Explorer:
 
@@ -88,7 +89,7 @@ To find your OneDrive drive ID, you can use the Microsoft Graph Explorer:
 For a specific user's drive (with application permissions):
 `GET https://graph.microsoft.com/v1.0/users/{user-id}/drive`
 
-### SharePoint Mode — Finding Your Site Path
+### SharePoint Mode - Finding Your Site Path
 
 The site path is the portion of the SharePoint URL after the hostname. For example:
 

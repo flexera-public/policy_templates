@@ -1,5 +1,18 @@
 # Changelog
 
+## v4.0.11
+
+- Fixed an issue where the report could use the wrong starting month when run late in a month and the previous month had fewer days.
+- Fixed an issue where the policy could fail to generate a report when the selected billing centers had no matching AWS savings data for the requested period.
+
+## v4.0.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.0.9
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.8
 
 - Updated documentation link in policy description. Functionality unchanged.
@@ -58,7 +71,7 @@
 
 ## v3.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 
 ## v2.2
 

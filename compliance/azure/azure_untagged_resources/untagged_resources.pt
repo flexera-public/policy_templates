@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0.0",
+  version: "5.0.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -203,7 +203,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -211,7 +211,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -219,12 +219,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -246,7 +254,7 @@ end
 datasource "ds_tag_dimensions" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
     header "Api-Version", "1.0"
   end
@@ -300,6 +308,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -422,6 +432,8 @@ script "js_azure_resources_region_filtered", type: "javascript" do
   parameters "ds_azure_resources", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_resources, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -442,6 +454,8 @@ script "js_azure_resources_type_filtered", type: "javascript" do
   parameters "ds_azure_resources_region_filtered", "ds_azure_resource_types", "param_resourcetypes_allow_or_deny", "param_resourcetypes_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_resourcetypes_list = _.compact(_.map(param_resourcetypes_list, function(item) { return item.trim() }))
   if (param_resourcetypes_list.length > 0) {
     result = _.filter(ds_azure_resources_region_filtered, function(resource) {
       resourcetypes_list = _.map(param_resourcetypes_list, function(type) {
@@ -452,7 +466,7 @@ script "js_azure_resources_type_filtered", type: "javascript" do
       if (param_resourcetypes_allow_or_deny == "Deny") { include_resource = !include_resource }
 
       // Filter out resources with untaggable resource types based on our list
-      return include_resource && ds_azure_resource_types[resource['resourceType']]['supportsTags']
+      return include_resource && ds_azure_resource_types[resource['resourceType']] != undefined && ds_azure_resource_types[resource['resourceType']]['supportsTags']
     })
   } else {
     result = ds_azure_resources_region_filtered
@@ -468,6 +482,8 @@ script "js_azure_resources_rg_filtered", type: "javascript" do
   parameters "ds_azure_resources_type_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_resources_type_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -498,6 +514,8 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_rg_filtered", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_report_types", "param_consider_tag_dimensions"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
   result = []
 
   comparators = _.map(param_tags, function(item) {
@@ -611,12 +629,18 @@ script "js_azure_providers", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
   result "request"
   code <<-'EOS'
+  // Use an empty placeholder subscription id if there are no subscriptions left after filtering.
+  // ignore_status below prevents this from causing a hard failure; there are no resources to
+  // check tag support for in this scenario anyway since resources are fetched per subscription.
+  subscription_id = ds_azure_subscriptions_filtered.length > 0 ? ds_azure_subscriptions_filtered[0]['id'] : ''
+
   request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
     host: param_azure_endpoint,
-    path: ["/subscriptions/", ds_azure_subscriptions_filtered[0]['id'], "/providers"].join(''),
-    query_params: { "api-version": "2021-04-01" }
+    path: ["/subscriptions/", subscription_id, "/providers"].join(''),
+    query_params: { "api-version": "2021-04-01" },
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
@@ -648,6 +672,8 @@ script "js_missing_tags_incident", type: "javascript" do
   parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_tags = _.compact(_.map(param_tags, function(item) { return item.trim() }))
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = _.map(ds_azure_resources_missing_tags, function(resource) {
@@ -914,7 +940,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

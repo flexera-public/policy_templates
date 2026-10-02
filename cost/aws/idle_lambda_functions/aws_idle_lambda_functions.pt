@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.2",
+  version: "0.2.2",
   provider: "AWS",
   service: "PaaS",
   policy_set: "Idle Lambda Functions",
@@ -42,7 +42,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_stats_lookback" do
@@ -195,6 +195,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -513,7 +521,7 @@ datasource "ds_region_check" do
     path "/2015-03-31/functions/"
     query "MaxItems", "1"
     header "User-Agent", "RS Policies"
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml"
@@ -580,6 +588,8 @@ script "js_aws_lambda_functions_tag_filtered", type: "javascript" do
   parameters "ds_aws_lambda_functions_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -614,7 +624,7 @@ script "js_aws_lambda_functions_tag_filtered", type: "javascript" do
     result = _.reject(ds_aws_lambda_functions_with_tags, function(resource) {
       // Lambda tags come back as a flat {"Key": "Value"} JSON object
       resource_tags = {}
-      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+      if (resource['tags'] && typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
       // Store a list of found tags
       found_tags = []
@@ -1003,7 +1013,7 @@ script "js_idle_lambda_functions", type: "javascript" do
 
     // Build a flat tags string
     tags = []
-    if (typeof(resource['tags']) == 'object') {
+    if (resource['tags'] && typeof(resource['tags']) == 'object') {
       _.each(Object.keys(resource['tags']), function(key) {
         tags.push(key + '=' + resource['tags'][key])
       })

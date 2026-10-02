@@ -1213,7 +1213,7 @@ end
 def policy_run_script_incorrect_order?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any scripts with parameters in the wrong order..."
 
-  fail_message = ""
+  found_calls = []
   ds_name = nil
 
   file_lines.each_with_index do |line, index|
@@ -1264,9 +1264,26 @@ def policy_run_script_incorrect_order?(file, file_lines)
           val_index = index if parameter.start_with?("val(")
         end
       end
-    end
 
-    fail_message += "Line #{line_number}: #{ds_name} / run_script #{script_name}\n" if disordered
+      found_calls << { line_number: line_number, ds_name: ds_name, script_name: script_name, disordered: disordered }
+    end
+  end
+
+  # If the same script is invoked more than once, and at least one of those invocations is
+  # correctly ordered, treat every invocation of that script as correct. A "disordered"
+  # reading on a sibling call in this situation is only an artifact of that call passing a
+  # raw value (e.g. a hardcoded lookback of 3 for a baseline comparison) in the same
+  # argument slot where another call passes a $param/$ds/constant, not an actual structural
+  # reordering bug — the argument's position, and thus the script's interpretation of it,
+  # is unchanged between calls.
+  calls_by_script = found_calls.group_by { |call| call[:script_name] }
+
+  fail_message = ""
+  found_calls.each do |call|
+    next unless call[:disordered]
+    next if calls_by_script[call[:script_name]].any? { |c| !c[:disordered] }
+
+    fail_message += "Line #{call[:line_number]}: #{call[:ds_name]} / run_script #{call[:script_name]}\n"
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
@@ -1288,6 +1305,7 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
   export_block = false
   field_block = false
   block_line_number = 0
+  validate_line = 0
   block_names = [ block_type ]
   block_id = ""
   policy_id = nil
@@ -1636,25 +1654,24 @@ def policy_bad_comma_spacing?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     line = line.strip
-    test_line = line
-    parts = []
 
     # Skip image charts stuff
     next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=") || line.include?("chf=")
 
-    # Strip content inside quotation marks to avoid false positives from comma-separated
-    # API parameter strings (e.g. metricnames, aggregation) and other string literal values.
-    # Lines starting with a quote are included so that JSON-style key-value pairs like
-    # `"metricnames": "Percentage CPU,Memory"` have their string values stripped correctly.
-    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
-    parts = line.split("'") if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
+    # Skip JS regex literals (e.g. /([A-Za-z,]*)/.test(str)) since commas inside character
+    # classes and quantifiers are pattern syntax, not natural-language list items.
+    next if line.match?(/\/[^\/]*,[^\/]*\/\.(test|match|exec|replace)\(/)
 
-    if parts.length > 2
-      test_parts = []
-      parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
-      test_line = test_parts.join("'")
-      test_line += "'" if line.end_with?("'") || line.end_with?("\"")
-    end
+    # Strip content inside quotation marks to avoid false positives from comma-separated
+    # API parameter strings (e.g. metricnames, aggregation), Google Chart data strings
+    # (e.g. "chd=t:60,40|0,100"), and other string literal values. Both quote styles are
+    # stripped unconditionally (rather than picking a single style based on which one(s)
+    # appear on the line), so this also handles lines that mix single and double quotes
+    # (e.g. ds_x['key'] + "literal,text"), which a previous either/or split-based approach
+    # missed, causing commas inside the string to be misread as list separators. Double
+    # quotes are stripped first so that an apostrophe inside a double-quoted string (e.g.
+    # "here's a comma, and more") doesn't get mistaken for the start of a single-quoted span.
+    test_line = line.gsub(/"[^"]*"/, '""').gsub(/'[^']*'/, "''")
 
     if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
       if test_line.match(/,\s{2,}/) || test_line.match(/\s,/) || test_line.match(/,[^\s]/) && !(test_line.match(/\',\'/) || test_line.match(/\",\"/) || test_line.match(/\`,\`/))
@@ -2017,6 +2034,48 @@ def policy_invalid_heredoc_syntax?(file, file_lines)
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has invalid heredoc syntax or escape sequences.\n\nHeredocs should use single quotes (e.g., `<<-'EOS'`) to prevent variable interpolation\n\nNewline escapes should use a single backslash (e.g., `\\n` not `\\\\n`)\n\n" + fail_message if !fail_message.empty?
+
+  fail_message.empty? ? false : fail_message.strip
+end
+
+### Content-Type Header Casing Test
+# Verify that any "Content-Type" header key found within datasources, scripts, or Cloud Workflow
+# blocks uses this exact casing. Any other casing (e.g. "content-type", "Content-type",
+# "cOnTeNt-TyPe") is flagged, since the policy engine only reliably overrides the default
+# Content-Type value when the header key matches this exact casing.
+def policy_bad_content_type_casing?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has incorrectly cased \"Content-Type\" headers..."
+
+  fail_message = ""
+
+  within_datasource = false
+  within_script = false
+  within_cwf = false
+
+  # Matches "content-type" (any casing) as a quoted string/hash key, e.g.
+  # header "content-type", headers: { "content-type": ... }, "Content-type" => ...
+  content_type_regex = /["']content-type["']/i
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+
+    within_datasource = true if line.start_with?("datasource ")
+    within_script = true if line.start_with?("script ")
+    within_cwf = true if line.start_with?("define ")
+
+    within_datasource = false if within_datasource && line.strip == "end"
+    within_script = false if within_script && (line.strip == "EOS" || line.strip == "EOF")
+    within_cwf = false if within_cwf && line.strip == "end"
+
+    next unless within_datasource || within_script || within_cwf
+
+    line.scan(content_type_regex).each do |match|
+      next if match == '"Content-Type"' || match == "'Content-Type'"
+      fail_message += "Line #{line_number}: Found `#{match}` which should be cased exactly as `\"Content-Type\"`\n"
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-conventions)] Policy Template has a `Content-Type` header that is not cased correctly. The header key must be written exactly as `Content-Type`, since the policy engine only reliably overrides its default Content-Type value when the header key matches this exact casing:\n\n" + fail_message if !fail_message.empty?
 
   fail_message.empty? ? false : fail_message.strip
 end

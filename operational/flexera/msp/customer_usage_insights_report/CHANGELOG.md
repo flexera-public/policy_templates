@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.1.9
+
+- Fixed an issue where the overall user activity summary table in the report could display "NaN%" values when an organization had zero total users or zero users matching the configured Included User Regex.
+
+## v0.1.8
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.1.7
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.1.6
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.1.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.4
 
 - Updated documentation link in policy description. Functionality unchanged.

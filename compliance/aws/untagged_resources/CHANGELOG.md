@@ -1,5 +1,29 @@
 # Changelog
 
+## v6.0.6
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v6.0.5
+
+- Fixed an issue where the policy could fail when account-level tag data was missing for the AWS account.
+
+## v6.0.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v6.0.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v6.0.2
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v6.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v6.0.0
 
 - Replaced `Include Account Tags` parameter with new `Report Types` list parameter that allows selecting `Accounts` and/or `Resources` individually

@@ -12,7 +12,8 @@ NOTE: If updating from a version of this policy template prior to version 2.0, i
 
 This policy template has the following input parameters:
 
-- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
+- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs. Only used when *Effective Date Mode* is set to "Static".
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates ("Static"), or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs ("Current Month").
 - *Tag Keys* - A list of Azure Subscription tag keys to build Rule-Based Dimensions from. Multiple tags can be specified for a single dimension by placing a single entry with each tag key separated by a semicolon (;) character. For example, a value of `env;environment;environ` will create one Rule-Based Dimension that checks the keys "env", "environment", and "environ" for values.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the `Tag Keys` field. Dimension names will be derived from tag keys directly if this list is left empty.
 - *Subscription Fallback Rules* - Whether or not to create rules for Subscription tags as a fallback for untagged Resource Groups. These rules have the lowest priority; rules created for Resource Group tags will always take precedence.

@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.0.6",
+  version: "4.1.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "",
@@ -72,6 +72,33 @@ parameter "param_average_months" do
   default 3
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying moving average cost data within the body of the incident, in addition to the chart above. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -98,7 +125,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -106,7 +133,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -114,12 +141,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -220,6 +255,8 @@ script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -374,13 +411,56 @@ EOS
 end
 
 datasource "ds_moving_average_chart" do
-  run_script $js_moving_average_chart, $ds_costs_calculated, $ds_billing_centers_filtered, $ds_applied_policy, $param_bc_list, $param_average_months, rs_org_name
+  run_script $js_moving_average_chart, $ds_costs_calculated, $ds_billing_centers_filtered, $ds_applied_policy, $ds_currency, $param_bc_list, $param_average_months, $param_incident_data_table, rs_org_name
 end
 
 script "js_moving_average_chart", type: "javascript" do
-  parameters "ds_costs_calculated", "ds_billing_centers_filtered", "ds_applied_policy", "param_bc_list", "param_average_months", "rs_org_name"
+  parameters "ds_costs_calculated", "ds_billing_centers_filtered", "ds_applied_policy", "ds_currency", "param_bc_list", "param_average_months", "param_incident_data_table", "rs_org_name"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
+  function format_number(number) {
+    formatted_number = "0"
+
+    if (number) {
+      sign = number < 0 ? "-" : ""
+      number = Math.abs(number)
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (ds_currency['separator']) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += ds_currency['separator'] }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+      formatted_number = sign + formatted_number
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| Month | Cloud Cost | Moving Average | Currency |"
+    divider = "| --- | ---: | ---: | --- |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item.month +
+        " | " + format_number(item.cost) +
+        " | " + format_number(item.average) +
+        " | " + item.currency + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
+  }
+
   billingCenters = "All"
   if (param_bc_list.length > 0) { billingCenters = _.pluck(ds_billing_centers_filtered, 'name').join(', ') }
 
@@ -404,6 +484,10 @@ script "js_moving_average_chart", type: "javascript" do
     policy_name: ds_applied_policy['name'],
     param_average_months: param_average_months
   }
+
+  if (param_incident_data_table == "true") {
+    result.data_table = build_data_table(ds_costs_calculated)
+  }
 EOS
 end
 
@@ -419,6 +503,12 @@ policy "pol_moving_average_chart" do
 ### Billing Centers: {{ data.billingCenters }}
 #### Average calculated from previous {{ data.param_average_months }} months
 ![Moving Average](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartLabel }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Moving Average Spend Chart")
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ data.data_table }}
+{{ end }}
 EOS
     check eq(1, 0)
     escalate $esc_email
@@ -447,5 +537,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

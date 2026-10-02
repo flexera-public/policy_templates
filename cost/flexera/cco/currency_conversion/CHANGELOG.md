@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.1.6
+
+- Fixed an issue where applying adjustments could fail with a "415 Unsupported Media Type" error due to the casing of the `Content-Type` header.
+- Fixed an issue where the incident name showed `<no value>` instead of the currency codes.
+- Fixed an issue where the incident detail showed "[object Object]" instead of the month for each exchange rate.
+
+## v5.1.5
+
+- Fixed an issue where the policy could fail with a "must be a string" error when requesting exchange rates due to how the currency parameters were sanitized.
+
+## v5.1.4
+
+- Fixed an issue where the policy could fail with an error instead of applying no changes when none of the values entered in the "Dimensions" parameter matched a valid dimension in Flexera CCO.
+
+## v5.1.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter ordering for the `ds_set_org_currency_logic` datasource.
+
 ## v5.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

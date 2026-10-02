@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.6.2",
+  version: "0.7.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -42,7 +42,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation. This is based on the value of the 'Estimated Monthly Savings' field."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_exclusion_tags" do
@@ -190,7 +190,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -198,7 +198,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -206,12 +206,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -232,7 +240,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -364,7 +372,7 @@ datasource "ds_region_check" do
     query "MaxResults", "5"
     header "User-Agent", "RS Policies"
     header "Content-Type", "text/xml"
-    ignore_status [403, 401]
+    ignore_status [400, 401, 403]
   end
   result do
     encoding "xml"
@@ -458,6 +466,8 @@ script "js_instances", type: "javascript" do
   parameters "ds_instance_sets", "ds_aws_gpu_table", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_recommendations_gpu"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -639,9 +649,12 @@ script "js_conditional_currency_conversion", type: "javascript" do
   result = []
   from_currency = "USD"
 
-  if (ds_optimizer_recs.length > 0) {
-    if (ds_optimizer_recs[0]['recommendationOptions'].length > 0) {
-      from_currency = ds_optimizer_recs[0]['recommendationOptions'][0]['savingsOpportunity']['estimatedMonthlySavings']['currency']
+  // AWS does not always return recommendationOptions or savingsOpportunity for every recommendation
+  if (ds_optimizer_recs.length > 0 && ds_optimizer_recs[0]['recommendationOptions'] != undefined && ds_optimizer_recs[0]['recommendationOptions'].length > 0) {
+    first_savings_opportunity = ds_optimizer_recs[0]['recommendationOptions'][0]['savingsOpportunity']
+
+    if (first_savings_opportunity != undefined && first_savings_opportunity['estimatedMonthlySavings'] != undefined && first_savings_opportunity['estimatedMonthlySavings']['currency'] != undefined) {
+      from_currency = first_savings_opportunity['estimatedMonthlySavings']['currency']
     }
   }
 
@@ -734,6 +747,16 @@ script "js_recommendations_merged", type: "javascript" do
     return formatted_number
   }
 
+  // AWS Compute Optimizer does not always return a savings opportunity for every recommendation
+  // option (for example, when cost data isn't available for that resource). Default to 0 in that case.
+  function getEstimatedMonthlySavings(opportunity) {
+    if (opportunity != undefined && opportunity['estimatedMonthlySavings'] != undefined && opportunity['estimatedMonthlySavings']['value'] != undefined) {
+      return opportunity['estimatedMonthlySavings']['value']
+    }
+
+    return 0.0
+  }
+
   instance_table = {}
   _.each(ds_instances, function(instance) { instance_table[instance['instanceId']] = instance })
 
@@ -741,7 +764,8 @@ script "js_recommendations_merged", type: "javascript" do
   total_savings = 0.0
 
   _.each(ds_optimizer_recs, function(rec) {
-    instance = instance_table[rec['instanceArn'].split('/')[1]]
+    instance = undefined
+    if (rec['instanceArn'] != undefined) { instance = instance_table[rec['instanceArn'].split('/')[1]] }
 
     if (instance != undefined) {
       tags = []
@@ -755,26 +779,32 @@ script "js_recommendations_merged", type: "javascript" do
         })
       }
 
-      lookbackPeriod = Number(rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[1])
+      // AWS does not always return effectiveRecommendationPreferences/lookBackPeriod for every recommendation
+      lookbackPeriod = null
+      lookBackPeriodPref = rec['effectiveRecommendationPreferences'] != undefined ? rec['effectiveRecommendationPreferences']['lookBackPeriod'] : undefined
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "MINUTES") {
-        lookbackPeriod = lookbackPeriod / 24 / 60
-      }
+      if (lookBackPeriodPref != undefined) {
+        lookbackPeriod = Number(lookBackPeriodPref.split('_')[1])
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "HOURS") {
-        lookbackPeriod = lookbackPeriod / 24
-      }
+        if (lookBackPeriodPref.split('_')[0] == "MINUTES") {
+          lookbackPeriod = lookbackPeriod / 24 / 60
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "WEEKS") {
-        lookbackPeriod = lookbackPeriod * 7
-      }
+        if (lookBackPeriodPref.split('_')[0] == "HOURS") {
+          lookbackPeriod = lookbackPeriod / 24
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "MONTHS") {
-        lookbackPeriod = lookbackPeriod * 30
-      }
+        if (lookBackPeriodPref.split('_')[0] == "WEEKS") {
+          lookbackPeriod = lookbackPeriod * 7
+        }
 
-      if (rec['effectiveRecommendationPreferences']['lookBackPeriod'].split('_')[0] == "YEARS") {
-        lookbackPeriod = lookbackPeriod * 365
+        if (lookBackPeriodPref.split('_')[0] == "MONTHS") {
+          lookbackPeriod = lookbackPeriod * 30
+        }
+
+        if (lookBackPeriodPref.split('_')[0] == "YEARS") {
+          lookbackPeriod = lookbackPeriod * 365
+        }
       }
 
       cpuMaximum = null
@@ -831,8 +861,8 @@ script "js_recommendations_merged", type: "javascript" do
 
       _.each(rec['recommendationOptions'], function(option) {
         if (option['rank'] == 1 || param_multi_recommendations == "Yes") {
-          savings = option['savingsOpportunity']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
-          savings_after_discount = option['savingsOpportunityAfterDiscounts']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
+          savings = getEstimatedMonthlySavings(option['savingsOpportunity']) * ds_currency['exchange_rate']
+          savings_after_discount = getEstimatedMonthlySavings(option['savingsOpportunityAfterDiscounts']) * ds_currency['exchange_rate']
 
           // Exclude OS families the user has opted not to include
           os_family = "Other"
@@ -863,9 +893,9 @@ script "js_recommendations_merged", type: "javascript" do
               region: instance['region'],
               platform: instance['platform'],
               launchTime: instance['launchTime'],
-              hostname: instance['privateDnsName'].split('.')[0],
+              hostname: instance['privateDnsName'] != undefined ? instance['privateDnsName'].split('.')[0] : "",
               finding: rec['finding'],
-              findingReasonCodes: rec['findingReasonCodes'].join(', '),
+              findingReasonCodes: rec['findingReasonCodes'] != undefined ? rec['findingReasonCodes'].join(', ') : "",
               migrationEffort: option['migrationEffort'],
               performanceRisk: option['performanceRisk'],
               rank: option['rank'],
@@ -885,7 +915,7 @@ script "js_recommendations_merged", type: "javascript" do
               gpuMaximum: gpuMaximum,
               gpuMemoryMaximum: gpuMemoryMaximum,
               service: "EC2",
-              lookbackPeriod: Math.round(lookbackPeriod * 100) / 100,
+              lookbackPeriod: lookbackPeriod != null ? Math.round(lookbackPeriod * 100) / 100 : null,
               policy_name: ds_applied_policy['name'],
               total_savings: "",
               message: ""
@@ -1403,7 +1433,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

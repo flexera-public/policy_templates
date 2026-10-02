@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.5.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.4.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.4.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

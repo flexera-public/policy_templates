@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.3",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Database Instances",
@@ -34,7 +34,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_cross_family" do
@@ -256,7 +256,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -264,7 +264,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -272,12 +272,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -430,6 +438,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -513,6 +523,8 @@ script "js_cloudsql_instances_label_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_labels = _.compact(_.map(param_exclusion_labels, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -590,6 +602,8 @@ script "js_cloudsql_instances_region_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_cloudsql_instances_label_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -678,7 +692,7 @@ script "js_parsed_stats", type: "javascript" do
 
       instanceId = labels['resource.database_id']
 
-      if (instanceId) {
+      if (instanceId && item['pointData'] && item['pointData'].length > 0) {
         if (result[instanceId] == undefined) { result[instanceId] = {} }
 
         result[instanceId]['cpuAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
@@ -703,7 +717,7 @@ script "js_parsed_stats", type: "javascript" do
 
       instanceId = labels['resource.database_id']
 
-      if (instanceId) {
+      if (instanceId && item['pointData'] && item['pointData'].length > 0) {
         if (result[instanceId] == undefined) { result[instanceId] = {} }
 
         result[instanceId]['memAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
@@ -1063,7 +1077,7 @@ script "js_idle_cloudsql", type:"javascript" do
 
   instances_total = ds_cloudsql_instances_with_stats.length
   idle_total = result.length
-  idle_percentage = (idle_total / instances_total * 100).toFixed(2).toString() + '%'
+  idle_percentage = instances_total == 0 ? "0.00%" : (idle_total / instances_total * 100).toFixed(2).toString() + '%'
 
   noun = instances_total == 1 ? "instance" : "instances"
   verb = idle_total == 1 ? "is" : "are"
@@ -1463,7 +1477,7 @@ script "js_underutil_cloudsql", type:"javascript" do
 
   instances_total = ds_cloudsql_instances_with_stats.length
   underutil_total = result.length
-  underutil_percentage = (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
+  underutil_percentage = instances_total == 0 ? "0.00%" : (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
 
   noun = instances_total == 1 ? "Cloud SQL instance" : "Cloud SQL instances"
   verb = underutil_total == 1 ? "is" : "are"
@@ -2004,7 +2018,7 @@ define resize_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: $body
   )
@@ -2038,7 +2052,7 @@ define stop_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: $body
   )
@@ -2061,7 +2075,7 @@ define delete_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -2097,7 +2111,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

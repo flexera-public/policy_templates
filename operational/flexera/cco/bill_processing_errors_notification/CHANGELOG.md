@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.7.4
+
+- Fixed an issue where the policy could fail to run when a Common Bill Ingestion (CBI) connection's vendor information was incomplete.
+
+## v2.7.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v2.7.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v2.7.1
 
 - Fixed issue with incident table that cause policy execution to fail
@@ -72,7 +84,7 @@
 
 ## v2.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - General code cleanup and optimization
 
 ## v1.1

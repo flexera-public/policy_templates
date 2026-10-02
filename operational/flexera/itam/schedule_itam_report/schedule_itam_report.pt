@@ -8,7 +8,7 @@ severity "medium"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.2.5",
+  version: "0.2.9",
   provider: "Flexera",
   service: "IT Asset Management",
   policy_set: "Schedule Report",
@@ -82,6 +82,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_report_id" do
+  run_script $js_report_id, $param_report_id
+end
+
+script "js_report_id", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  result = { value: param_report_id.trim() }
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -93,7 +105,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -101,7 +113,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -109,12 +121,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -126,8 +146,8 @@ datasource "ds_fnms_reports" do
   request do
     auth $auth_flexera
     pagination $pagination_itam
-    host val($ds_flexera_api_hosts, 'flexera')
-    path join(["/fnms/v1/orgs/", rs_org_id, "/reports/", $param_report_id, "/execute"])
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/fnms/v1/orgs/", rs_org_id, "/reports/", val($ds_report_id, "value"), "/execute"])
     header "Content-Type","application/json"
     header "User-Agent", "RS Policies"
   end
@@ -158,6 +178,8 @@ script "js_markdown_report", type: "javascript" do
   parameters "ds_fnms_reports_combined", "param_report_title", "param_report_datetime"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_report_title = param_report_title.trim()
   // Function repeats a character a number of times
   function pad(input, times) {
     repeated = []

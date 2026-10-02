@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.8
+
+- Fixed an issue where the reported start of the usage period could be off by a month when the policy ran near the end of certain calendar months.
+- Fixed an issue where the policy could fail to generate a report when no instance usage data was found for the selected billing centers, regions, and time period.
+
+## v1.1.7
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v1.1.6
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v1.1.5
 
 - Updated documentation link in policy description. Functionality unchanged.

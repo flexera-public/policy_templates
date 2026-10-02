@@ -2,14 +2,14 @@
 
 ## What It Does
 
-This policy template checks all the Azure MySQL Flexible Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
+This policy template checks all the Azure MySQL Flexible Servers in Azure Subscriptions for the average CPU usage and query activity over a user-specified number of days. If a server is determined to be unused (see below), the server is recommended for deletion. If it is not unused but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
 
 ## How It Works
 
-- The policy leverages the Azure API to check all Azure MySQL Flexible Servers and then checks the number of connections and average CPU utilization over a user-specified number of days.
-- The policy identifies all servers that have had no connections over a user-specified number of days and flags them as unused.
+- The policy leverages the Azure API to check all Azure MySQL Flexible Servers and then checks query throughput and average CPU utilization over a user-specified number of days.
+- An Azure MySQL Flexible Server is considered **unused** if its total query throughput (the `Queries` metric) stays at or below the *Unused Server Query Threshold* parameter (default: 5) for the 95th percentile of the lookback period. Basing this on actual query activity, rather than new connection counts, avoids false positives for servers that use connection pooling or long-lived persistent connections, since those workloads reuse a connection instead of frequently establishing new ones and would otherwise appear to have "no connections" despite being actively queried. Using the 95th percentile (instead of requiring exactly zero) means a single brief maintenance task, such as a backup, replication check-in, or monitoring probe, cannot by itself cause a server to be misclassified as unused. Run the policy once and inspect the `Query Activity p95` column to calibrate the threshold for your environment.
 - The recommendation provided for unused servers is a deletion action. These servers can be deleted in an automated manner or after approval.
-- The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.
+- The policy identifies all servers that are not unused but have average CPU usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.
 - The recommendation provided for underutilized servers is a downsize action. These servers can be downsized in an automated manner or after approval.
 
 ### Policy Savings Details
@@ -44,9 +44,10 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Exclusion Tags: Any / All* - Whether to filter servers containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Threshold Statistic* - Statistic to use when determining if a server is underutilized.
 - *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
-- *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for servers. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Statistic Lookback Period* - How many days back to look at query and CPU utilization data for servers. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Report Unused or Underutilized* - Whether to report on unused servers, underutilized servers, or both. If both are selected, unused servers will not appear in the list of underutilized servers regardless of CPU usage.
 - *Underutilized Server CPU Threshold (%)* - The CPU threshold at which to consider an server to be underutilized and therefore be flagged for downsizing.
+- *Unused Server Query Threshold* - The query throughput floor, in total queries per statistic interval, below which a MySQL Flexible Server is considered part of its idle duty cycle. A server is only flagged as unused if its query throughput stays at or below this floor for the 95th percentile of the lookback period, which prevents a single brief maintenance task from masking real query activity. Query throughput is not defeated by connection pooling or long-lived persistent connections, since actively-queried servers continue generating query throughput even while establishing few or no new connections.
 - *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.

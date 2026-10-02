@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.1",
   provider: "Google",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -34,7 +34,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation. Only applies to resources currently under extended support."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_upcoming_days" do
@@ -201,6 +201,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -341,6 +349,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       var include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -378,6 +388,8 @@ script "js_identify_errors", type: "javascript" do
   parameters "ds_google_projects_filtered", "ds_project_check", "ds_applied_policy", "param_projects_allow_or_deny", "param_projects_list"
   result "errors"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   var errors = []
 
   if (ds_google_projects_filtered.length > 0) {
@@ -477,6 +489,8 @@ script "js_gke_clusters_filtered", type: "javascript" do
   parameters "ds_gke_clusters", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var today_ms = today.getTime()
@@ -564,6 +578,8 @@ script "js_cloudsql_instances_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var today_ms = today.getTime()
@@ -626,6 +642,8 @@ script "js_all_extended_support_resources", type: "javascript" do
   parameters "ds_gke_clusters_filtered", "ds_cloudsql_instances_filtered", "ds_google_extended_support_dates", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   result = []
 
   var today = new Date()
@@ -888,7 +906,7 @@ script "js_extended_support_resources", type: "javascript" do
 
   _.each(ds_all_extended_support_resources, function(resource) {
     // Apply min_savings only to resources currently under extended support (already incurring the fee).
-    // Resources approaching extended support always pass — they are a heads-up notification.
+    // Resources approaching extended support always pass - they are a heads-up notification.
     if (resource['status'] == 'Currently Under Extended Support' && resource['savings'] < param_min_savings) { return }
 
     total_savings += resource['savings'] || 0
@@ -1048,7 +1066,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

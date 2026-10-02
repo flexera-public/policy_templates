@@ -4,7 +4,7 @@
 
 This policy template checks containers in Azure Data Lake storage account (with hierarchical namespace enabled) to move the blobs to the 'Cool' or 'Archive' storage tiers based on blob age. The user also can opt to either delete the blobs or move them to the recommended storage tier.
 
-### Policy Saving Details
+### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the storage tier of the blob is changed to the suggested tier.
 

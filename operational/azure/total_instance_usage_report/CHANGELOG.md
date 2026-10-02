@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.14
+
+- Fixed an issue where selecting "Deny" for the billing center filter parameter could fail to exclude billing centers that were specified by only an ID or only a name in the filter list.
+- Fixed an issue where the reporting period could be shifted by one month depending on the day of the month the policy was run and the number of months selected for the lookback period.
+- Fixed an issue where the policy could fail with an error instead of generating a report when there was no instance usage data for the selected billing center(s), region(s), or time period.
+
+## v1.0.13
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v1.0.12
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v1.0.11
 
 - Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. The `Normalized Instance Count` unit mode now uses real normalization factor values from the data file; previously all instances defaulted to a factor of 1.

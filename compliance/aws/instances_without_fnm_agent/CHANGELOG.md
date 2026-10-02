@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.4.5
+
+- Fixed an issue where the policy could fail with a "host must be a string" error when requesting the FlexNet Manager report due to how the report ID parameter was sanitized.
+
+## v4.4.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.4.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.4.2
 
 - Updated documentation link in policy description. Functionality unchanged.

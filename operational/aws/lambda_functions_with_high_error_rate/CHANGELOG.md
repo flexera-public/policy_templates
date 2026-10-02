@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.2.2
+
+- Fixed an issue where the incident message would omit the number of hours when the statistic lookback period was set to 1 hour.
+
+## v5.2.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v5.2.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve Lambda function data from one or more AWS regions due to permission or configuration errors.
+
+## v5.1.9
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v5.1.8
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.1.7
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

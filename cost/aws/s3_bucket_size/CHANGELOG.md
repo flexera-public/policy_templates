@@ -1,5 +1,32 @@
 # Changelog
 
+## v4.0.9
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
+## v4.0.8
+
+- Fixed an issue where the policy could report an outdated bucket size measurement instead of the most recent one when multiple data points were returned for the same bucket.
+
+## v4.0.7
+
+- Fixed issue where the policy would fail if bucket name contains dots (.).
+- Fixed issue where the policy would produce incorrect result for certain bucket name combinations.
+- Fixed issue where the policy only gather partial AWS CloudWatch data.
+- Fixed issue where the policy would fail to run when the `Exclusion Tags` parameter was used.
+
+## v4.0.6
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.0.5
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.0.4
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.3
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

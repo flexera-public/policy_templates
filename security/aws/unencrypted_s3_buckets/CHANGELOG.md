@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.1.5
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
+## v3.1.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v3.1.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v3.1.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.1.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v0.3.2
+
+- Fixed an issue where the policy could fail when billing data included Compute Engine charges that were not tied to a specific resource.
+
+## v0.3.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.3.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.2.3
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
+## v0.2.2
+
+- Updated policy logic for internal consistency; no functional or user-facing changes.
+
+## v0.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

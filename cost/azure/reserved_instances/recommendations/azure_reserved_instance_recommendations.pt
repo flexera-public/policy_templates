@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.8.0",
+  version: "4.9.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -43,7 +43,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_delay_time_between_requests" do
@@ -215,7 +215,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -223,7 +223,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -231,12 +231,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -473,6 +481,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -559,13 +569,15 @@ script "js_ri_requests", type: "javascript" do
       return sub['name'].toLowerCase().indexOf("visual studio") == -1 && sub['name'].indexOf("365") == -1
     })
 
-    _.each(param_service, function(service) {
-      appendToResult({
-        service: ds_service_table[service],
-        id: good_subs[0]['id'],
-        name: good_subs[0]['name']
+    if (good_subs.length > 0) {
+      _.each(param_service, function(service) {
+        appendToResult({
+          service: ds_service_table[service],
+          id: good_subs[0]['id'],
+          name: good_subs[0]['name']
+        })
       })
-    })
+    }
   }
 
   if (param_scope == "Subscription") {
@@ -671,6 +683,8 @@ script "js_ri_recommendations_region_filtered", type: "javascript" do
   parameters "ds_ri_recommendations", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     getIterator(ds_ri_recommendations).Each(function(recommendation, idx) {
       include_recommendation = _.contains(param_regions_list, recommendation['region'])
@@ -698,6 +712,8 @@ script "js_ri_recommendations_rg_filtered", type: "javascript" do
   parameters "ds_ri_recommendations_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       getIterator(ds_ri_recommendations_region_filtered).Each(function(resource, idx) {
         rg = resource['resourceGroup']
@@ -799,7 +815,10 @@ script "js_ri_incident", type: "javascript" do
 
       term_label = term_reverse_table[recommendation['term']] || recommendation['term']
       termMonths = Number(term_label.substring(0, 1)) * 12
-      estimatedBreakEvenInMonths = (1 - ((costWithNoRI - totalCostWithRI) / costWithNoRI)) * termMonths
+      estimatedBreakEvenInMonths = 0
+      if (costWithNoRI > 0) {
+        estimatedBreakEvenInMonths = (1 - ((costWithNoRI - totalCostWithRI) / costWithNoRI)) * termMonths
+      }
 
       payment_options_to_use = param_payment_option == "Everything" ? ["No Upfront", "All Upfront"] : [param_payment_option]
 
@@ -1025,7 +1044,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.6.3
+
+- Fixed an issue where the policy could fail to evaluate with an "invalid request host" error when querying the Kubecost API, due to how the Kubecost Host parameter was internally referenced.
+
+## v0.6.2
+
+- Fixed an issue where the policy could fail to run if Kubecost did not report a currency code, instead of falling back to the Flexera organization's currency or US Dollars.
+- Fixed an issue where, when the "Scope" parameter was set to "Per Cluster" and more than one cluster was present, recommendations for all clusters could incorrectly be generated using only the last cluster's data instead of each cluster's own data.
+
+## v0.6.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.5.4
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+- Corrected the order of fields in the policy validation block to match the standard field ordering convention. No functional changes.
+
+## v0.5.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.5.2
 
 - Updated documentation link in policy description. Functionality unchanged.

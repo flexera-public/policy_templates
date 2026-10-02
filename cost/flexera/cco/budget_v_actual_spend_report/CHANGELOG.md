@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.7.4
+
+- Fixed an issue where report entries could be displayed out of order instead of grouped and sorted by month when a budget's report included multiple groups.
+
+## v2.7.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v2.7.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v2.7.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v2.7.0
+
+- Added `Include Data Table In Incident` parameter to optionally include a formatted table of the budget vs actual spend data in the body of the incident.
+- Added `Attach CSV To Incident Email` and `Incident Table Rows for Email Body (#)` parameters to control CSV attachment and inline table size for the incident email.
+
 ## v2.6.0
 
 - Billing Center dimensions now show Billing Center names instead of IDs in the incident table.

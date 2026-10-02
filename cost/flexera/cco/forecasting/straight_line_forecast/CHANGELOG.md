@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.1.3
+
+- Fixed an issue where the Linear Regression forecast formula could produce an invalid (blank/NaN) forecast when the "Look Back Months" parameter was set to 1 month.
+
+## v4.1.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.1.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v4.1.0
+
+- Added `Include Data Table In Incident` parameter to optionally include a formatted table of the forecasted cost data in the body of the incident.
+- Added `Attach CSV To Incident Email` and `Incident Table Rows for Email Body (#)` parameters to control CSV attachment and inline table size for the incident email.
+
 ## v4.0.7
 
 - Updated documentation link in policy description. Functionality unchanged.
@@ -69,7 +86,7 @@
 
 ## v3.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 
 ## v2.3
 

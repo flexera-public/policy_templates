@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.4
+
+- Fixed an issue where selecting "Deny" for the Billing Center filter could fail to exclude the specified billing centers, causing them to still be included in the report.
+
+## v1.2.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v1.2.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v1.2.1
 
 - Fixed issue with incident table that cause policy execution to fail

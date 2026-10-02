@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -24,9 +24,18 @@ parameter "param_effective_date" do
   type "string"
   category "Policy Settings"
   label "Effective Date"
-  description "Year/month you want rules to start applying in YYYY-MM format."
+  description "Year/month you want rules to start applying in YYYY-MM format. Only used when 'Effective Date Mode' is set to 'Static'."
   allowed_pattern /^\d{4}-\d{2}$/
   default "2020-01"
+end
+
+parameter "param_effective_date_mode" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date Mode"
+  description "Whether to use the static value in the 'Effective Date' parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs."
+  allowed_values "Static", "Current Month"
+  default "Static"
 end
 
 parameter "param_normalize_case" do
@@ -169,6 +178,11 @@ script "js_flexera_api_hosts", type: "javascript" do
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       ui: "app.flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      ui: "app.flexeratest.com"
     }
   }
 
@@ -186,7 +200,7 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Resolve the drive ID — either from direct parameter or via SharePoint site resolution.
+# Resolve the drive ID - either from direct parameter or via SharePoint site resolution.
 # When param_drive_id is provided, SharePoint resolution is skipped entirely.
 # When param_drive_id is empty, SharePoint site/library params are used.
 
@@ -199,8 +213,12 @@ script "js_sharepoint_site", type: "javascript" do
   parameters "ds_flexera_api_hosts", "param_drive_id", "param_sharepoint_site_hostname", "param_sharepoint_site_path"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
+  param_sharepoint_site_hostname = param_sharepoint_site_hostname.trim()
+  param_sharepoint_site_path = param_sharepoint_site_path.trim()
   if (param_drive_id && param_drive_id.length > 0) {
-    // Drive ID provided directly — make a harmless no-op request
+    // Drive ID provided directly - make a harmless no-op request
     request = { auth: "auth_flexera", host: ds_flexera_api_hosts["flexera"], path: "/api/governance", headers: { "User-Agent": "RS Policies" }, ignore_status: [400, 403, 404] }
   } else {
     request = {
@@ -222,8 +240,10 @@ script "js_sharepoint_drives", type: "javascript" do
   parameters "ds_sharepoint_site", "ds_flexera_api_hosts", "param_drive_id"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
   if (param_drive_id && param_drive_id.length > 0) {
-    // Drive ID provided directly — make a harmless no-op request
+    // Drive ID provided directly - make a harmless no-op request
     request = { auth: "auth_flexera", host: ds_flexera_api_hosts["flexera"], path: "/api/governance", headers: { "User-Agent": "RS Policies" }, ignore_status: [400, 403, 404] }
   } else {
     var siteId = ds_sharepoint_site["id"] || ""
@@ -246,6 +266,10 @@ script "js_drive_folder_path", type: "javascript" do
   parameters "ds_sharepoint_drives", "param_drive_id", "param_sharepoint_library", "param_folder_path"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_drive_id = param_drive_id.trim()
+  param_sharepoint_library = param_sharepoint_library.trim()
+  param_folder_path = param_folder_path.trim()
   var driveId = param_drive_id
 
   // If no direct drive ID, resolve from SharePoint drives list
@@ -311,6 +335,9 @@ script "js_csv_file_selected", type: "javascript" do
   parameters "ds_graph_list_files", "param_file_prefix", "param_file_override"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_file_prefix = param_file_prefix.trim()
+  param_file_override = param_file_override.trim()
   // Graph API /children doesn't support $filter with startswith on name,
   // so prefix filtering is done client-side.
   var files = _.filter(ds_graph_list_files, function(item) {
@@ -810,15 +837,39 @@ script "js_csv_validated", type: "javascript" do
 EOS
 end
 
+# Determine the effective date to use for the generated rules: either the static value from the
+# 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = { value: year + "-" + month }
+  } else {
+    result = { value: param_effective_date }
+  }
+EOS
+end
+
 # Build RBD rule objects from CSV data
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case, $param_effective_date
+  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $ds_effective_date, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
+  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "ds_effective_date", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_rbd_filter = _.compact(_.map(param_rbd_filter, function(item) { return item.trim() }))
+  param_rbd_name_map = _.compact(_.map(param_rbd_name_map, function(item) { return item.trim() }))
   result = []
 
   // If there are validation errors, output empty list to block RBD creation
@@ -908,7 +959,7 @@ script "js_rbds", type: "javascript" do
       result.push({
         id: rbdId,
         name: rbdName,
-        effective_at: param_effective_date,
+        effective_at: ds_effective_date.value,
         rules: rules,
         ruleCount: rules.length
       })
@@ -960,7 +1011,7 @@ datasource "ds_existing_rbds_with_rules" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val($ds_effective_date, "value")])
     header "User-Agent", "RS Policies"
     ignore_status [400, 401, 403, 404, 429]
   end
@@ -1027,7 +1078,7 @@ script "js_merged_rbds", type: "javascript" do
             mergedRules.push(rule)
           }
         } else {
-          // Inside old block — skip until end sentinel
+          // Inside old block - skip until end sentinel
           if (rule.condition && rule.condition.value === endBlockValue) {
             foundBlock = false
           }
@@ -1125,11 +1176,11 @@ end
 
 # Build incident summary for RBDs
 datasource "ds_incident_rbds" do
-  run_script $js_incident_rbds, $ds_merged_rbds, $ds_csv_validated, $ds_csv_parsed
+  run_script $js_incident_rbds, $ds_merged_rbds, $ds_csv_validated, $ds_csv_parsed, $ds_applied_policy
 end
 
 script "js_incident_rbds", type: "javascript" do
-  parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed"
+  parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed", "ds_applied_policy"
   result "result"
   code <<-'EOS'
   function deriveRbdName(rbdId) {
@@ -1161,6 +1212,10 @@ script "js_incident_rbds", type: "javascript" do
         status: rbd.verb === "POST" ? "created" : "updated"
       })
     })
+  }
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
   }
 EOS
 end
@@ -1211,7 +1266,7 @@ EOS
   end
 
   validate $ds_incident_rbds do
-    summary_template "Rule-Based Dimensions Updated/Created: {{ len data }}"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Rule-Based Dimensions Updated/Created: {{ len data }}"
     check eq(0, 1)
     export do
       field "id" do
@@ -1229,5 +1284,3 @@ EOS
     end
   end
 end
-
-

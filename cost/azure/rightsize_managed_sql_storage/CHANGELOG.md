@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.2
+
+- Fixed an issue where the region filter would fail to correctly include or exclude SQL Managed Instances when a region allow/deny list was specified, causing all instances to be incorrectly filtered out or included regardless of their region.
+
+## v0.6.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.5.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.5.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

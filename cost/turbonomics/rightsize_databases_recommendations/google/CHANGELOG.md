@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.11
+
+- Fixed an issue where the policy could error out or report a missing resource ID for a recommendation whose underlying resource had more than one associated cloud identifier.
+
+## v0.5.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for the filtered recommendations script (datasources before parameters).
+
+## v0.5.9
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
+## v0.5.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v0.5.7
 
 - Minor code formatting fixes. Functionality unchanged.

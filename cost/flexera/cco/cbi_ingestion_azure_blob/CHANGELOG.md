@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.10
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution, most likely to occur when billing files were found and uploaded successfully for the selected period.
+
+## v0.2.9
+
+- Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when downloading cost files from Azure Blob Storage, caused by an internal hostname value not being passed to the request correctly.
+
+## v0.2.8
+
+- Fixed an issue where the "Current Month" and "Previous Month" billing period options could resolve to the wrong month, most likely to occur on the first day of a calendar month.
+
+## v0.2.7
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.2.6
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.5
 
 - Updated documentation link in policy description. Functionality unchanged.

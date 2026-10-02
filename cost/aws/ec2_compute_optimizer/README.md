@@ -16,6 +16,8 @@ The policy utilizes the [AWS Compute Optimizer API](https://docs.aws.amazon.com/
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is resized to the recommended size. The `Estimated Monthly Savings` and `Estimated Monthly Savings After Discounts` are obtained directly from the [AWS Compute Optimizer API](https://docs.aws.amazon.com/compute-optimizer/latest/APIReference/API_GetEC2InstanceRecommendations.html). If the Flexera organization is configured to use a currency other than the one returned by the [AWS Compute Optimizer API](https://docs.aws.amazon.com/compute-optimizer/latest/APIReference/API_GetEC2InstanceRecommendations.html), the savings values will be converted using the exchange rate at the time that the policy executes.
 
+- If AWS Compute Optimizer does not return an estimated savings amount for a given recommendation (for example, when cost data isn't available for that resource), the `Estimated Monthly Savings` and `Estimated Monthly Savings After Discounts` for that recommendation are treated as 0.
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.

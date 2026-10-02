@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.0.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v5.0.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v5.0.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v5.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.0.0
 
 - Added new `Report Types` list parameter that allows selecting `Projects` and/or `Resources` individually

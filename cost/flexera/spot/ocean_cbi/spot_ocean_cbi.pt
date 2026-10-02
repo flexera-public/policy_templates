@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.7",
+  version: "0.2.10",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Common Bill Ingestion",
@@ -18,6 +18,15 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_bill_connect_id" do
+  type "string"
+  category "Policy Settings"
+  label "Bill Connect ID"
+  description "Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists."
+  allowed_pattern /cbi-oi-optima-[a-zA-Z0-9]+/
+  default "cbi-oi-optima-spot-ocean"
+end
 
 parameter "param_spotinst_accounts_allow_or_deny" do
   type "string"
@@ -63,15 +72,6 @@ parameter "param_reallocation_granularity" do
   description "Reallocated Cost Granularity configures the granularity for the new line items. Typically \"Day\" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts."
   allowed_values "Day", "Month"
   default "Day"
-end
-
-parameter "param_bill_connect_id" do
-  type "string"
-  category "Policy Settings"
-  label "Bill Connect ID"
-  description "Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists."
-  allowed_pattern /cbi-oi-optima-[a-zA-Z0-9]+/
-  default "cbi-oi-optima-spot-ocean"
 end
 
 ###############################################################################
@@ -625,7 +625,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -633,7 +633,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -641,12 +641,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -964,7 +972,7 @@ script "js_cbi_csv", type: "javascript" do
   // If row count is greater than threshold, we should break it into multiple batches
   if (row_total > 100000) {
     // Maximum number of files is 8
-    batch_size = row_total / 8
+    batch_size = Math.ceil(row_total / 8)
   }
   // Loop through rows
   _.each(ds_cbi_csv_rows, function(row) {
@@ -1053,19 +1061,21 @@ end
 
 datasource "ds_cbi_commit" do
   request do
-    run_script $js_cbi_commit, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit, $ds_cbi_upload_file, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_commit", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_file", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  bill_upload_id = ds_cbi_upload_file.length > 0 ? ds_cbi_upload_file[0]["billUploadId"] : ""
+
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_create_bill_upload["id"] + '/operations',
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + bill_upload_id + '/operations',
     headers: {
       "User-Agent": "RS Policies",
     },

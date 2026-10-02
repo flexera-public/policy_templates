@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.3
+
+- Fixed an issue where setting the Minimum Capacity parameter to -1 to disable that check did not work as documented, and instead caused a "Reduce Minimum Capacity" recommendation to be generated for every autoscaling-enabled app.
+
+## v0.5.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.5.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.5.0
 
 - Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group

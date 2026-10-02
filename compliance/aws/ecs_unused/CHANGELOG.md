@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.2.9
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v4.2.8
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.2.7
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.2.6
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.2.5
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

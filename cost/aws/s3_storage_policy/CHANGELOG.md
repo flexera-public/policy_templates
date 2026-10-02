@@ -1,5 +1,33 @@
 # Changelog
 
+## v4.2.12
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
+## v4.2.11
+
+- Fixed bug where the "Exclusion Tags" parameter incorrectly included matching resources in the results instead of excluding them, and fixed a related error that occurred whenever any exclusion tag was entered.
+
+## v4.2.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.2.9
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
+## v4.2.8
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.2.7
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v4.2.6
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.2.5
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

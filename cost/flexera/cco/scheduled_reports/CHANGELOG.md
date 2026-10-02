@@ -1,5 +1,31 @@
 # Changelog
 
+## v4.3.0
+
+- Added support for Cloud Cost Optimization V2-specific cost metrics.
+
+## v4.2.0
+
+- Added support for specifying a dimension ID, in addition to a dimension name, for the `Custom Graph Dimension` and `Filter Dimensions` parameters.
+- Added a new incident that reports an error when an invalid dimension name or ID is specified for the `Custom Graph Dimension` or `Filter Dimensions` parameters.
+
+## v4.1.5
+
+- Fixed an issue where selecting a custom graph dimension could fail when the entered dimension name only differed by whitespace or letter case from the saved dimension name.
+
+## v4.1.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Renamed `policyName` to `policy_name` in the generated report data and `summary_template`/`detail_template` references to follow the standard naming convention.
+
+## v4.1.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v4.1.2
+
+- Fixed X-axis date labels overlapping in the report chart when `Billing Term` is set to `Day` over a multi-month date range.
+
 ## v4.1.1
 
 - Updated documentation link in policy description. Functionality unchanged.
@@ -82,7 +108,7 @@
 
 ## v2.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
 ## v1.26

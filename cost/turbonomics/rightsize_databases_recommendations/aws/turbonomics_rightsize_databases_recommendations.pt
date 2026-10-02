@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.4.7",
+  version: "0.4.11",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "AWS",
@@ -84,10 +84,34 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_turbonomic_audience" do
+  run_script $js_turbonomic_audience, $param_turbonomic_audience
+end
+
+script "js_turbonomic_audience", type: "javascript" do
+  parameters "param_turbonomic_audience"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_audience.trim()
+EOS
+end
+
+datasource "ds_turbonomic_host" do
+  run_script $js_turbonomic_host, $param_turbonomic_host
+end
+
+script "js_turbonomic_host", type: "javascript" do
+  parameters "param_turbonomic_host"
+  result "result"
+  code <<-'EOS'
+  result = param_turbonomic_host.trim()
+EOS
+end
+
 #get turbonomic token
 datasource "ds_get_turbonomic_token" do
   request do
-    run_script $js_get_turbonomic_token, $param_turbonomic_host, $param_turbonomic_audience
+    run_script $js_get_turbonomic_token, $ds_turbonomic_host, $ds_turbonomic_audience
   end
   result do
     encoding "json"
@@ -97,7 +121,7 @@ end
 
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_host
+    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $ds_turbonomic_host
   end
   result do
     encoding "json"
@@ -171,7 +195,7 @@ end
 
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_host, $param_provider
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $ds_turbonomic_host, $param_provider
   end
   result do
     encoding "json"
@@ -206,7 +230,7 @@ script "js_get_business_units", type: "javascript" do
       path: "/api/v3/businessunits",
       query_params: query_params,
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
         "Authorization": "Bearer " + access_token
       }
     }
@@ -214,11 +238,11 @@ script "js_get_business_units", type: "javascript" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider, $param_turbonomic_host
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $ds_turbonomic_host, $param_provider
 end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider", "turbonomic_endpoint"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "turbonomic_endpoint", "param_provider"
   result "result"
   code <<-'EOS'
     instances = []
@@ -323,7 +347,7 @@ end
 datasource "ds_get_projected_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_projected_statistics, iter_item, $ds_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -343,7 +367,7 @@ end
 datasource "ds_get_current_statistics" do
   iterate $ds_filtered_recommendations
   request do
-    run_script $js_get_projected_statistics, iter_item, $param_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_projected_statistics, iter_item, $ds_turbonomic_host, val($ds_get_turbonomic_token, "access_token")
   end
   result do
     encoding "json"
@@ -438,8 +462,8 @@ script "js_combined_data", type: "javascript" do
                 db.connections = ""
                 db.newConnections = ""
               }else{
-                db.connections = projectedStatistic.connection[0]
-                db.newConnections = ds_get_current_statistics[index].connection[0]
+                db.connections = ds_get_current_statistics[index].connection[0]
+                db.newConnections = projectedStatistic.connection[0]
               }
               db.newIops = projectedStatistic.iops[0]
               db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
@@ -475,6 +499,7 @@ policy "pol_turbonomic_rightsize_databases" do
       {{data.message}}
     EOS
     check eq(size(val(data, "instances")), 0)
+    hash_exclude "savings", "savingsCurrency", "tags"
     export "instances" do
       field "accountID" do
         label "Account ID"

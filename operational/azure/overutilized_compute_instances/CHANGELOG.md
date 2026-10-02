@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.5
+
+- Fixed an issue where the policy could fail to generate a report when a virtual machine's power state could not be determined.
+- Fixed an issue where the incident summary could display an invalid percentage value when there were no virtual machines found to analyze.
+
+## v0.4.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.4.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.4.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.4.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

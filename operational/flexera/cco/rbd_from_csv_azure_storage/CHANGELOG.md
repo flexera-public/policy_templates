@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.2.0
+
+- Added the "Effective Date Mode" parameter, which allows the effective date used for rule updates to automatically follow the current month instead of always using a static "Effective Date" value.
+
+## v0.1.6
+
+- Fixed a bug introduced in v0.1.5 where the policy would fail to evaluate with an "invalid argument in join" error due to how the Azure storage account and container parameters were sanitized.
+
+## v0.1.5
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.1.4
+
+- Updated the "Rule-Based Dimensions Updated/Created" incident summary to include the policy name for easier identification when multiple instances of this policy are applied.
+
+## v0.1.3
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
+## v0.1.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.1
 
 - Efficiency improvements to policy execution. Functionality unchanged.

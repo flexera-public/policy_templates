@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.8
+
+- Fixed an issue where the policy could abort the bill upload it had just created and fail execution.
+
+## v0.3.7
+
+- Fixed an issue where selecting "Previous Month" for the Billing Month parameter could incorrectly inject the cost into the current month instead of the prior month, when the policy was run on the 30th or 31st of March.
+
+## v0.3.6
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.3.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.3.4
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.5.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.4.3
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+- Corrected the order of fields in the policy validation block to match the standard field ordering convention. No functional changes.
+
+## v0.4.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.4.1
 
 - Added error detection for Ocean clusters that fail to return rightsizing recommendations, with a separate incident that includes the specific error code, affected cluster details, troubleshooting steps, and links to Spot documentation

@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.6.0",
+  version: "2.7.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -63,6 +63,33 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying budget vs actual spend data within the body of the incident, in addition to the chart and summary details above. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -89,7 +116,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -97,7 +124,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -105,12 +132,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -182,6 +217,8 @@ script "js_filters", type: "javascript" do
   parameters "ds_dimensions", "param_filter"
   result "results"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_filter = _.compact(_.map(param_filter, function(item) { return item.trim() }))
   var results = {}
   var ds_dimensions_inverted = _.invert(ds_dimensions);
   _.each(param_filter, function (filter_item) {
@@ -198,7 +235,7 @@ end
 datasource "ds_budgets" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/budgets"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
@@ -323,13 +360,15 @@ EOS
 end
 
 datasource "ds_aggregated_report" do
-  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $ds_billing_center_table, $param_budget_name_id, $param_report_type, f1_app_host
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $ds_billing_center_table, $param_budget_name_id, $param_report_type, $param_incident_data_table, f1_app_host
 end
 
 script "js_aggregated_report", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "ds_billing_center_table", "budget_name_id", "report_type", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "ds_billing_center_table", "budget_name_id", "report_type", "param_incident_data_table", "f1_app_host"
   result "results"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  budget_name_id = budget_name_id.trim()
   function convert_bc_name(id) {
     return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
   }
@@ -343,8 +382,49 @@ script "js_aggregated_report", type: "javascript" do
   }
   var currency = currency_code.value || '';
   var ref = currency ? currency_reference[currency] : undefined;
+  var separator = ",";
   if (ref) {
     currency = ref.symbol || "";
+    separator = ref.t_separator !== undefined ? ref.t_separator : "";
+  }
+
+  function format_number(number) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| MonthYear | Group | Budget | Actual Spend | Over Budget |"
+    divider = "| --- | --- | ---: | ---: | ---: |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item.monthYear +
+        " | " + item.group +
+        " | " + currency + format_number(item.budget) +
+        " | " + currency + format_number(item.spend) +
+        " | " + currency + format_number(item.overBudget) + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
   }
 
   function get_group(dimensions, dimensionsIDs) {
@@ -403,7 +483,7 @@ script "js_aggregated_report", type: "javascript" do
   var currentYearMonth = fmtDate(currentDate);
   var cumulativeAmount = {};
 
-  _.each(_.sortBy(_.sortBy(reports, function (item) {return item.group;}), function (item) {return item.monthYear;}), function (item, idx) {
+  _.each(_.sortBy(_.sortBy(reports, function (item) {return item.dimensions ? get_group(item.dimensions, item.dimensionsIDs) : "";}), function (item) {return fmtDate(item.timestamp);}), function (item, idx) {
     item.currency = currency_code.value;
     if (idx == 0) {
       yearMonthsArr = item.yearMonths.filter(function (ym) {
@@ -503,6 +583,10 @@ script "js_aggregated_report", type: "javascript" do
     chartAxis: encodeURI('chxl=0:|' + formatChartDates(yearMonthsArr)),
   }
 
+  if (param_incident_data_table == "true" && reportData.length > 0) {
+    results.dataTable = build_data_table(reportData)
+  }
+
 EOS
 end
 
@@ -551,6 +635,12 @@ EOS
   [Link to budget report in Flexera One](https://{{with index data.reportData 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data.reportData 0}}{{ .b_id }}{{end}})
 
   *Please note: The chart in the incident reflects the selected filters. However, the budget dashboard via hyperlink displays the overall budget without filters applied.*
+
+  {{ if eq parameters.param_incident_data_table "true" }}
+  ## Data Table
+
+  {{ data.dataTable }}
+  {{ end }}
 EOS
     check eq(size(val(data, "reportData")), 0)
     escalate $esc_budget_alert
@@ -582,5 +672,8 @@ escalation "esc_budget_alert" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

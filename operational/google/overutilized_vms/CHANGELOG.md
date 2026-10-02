@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v0.3.3
+
+- Fixed an issue where the policy could fail to run when CPU utilization metrics were unavailable for a project.
+
+## v0.3.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.3.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.3.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

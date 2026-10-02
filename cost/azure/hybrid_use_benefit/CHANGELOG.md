@@ -1,5 +1,26 @@
 # Changelog
 
+## v5.7.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v5.7.2
+
+- Fixed an issue where resource hourly cost could be invalid when billing data contained zero usage hours for a virtual machine.
+- Fixed an issue where the incident summary could show an invalid percentage when no virtual machines remained after filtering.
+
+## v5.7.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v5.7.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v5.6.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.6.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

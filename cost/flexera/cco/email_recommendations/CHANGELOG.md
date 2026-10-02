@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.10.3
+
+- Fixed an issue where filtering by cloud account could fail with an error for recommendations that do not include a cloud account name.
+- Fixed an issue where filtering by billing center could fail with an error for recommendations that do not include a billing center name.
+- Fixed an issue where the policy could fail with an error while processing recommendation types that do not include extended recommendation details.
+
+## v0.10.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.10.1
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+- Corrected the order of fields in the policy validation block to match the standard field ordering convention. No functional changes.
+
+## v0.10.0
+
+- Added support for AWS and Azure cross-family compute recommendations.
+- Added support for Kubernetes recommendations.
+
 ## v0.9.0
 
 - New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.

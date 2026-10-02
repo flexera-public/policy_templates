@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.2.4
+
+- Fixed an issue where the policy could fail to update an existing rule set if one of the rules being scanned did not have a condition defined.
+
+## v3.2.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v3.2.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v3.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v3.2.0
+
+- Added option to use current month/year as the effective date for generated rules instead of a static effective date.
+
 ## v3.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

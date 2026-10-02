@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.9.1
+
+- Fixed an issue where the incident message could omit the currency information when Flexera's internal currency conversion service was temporarily unavailable.
+
+## v3.9.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v3.8.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v3.8.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.8.0
 
 - When `Everything` is selected for the `Payment Option` parameter, the policy now makes a separate API call for each of the three payment options (No Upfront, Partial Upfront, All Upfront) and combines the results, ensuring all recommendations are captured.

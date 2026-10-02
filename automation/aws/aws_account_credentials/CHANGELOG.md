@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.4
+
+- Improved reliability when summarizing account credential results for child policies with incomplete account details.
+
+## v0.2.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.2.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.0
 
 - Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters to support sending a CSV attachment with incident emails.

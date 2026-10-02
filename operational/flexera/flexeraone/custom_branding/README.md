@@ -24,8 +24,8 @@ This policy template has the following input parameters required when being appl
 
 ### Category : All Customer Settings
 
-- *Nav Logo Image* - The URL of the image file to use in place of the Flexera logo that displays in the app navigation’s expanded state. Must start with `http://` or `https://`
-- *Nav Logo Small Image* - The URL of the image file to use in place of the small Flexera logo that displays in the app navigation’s collapsed state. Must start with `http://` or `https://`
+- *Nav Logo Image* - The URL of the image file to use in place of the Flexera logo that displays in the app navigation's expanded state. Must start with `http://` or `https://`
+- *Nav Logo Small Image* - The URL of the image file to use in place of the small Flexera logo that displays in the app navigation's collapsed state. Must start with `http://` or `https://`
 - *Marketing Footer Hide* - Yes or No to show/hide the marketing footer on the landing page. (Default is No)
 - *Marketing Submit Ideas Hide* - Yes or No to show/hide the Submit Ideas link on the landing page. (Default is No)
 - *Marketing Support Plan Hide* - Yes or No to show/hide the Support Plan Information link on the landing page. (Default is No)

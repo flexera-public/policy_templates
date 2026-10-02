@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.7
+
+- Fixed an issue where the policy could fail when the AWS account identity response was unavailable.
+
+## v0.2.6
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.2.5
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.4
 
 - Fixed issue with "PutEventSelectors" API call that could potentially cause policy actions to fail.

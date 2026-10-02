@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.3.4",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -198,7 +198,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -206,7 +206,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -214,12 +214,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -391,6 +399,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -483,6 +493,8 @@ script "js_parsed_stats", type: "javascript" do
   result = {}
 
   _.each(ds_cpu_stats, function(entry) {
+    if (entry['timeSeriesDescriptor'] == undefined || entry['timeSeriesData'] == undefined) { return }
+
     cpu_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
 
     _.each(entry["timeSeriesData"], function(item) {
@@ -597,6 +609,8 @@ script "js_instances_label_filtered", type: "javascript" do
   parameters "ds_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_labels = _.compact(_.map(param_exclusion_labels, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -674,6 +688,8 @@ script "js_instances_region_filtered", type: "javascript" do
   parameters "ds_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_instances_label_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -1110,7 +1126,7 @@ define resize_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: $body
   )
@@ -1142,7 +1158,7 @@ define start_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1164,7 +1180,7 @@ define stop_instance($instance) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1195,7 +1211,7 @@ define get_instance_state($instance) return $response, $instance_state do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1232,7 +1248,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

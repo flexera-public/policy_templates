@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.4
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.2.3
+
+- Renamed the internal `policyName` field to `policy_name` for consistency with the standard convention used across other policy templates. No functional changes.
+
+## v0.2.2
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
+## v0.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.0
 
 - Added support for attaching CSV files to incident emails.

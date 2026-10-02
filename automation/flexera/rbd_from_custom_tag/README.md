@@ -8,7 +8,8 @@ This policy template creates and updates custom Rule-Based Dimensions that dupli
 
 This policy template has the following input parameters:
 
-- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
+- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs. Only used when *Effective Date Mode* is set to "Static".
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates ("Static"), or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs ("Current Month").
 - *Custom Tags* - A list of Custom Tags keys to build Rule-Based Dimensions from. Can be either the Custom Tag name as seen in the Flexera platform or the ID returned by Flexera APIs.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Needs to be in the same order as the 'Custom Tags' parameter. Names will be derived automatically from Custom Tag names if this list is empty.
 - *Lowercase Values* - Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail.

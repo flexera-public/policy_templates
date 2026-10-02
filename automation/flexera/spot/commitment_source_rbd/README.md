@@ -15,7 +15,8 @@ This policy template creates a rule-based dimension in Flexera Cloud Cost Optimi
 - *Spot Organization ID* - The organization ID of the Spot Eco account to use for the commitment source.
 - *Dimension Name* - The name to give the new dimension for the commitment source. This is how the dimension will appear in Flexera One.
 - *Dimension ID* - The internal ID to give the new dimension for the commitment source. Default is recommended for most use cases.
-- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
+- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs. Only used when *Effective Date Mode* is set to "Static".
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates ("Static"), or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs ("Current Month").
 
 ## Policy Actions
 

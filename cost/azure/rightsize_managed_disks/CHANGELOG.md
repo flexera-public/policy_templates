@@ -1,5 +1,26 @@
 # Changelog
 
+## v3.0.2
+
+- Fixed an issue where the policy could fail with a "host must be a string" error due to how the Azure endpoint and incident CSV parameters were sanitized.
+
+## v3.0.1
+
+- Fixed an issue where the policy could fail with an error instead of generating a report when a data disk's utilization metrics were not available from Azure Monitor for one of the requested measurements
+
+## v3.0.0
+
+- Added a `Recommendation` field to the incident export, describing the recommended disk downgrade action for each resource
+- Results are now sorted by descending estimated monthly savings
+- Added a summary line to the incident message reporting how many disks were analyzed and how many were recommended for a downgrade
+- Fixed a bug where the incident detail's `Potential Monthly Savings` value displayed an incorrect currency format for non-USD organizations
+- Fixed a bug where incident deduplication would sometimes not occur, causing the same resource to appear as different incidents if raised during multiple executions
+- Text-based parameters, such as the allowed/denied subscriptions, resource groups, and regions lists, exclusion tags, and SKU ignore list, are now automatically trimmed of leading/trailing whitespace so accidental extra spaces no longer cause filters to silently not match
+
+## v2.9.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v2.9.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

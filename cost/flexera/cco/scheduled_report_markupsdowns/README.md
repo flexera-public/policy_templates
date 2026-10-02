@@ -20,7 +20,7 @@ There are four cost metrics to choose from.
 This policy template has the following input parameters:
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Flexera Cloud Cost Optimization. Leave the field blank to report on all top level Billing Centers.
+- *Billing Center List* - List of top level Billing Center names you want to report on. Names must be exactly as shown in Flexera Cloud Cost Optimization. Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* - See cost metrics above for details on selection.
 - *Compute markup or markdown percentage* - markup for the compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Application Service markup or markdown percentage* - markup for the Application service category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).

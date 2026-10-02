@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.4.2",
+  version: "4.4.5",
   provider: "AWS",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -120,6 +120,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_report_id" do
+  run_script $js_report_id, $param_report_id
+end
+
+script "js_report_id", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  result = { value: param_report_id.trim() }
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -131,7 +143,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -139,7 +151,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -147,12 +159,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -193,6 +213,8 @@ script "js_regions", type:"javascript" do
   parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    user_entered_regions = _.compact(_.map(user_entered_regions, function(item) { return item.trim() }))
     if(_.isEmpty(user_entered_regions)){
       regions = all_regions;
     }else{
@@ -273,7 +295,7 @@ datasource "ds_fnms_report" do
     '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">',
     '  <soap:Body>',
     '    <tem:GetCustomView>',
-    '      <tem:customViewID>', $param_report_id, '</tem:customViewID>',
+    '      <tem:customViewID>', val($ds_report_id, "value"), '</tem:customViewID>',
     '      <tem:rowLimit>100000</tem:rowLimit>',
     '   </tem:GetCustomView>',
     '  </soap:Body>',
@@ -297,6 +319,8 @@ script "js_formatted_instances", type: "javascript" do
   parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclude_tags = _.compact(_.map(param_exclude_tags, function(item) { return item.trim() }))
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   var result = [];
@@ -401,7 +425,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

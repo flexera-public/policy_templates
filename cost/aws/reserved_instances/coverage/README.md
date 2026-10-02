@@ -8,7 +8,9 @@ This policy template uses the [AWS Billing and Cost Management API](https://docs
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
+- *Service* - AWS services to provide coverage information for.
 - *Look Back Period (Days)* - Number of days in the past to assess AWS Reserved Instances coverage. Coverage will be assessed from this point in time until today.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

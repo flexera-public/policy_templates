@@ -39,14 +39,16 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `csm_bill_upload_admin`
 
 - [**Oracle Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#oracle) (*provider=oracle*) which meets the below requirements:
-  - `define tenancy usage-report as <ocid>`
+  - `define tenancy usage-report as ocid1.tenancy.oc1..aaaaaaaaned4fkpkisbwjlr56u7cj63lf3wffbilvqknstgtvzub7vhqkggq`
   - `endorse group <group> to read objects in tenancy usage-report`
 
-  Replace `<ocid>` with the OCID of the Tenancy. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
+  Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
+
+  **Note: This example has a specific tenancy OCID, because the reports are stored in an Oracle-owned Object Storage bucket hosted by Oracle Cloud Infrastructure, and not a customer's tenancy.**
 
   **Note: If the user belongs to a federated identity domain (such as Oracle Identity Cloud Service), you must prefix the group name with the federation domain name. For example: `endorse group OracleIdentityCloudService/billing to read objects in tenancy usage-report`. For most auto-federated tenancies the domain name is `OracleIdentityCloudService`, but you can confirm the exact name by navigating to Identity & Security → Identity → Federation in the Console. Users in OCI's Default domain do not require a prefix.**
 
-Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential. More information is [available in Oracle's documentation](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/costusagereportsoverview.htm#policy).
+Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential. More information is [available in Oracle's documentation](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/costusagereportsoverview.htm).
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

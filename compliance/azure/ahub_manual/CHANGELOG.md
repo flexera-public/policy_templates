@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.3.4
+
+- Fixed an issue where the incident notification could be missing its recommendation details when the AHUB core usage or virtual machine count was exactly equal to the licensed amount.
+
+## v4.3.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.3.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.3.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

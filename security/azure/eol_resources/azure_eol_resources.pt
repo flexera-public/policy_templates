@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Deprecated Resources",
@@ -182,6 +182,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -232,10 +240,11 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
-      include_subscription = _.contains(param_subscriptions_list, subscription['id']) ||
-                             _.contains(param_subscriptions_list, subscription['name'])
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
 
       if (param_subscriptions_allow_or_deny == "Deny") {
         include_subscription = !include_subscription
@@ -339,6 +348,9 @@ script "js_esu_resources", type: "javascript" do
   parameters "ds_azure_virtual_machines", "ds_applied_policy", "ds_azure_regions_table", "ds_azure_esu_os_versions", "param_regions_allow_or_deny", "param_regions_list", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_incident_csv", "param_report_scope"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   // Lookup table of known end-of-life OS versions detectable via Azure Marketplace image reference.
   // Detection is based on the image publisher and either SKU or offer substring matching.
   // Note: VMs created from custom images, managed images, or shared image gallery images
@@ -374,13 +386,13 @@ script "js_esu_resources", type: "javascript" do
     // Skip VMs with no standard Marketplace image reference; they cannot be reliably detected
     if (!vm['publisher'] && !vm['offer'] && !vm['sku']) { return }
 
-    // Region filtering — support both shorthand ("eastus") and pretty name ("East US")
+    // Region filtering - support both shorthand ("eastus") and pretty name ("East US")
     if (param_regions_list.length > 0) {
       var region_match = _.contains(param_regions_list, vm['location']) || _.contains(param_regions_list, ds_azure_regions_table[vm['location']])
       if (region_match != allow_deny_test[param_regions_allow_or_deny]) { return }
     }
 
-    // Tag exclusion filtering — Azure tags are flat {key: value} objects
+    // Tag exclusion filtering - Azure tags are flat {key: value} objects
     if (param_exclusion_tags.length > 0) {
       var resource_tags = {}
       if (typeof(vm['tags']) == 'object' && vm['tags'] != null) {
@@ -589,7 +601,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

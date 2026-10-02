@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template identifies Google persistent disks that are either unused (unattached) or underutilized, and generates recommendations accordingly. Unused disks — those that have not been attached to an instance for a user-specified number of days — are recommended for deletion. Underutilized disks — those attached to a VM but consuming only a small fraction of the disk type's available IOPS or throughput capacity — are recommended for downgrade to a lower-cost disk type (e.g., `pd-ssd` → `pd-balanced` → `pd-standard`).
+This policy template identifies Google persistent disks that are either unused (unattached) or underutilized, and generates recommendations accordingly. Unused disks - those that have not been attached to an instance for a user-specified number of days - are recommended for deletion. Underutilized disks - those attached to a VM but consuming only a small fraction of the disk type's available IOPS or throughput capacity - are recommended for downgrade to a lower-cost disk type (e.g., `pd-ssd` → `pd-balanced` → `pd-standard`).
 
 NOTE: Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/google/) to ingest Google Cloud costs into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, please do so before using this policy template. Alternatively, use the [Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template, which uses the Google Recommender service rather than Flexera.
 

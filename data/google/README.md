@@ -96,7 +96,7 @@ The following files are produced by scripts in [`tools/cloud_data/google/`](http
 
 **Script:** [`tools/cloud_data/google/google_vm_pricing.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/google/google_vm_pricing.py)
 
-**Description:** Estimated on-demand hourly prices in USD for all GCE machine types, computed using per-vCPU and per-GB-RAM prices for the `us-central1-a` zone. Prices are calculated as `vCPUs × vCPU_price + memory_GB × memory_price`. Used by policy templates that estimate costs or calculate savings for GCE rightsizing recommendations.
+**Description:** Estimated on-demand hourly prices in USD for all GCE machine types, computed using per-vCPU and per-GB-RAM prices for the `us-central1-a` zone. Prices are calculated as `vCPUs x vCPU_price + memory_GB x memory_price`. Used by policy templates that estimate costs or calculate savings for GCE rightsizing recommendations.
 
 **Note:** Requires Google Application Default Credentials with `cloudbilling.services.get` permission to run.
 

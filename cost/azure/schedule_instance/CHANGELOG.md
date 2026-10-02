@@ -1,5 +1,22 @@
 # Changelog
 
+## v7.2.5
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v7.2.4
+
+- Fixed an issue where the policy could fail to generate an incident when the Azure directory information for the tenant was unavailable.
+
+## v7.2.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter ordering for the `ds_azure_instances_tag_filtered` datasource.
+
+## v7.2.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v7.2.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

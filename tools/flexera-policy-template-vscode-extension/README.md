@@ -1,6 +1,6 @@
 # Flexera Policy Template Language Support
 
-A VSCode extension for developing [Flexera Policy Templates](https://docs.flexera.com/flexera-one/automation/managing-and-using-the-automation-catalog) (`.pt` files) — the custom DSL used to build automation policies for the [Flexera Policy Catalog](https://github.com/flexera-public/policy_templates).
+A VSCode extension for developing [Flexera Policy Templates](https://docs.flexera.com/flexera-one/automation/managing-and-using-the-automation-catalog) (`.pt` files) - the custom DSL used to build automation policies for the [Flexera Policy Catalog](https://github.com/flexera-public/policy_templates).
 
 Policy templates combine a Ruby-like block syntax (for datasource definitions, HTTP requests, and policy rules) with embedded JavaScript (for data transformation) and Go template expressions (for incident report rendering). This extension provides full language support for the `.pt` format across all three embedded languages.
 
@@ -15,14 +15,14 @@ Policy templates combine a Ruby-like block syntax (for datasource definitions, H
 
 ## Installation
 
-### Option A — Install from Location (Recommended for Development)
+### Option A - Install from Location (Recommended for Development)
 
 1. Open the command palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
 1. Type **Developer: Install Extension from Location...**
 1. Navigate to and select the `tools/flexera-policy-template-vscode-extension/` folder
 1. Reload the window when prompted
 
-### Option B — Install from VSIX Package
+### Option B - Install from VSIX Package
 
 ```bash
 # Build the package (requires vsce: npm install -g @vscode/vsce)
@@ -33,7 +33,7 @@ vsce package
 code --install-extension flexera-policy-template-*.vsix
 ```
 
-### Option C — Developer Symlink (Live Reload)
+### Option C - Developer Symlink (Live Reload)
 
 For grammar development, symlink the extension directory into VSCode's extensions folder so grammar changes take effect after a window reload:
 
@@ -64,19 +64,19 @@ In any `.pt` file, type a snippet prefix (e.g. `pt-header`) and press `Tab` to e
 
 Comprehensive highlighting for the Flexera Policy Template DSL:
 
-- **Top-level block keywords** — `parameter`, `credentials`, `pagination`, `datasource`, `script`, `policy`, `escalation`, `define`
-- **Block property keywords** — `request`, `result`, `validate`, `validate_each`, `check`, `export`, `escalate`, `email`, `collect`, `field`, `header`, `query`, `body`, `body_field`, `auth`, `host`, `path`, `iterate`, `run_script`, `pagination`, `get_page_marker`, `set_page_marker`, `uri`, `no_echo`, `min_value`, `max_value`, `min_length`, `max_length`, `allowed_values`, `allowed_pattern`, `resolve_incident`, `attach_export_table`, `body_table_max_rows`, and more
-- **Cloud Workflow keywords** — `foreach`, `concurrent`, `while`, `sub`, `call`, `retrieve`, `sleep`, `timeout`, `on_timeout`, `on_error`, `raise`, `return`
-- **Built-in DSL functions** — `jmes_path`, `xpath`, `val`, `join`, `split`, `size`, `contains`, `eq`, `ne`, `gt`, `lt`, `gte`, `lte`, `logic_and`, `logic_or`, `logic_not`, `get`, `switch`, `first`, `last`, `to_n`, `to_s`, `to_json`, `type`, `inspect`, `task_label`, `http_request`, `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete`
-- **Runtime variables** — `rs_org_id`, `rs_org_name`, `rs_project_id`, `rs_project_name`, `rs_optima_host`, `rs_governance_host`, `f1_app_host`, `meta_parent_policy_id`, `policy_id`
-- **Implicit DSL context variables** — `response`, `iter_item`, `col_item`, `item`, `data`
-- **Cloud Workflow special variables** — `$_error`, `$_error_behavior`
-- **`info()` field names** — `version`, `provider`, `service`, `policy_set`, `recommendation_type`, `hide_skip_approvals`, `publish`
-- **Policy Template variable sigils** — `$param_*`, `$ds_*`, `$js_*`, `$auth_*`, `$$global_*`, `$pagination_*`
-- **Embedded JavaScript** — full JS syntax highlighting inside `code <<-'EOS' ... EOS` script blocks and single-line `code '...'` expressions
-- **Go template expressions** — `{{ }}` blocks highlighted inside `detail_template` and `summary_template` heredocs
-- **String types** — double-quoted strings, single-quoted strings, heredocs (`<<-'EOS'` / `<<-EOS`)
-- **Comments** — line comments (`#`) and block comments (`###...###`)
+- **Top-level block keywords** - `parameter`, `credentials`, `pagination`, `datasource`, `script`, `policy`, `escalation`, `define`
+- **Block property keywords** - `request`, `result`, `validate`, `validate_each`, `check`, `export`, `escalate`, `email`, `collect`, `field`, `header`, `query`, `body`, `body_field`, `auth`, `host`, `path`, `iterate`, `run_script`, `pagination`, `get_page_marker`, `set_page_marker`, `uri`, `no_echo`, `min_value`, `max_value`, `min_length`, `max_length`, `allowed_values`, `allowed_pattern`, `resolve_incident`, `attach_export_table`, `body_table_max_rows`, and more
+- **Cloud Workflow keywords** - `foreach`, `concurrent`, `while`, `sub`, `call`, `retrieve`, `sleep`, `timeout`, `on_timeout`, `on_error`, `raise`, `return`
+- **Built-in DSL functions** - `jmes_path`, `xpath`, `val`, `join`, `split`, `size`, `contains`, `eq`, `ne`, `gt`, `lt`, `gte`, `lte`, `logic_and`, `logic_or`, `logic_not`, `get`, `switch`, `first`, `last`, `to_n`, `to_s`, `to_json`, `type`, `inspect`, `task_label`, `http_request`, `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete`
+- **Runtime variables** - `rs_org_id`, `rs_org_name`, `rs_project_id`, `rs_project_name`, `rs_optima_host`, `rs_governance_host`, `f1_app_host`, `meta_parent_policy_id`, `policy_id`
+- **Implicit DSL context variables** - `response`, `iter_item`, `col_item`, `item`, `data`
+- **Cloud Workflow special variables** - `$_error`, `$_error_behavior`
+- **`info()` field names** - `version`, `provider`, `service`, `policy_set`, `recommendation_type`, `hide_skip_approvals`, `publish`
+- **Policy Template variable sigils** - `$param_*`, `$ds_*`, `$js_*`, `$auth_*`, `$$global_*`, `$pagination_*`
+- **Embedded JavaScript** - full JS syntax highlighting inside `code <<-'EOS' ... EOS` script blocks and single-line `code '...'` expressions
+- **Go template expressions** - `{{ }}` blocks highlighted inside `detail_template` and `summary_template` heredocs
+- **String types** - double-quoted strings, single-quoted strings, heredocs (`<<-'EOS'` / `<<-EOS`)
+- **Comments** - line comments (`#`) and block comments (`###...###`)
 
 ## Snippets Reference
 

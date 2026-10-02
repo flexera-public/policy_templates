@@ -1,5 +1,30 @@
 # Changelog
 
+## v8.6.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v8.6.3
+
+- Fixed an issue where the policy could calculate an invalid unused volume percentage when filters left no Azure volumes to analyze.
+
+## v8.6.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v8.6.1
+
+- Fixed bug where the `Delete Volumes` action would fail if the volume had already been deleted. The action now treats a volume that no longer exists as a successful deletion.
+- Fixed bug where unexpected responses from the Azure API during volume deletion raised an internal Cloud Workflow error instead of reporting the actual API response.
+
+## v8.6.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v8.5.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v8.5.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

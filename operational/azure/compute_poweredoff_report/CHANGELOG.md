@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.4
+
+- Fixed an issue where the policy could fail to generate a result for a virtual machine whose power state could not be determined from the Azure API response.
+
+## v0.5.3
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.5.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.5.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

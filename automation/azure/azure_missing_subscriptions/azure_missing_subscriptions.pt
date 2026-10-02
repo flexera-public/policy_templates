@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.3.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -118,7 +118,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -126,7 +126,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -134,12 +134,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -299,6 +307,8 @@ script "js_missing_subscriptions_api", type: "javascript" do
   parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
@@ -308,7 +318,11 @@ script "js_missing_subscriptions_api", type: "javascript" do
       return sub['id'].toLowerCase().trim()
     })
 
-    missing_subs = _.reject(ds_flexera_cco_data, function(sub) {
+    cco_data = _.filter(ds_flexera_cco_data, function(sub) {
+      return sub['vendor_account'].toLowerCase() != 'none' && sub['vendor_account'].trim() != ''
+    })
+
+    missing_subs = _.reject(cco_data, function(sub) {
       return _.contains(automation_ids, sub['vendor_account'].toLowerCase().trim())
     })
 
@@ -342,12 +356,18 @@ script "js_missing_subscriptions_cco", type: "javascript" do
   parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
   if (param_report_selection != 'Missing in Azure API') {
-    cco_ids = _.map(ds_flexera_cco_data, function(sub) {
+    cco_data = _.filter(ds_flexera_cco_data, function(sub) {
+      return sub['vendor_account'].toLowerCase() != 'none' && sub['vendor_account'].trim() != ''
+    })
+
+    cco_ids = _.map(cco_data, function(sub) {
       return sub['vendor_account'].toLowerCase().trim()
     })
 

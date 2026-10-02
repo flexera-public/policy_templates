@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.1.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v4.0.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.0
 
 - The `Savings Plan Type` parameter now accepts multiple selections (list) instead of a single value. Leave it blank to return results for all Savings Plan types.

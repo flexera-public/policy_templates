@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "8.5.1",
+  version: "8.6.4",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -43,7 +43,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_minimum_age" do
@@ -224,7 +224,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -232,7 +232,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -240,12 +240,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -386,6 +394,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -490,6 +500,8 @@ script "js_azure_disks_tag_filtered", type: "javascript" do
   parameters "ds_azure_disks_status_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -566,6 +578,8 @@ script "js_azure_disks_region_filtered", type: "javascript" do
   parameters "ds_azure_disks_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_disks_tag_filtered, function(disk) {
       include_disk = _.contains(param_regions_list, disk['region'])
@@ -590,6 +604,8 @@ script "js_azure_disks_rg_filtered", type: "javascript" do
   parameters "ds_azure_disks_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
     if (param_resource_groups_list.length > 0) {
       result = _.filter(ds_azure_disks_region_filtered, function(resource) {
         rg = resource['resourceGroup']
@@ -956,7 +972,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   // Message for incident output
   total_disks = ds_azure_disks_rg_filtered.length.toString()
   total_unused_disks = result.length.toString()
-  unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
+  unused_disks_percentage = total_disks == 0 ? '0.00%' : (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
   total_disks_noun = "volume"
   if (total_disks > 1) { total_disks_noun = "volumes" }
@@ -1231,7 +1247,7 @@ define detach_disk($item, $param_azure_endpoint) return $response do
       "api-version": "2023-07-01"
     },
     headers: {
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1260,7 +1276,7 @@ define detach_disk($item, $param_azure_endpoint) return $response do
       "api-version": "2023-07-01"
     },
     headers: {
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: $new_properties
   )
@@ -1282,7 +1298,7 @@ define detach_disk($item, $param_azure_endpoint) return $response do
         "api-version": "2023-04-02"
       },
       headers: {
-        "content-type": "application/json"
+        "Content-Type": "application/json"
       }
     )
 
@@ -1313,7 +1329,7 @@ define create_snapshot($item, $param_azure_endpoint) return $response do
       "api-version": "2021-12-01"
     },
     headers: {
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "location": $item["region"],
@@ -1369,24 +1385,31 @@ define delete_unattached_disk($disk_id, $param_azure_endpoint) do
   )
   $$all_responses << to_json({"req":"DELETE "+ $param_azure_endpoint + $disk_id, "resp": $response})
   task_label('Delete Disk response: '+to_json($response["body"]))
-  if $response["code"] != 202
-    $error_code = $response["body"]["error"]["code"]
+  # Azure returns 200 when the disk is deleted synchronously, 202 when the delete is accepted asynchronously, and 204 when the disk does not exist.
+  # All three mean the desired end state is met, so only anything else is treated as a failure.
+  # Note: do not read $response["body"] as a hash here. A 204 has an empty body, which is a string, and indexing a string with a key is parsed as a slice by Cloud Workflow Language.
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
     task_label('Delete Disk unexpected response: '+$disk_id+' '+to_json($response))
     raise 'Delete Disk unexpected response: '+$disk_id+' '+to_json($response)
   else
-    # 202 Response means the delete was accepted
+    task_label('Delete Disk accepted with code '+to_s($response["code"])+': '+$disk_id)
 
-    # explicitly reset response["code"]... it should be 202 though from check above so this is not needed
-    $response = { "code": 0 }
-    # wait until disk is deleted
-    # TODO: add retry limit with backoff timer
-    # we expect a 404 response when the disk is deleted
-    while $response["code"] != 404 do
-      task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
-      call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
-      sleep(1)
+    if $response["code"] == 204
+      # The disk was already gone before this action ran, so there is nothing to poll for.
+      task_label('Delete Disk already absent, nothing to do: '+$disk_id)
+    else
+      # explicitly reset response["code"] so the poll below always runs at least once
+      $response = { "code": 0 }
+      # wait until disk is deleted
+      # TODO: add retry limit with backoff timer
+      # we expect a 404 response when the disk is deleted
+      while $response["code"] != 404 do
+        task_label('Current Disk Status: '+$disk_id+' '+to_json($response))
+        call get_disksnapshot($disk_id, $param_azure_endpoint) retrieve $response
+        sleep(1)
+      end
+      task_label('Delete Disk successful: '+$disk_id)
     end
-    task_label('Delete Disk successful: '+$disk_id)
   end
 end
 
@@ -1412,7 +1435,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

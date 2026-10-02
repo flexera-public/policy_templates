@@ -1,5 +1,34 @@
 # Changelog
 
+## v5.12.2
+
+- Fixed an issue where the reported vCPU count for an RDS instance could be missing when the instance did not have explicit processor configuration data available.
+- Fixed an issue where the policy could fail with an error while analyzing network throughput usage for RDS instances that have no recorded network activity data for the analyzed period.
+
+## v5.12.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v5.12.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v5.11.4
+
+- Fixed the region-accessibility probe to use the correct `MaxRecords` query parameter (instead of `MaxResults`) for the RDS `DescribeDBInstances` API call, ensuring the probe works reliably across all regions.
+
+## v5.11.3
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v5.11.2
+
+- Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
+
+## v5.11.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.11.0
 
 - Changed Available Memory fields to report memory utilization as a percentage instead of available memory. This aligns the incident with the other usage recommendation policy templates.

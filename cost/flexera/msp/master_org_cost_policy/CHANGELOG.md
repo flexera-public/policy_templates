@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.7
+
+- Fixed an issue where the weekly and monthly spend change percentages could show an invalid value when there was no prior period spend to compare against.
+
+## v2.0.6
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Added a link to docs.flexera.com in the `short_description`.
+
 ## v2.0.5
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.0.17
+
+- Fixed an issue where the policy could fail to check S3 buckets located in newer AWS regions, such as Asia Pacific (Hong Kong), Middle East (Bahrain), Africa (Cape Town), and Europe (Milan).
+
+## v4.0.16
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v4.0.15
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v4.0.14
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v4.0.13
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.12
 
 - Fixed issue with incident table that cause policy execution to fail

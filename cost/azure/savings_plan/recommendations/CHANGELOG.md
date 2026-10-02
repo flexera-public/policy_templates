@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.8.2
+
+- Fixed an issue where the policy could fail to run with "Savings Plan Scope" set to "Shared" if none of the accessible subscriptions had usable resources (for example, when only Visual Studio or Microsoft 365 subscriptions were present).
+- Fixed an issue where the incident message would omit the currency information when Flexera's internal currency conversion service was unavailable.
+
+## v3.8.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v3.8.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v3.7.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.7.0
 
 - Added `Any` option to `Savings Plan Term` parameter to return combined results for both 1 Year and 3 Year term lengths

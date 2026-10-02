@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.11
+
+- Fixed an issue where the policy could fail to report Reserved Instance coverage details for a virtual machine when that data was not available from Turbonomic, instead of showing a coverage value of zero.
+
+## v0.6.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for the filtered recommendations script (datasources before parameters).
+
+## v0.6.9
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
+## v0.6.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+
 ## v0.6.7
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.8.1",
+  version: "4.9.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit",
@@ -129,7 +129,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_automatic_action" do
@@ -205,7 +205,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -213,7 +213,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -221,12 +221,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -383,6 +391,8 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_subscriptions_list = _.compact(_.map(param_subscriptions_list, function(item) { return item.trim() }))
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -659,6 +669,8 @@ script "js_resources_tag_filtered", type: "javascript" do
   parameters "ds_sql_virtualmachines_type_filtered", "ds_sql_elastic_pools_type_filtered", "ds_sql_databases_type_filtered", "ds_sql_managed_instances_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -749,6 +761,8 @@ script "js_resources_region_filtered", type: "javascript" do
   parameters "ds_resources_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   function region_filter_resources(resource_list, regions_allow_or_deny, regions_list) {
     return _.filter(resource_list, function(resource) {
       include_resource = _.contains(regions_list, resource['region'])
@@ -787,22 +801,33 @@ script "js_resources_rg_filtered", type: "javascript" do
   parameters "ds_resources_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
   result "result"
   code <<-'EOS'
-    if (param_resource_groups_list.length > 0) {
-      result = _.filter(ds_resources_region_filtered, function(resource) {
+    // Remove any leading/trailing whitespace the user may have accidentally entered
+    param_resource_groups_list = _.compact(_.map(param_resource_groups_list, function(item) { return item.trim() }))
+    function rg_filter_resources(resource_list, rg_allow_or_deny, rg_list) {
+      return _.filter(resource_list, function(resource) {
         rg = resource['resourceGroup']
         sub = resource['subscriptionId'] || resource['subscriptionID']
-        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+        include_resource = _.any(rg_list, function(rg_entry) {
           if (rg_entry.indexOf('/') != -1) {
             entry_parts = rg_entry.split('/')
             return sub == entry_parts[0] && rg == entry_parts[1]
           }
           return rg == rg_entry
         })
-        if (param_resource_groups_allow_or_deny == "Deny") {
+        if (rg_allow_or_deny == "Deny") {
           include_resource = !include_resource
         }
         return include_resource
       })
+    }
+
+    if (param_resource_groups_list.length > 0) {
+      result = {
+        sql_virtualmachines: rg_filter_resources(ds_resources_region_filtered['sql_virtualmachines'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_elastic_pools: rg_filter_resources(ds_resources_region_filtered['sql_elastic_pools'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_databases: rg_filter_resources(ds_resources_region_filtered['sql_databases'], param_resource_groups_allow_or_deny, param_resource_groups_list),
+        sql_managed_instances: rg_filter_resources(ds_resources_region_filtered['sql_managed_instances'], param_resource_groups_allow_or_deny, param_resource_groups_list)
+      }
     } else {
       result = ds_resources_region_filtered
     }
@@ -1406,7 +1431,7 @@ define license_vm($instance, $param_azure_endpoint) return $response do
     },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "location": $instance['region'],
@@ -1445,7 +1470,7 @@ define license_elastic_pool($instance, $param_azure_endpoint) return $response d
     },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "properties": {
@@ -1482,7 +1507,7 @@ define license_db($instance, $param_azure_endpoint) return $response do
     },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "properties": {
@@ -1519,7 +1544,7 @@ define license_managed_instance($instance, $param_azure_endpoint) return $respon
     },
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       "properties": {
@@ -1560,7 +1585,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

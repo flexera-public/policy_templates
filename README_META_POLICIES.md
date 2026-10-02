@@ -85,7 +85,7 @@ Once the above configuration is complete, usage is straight-forward; apply the M
 
 #### First Parent Policy run
 
-Creates the initial batch of create child policies and summary incidents.  Child policies are created in batches and if number of children is >20 [or `max_actions`], then it will take more than one run to deploy all child policies.
+Creates the initial batch of create child policies and summary incidents. Child policies are created in batches and if number of children is >20 [or `max_actions`], then it will take more than one run to deploy all child policies.
 
 #### 2nd, 3rd, 4th, etc.. Parent Policy runs
 
@@ -97,7 +97,7 @@ For example, if you have 200 child policies to be created, the first run would c
 
 #### Terminate Parent Policy
 
-Terminating the Parent Policy will only delete the Parent Policy in that moment.  The child policies will terminate themselves on their next scheduled run when they see that the Parent Policy no longer exists.
+Terminating the Parent Policy will only delete the Parent Policy in that moment. The child policies will terminate themselves on their next scheduled run when they see that the Parent Policy no longer exists.
 
 ----
 
@@ -105,7 +105,7 @@ Terminating the Parent Policy will only delete the Parent Policy in that moment.
 
 ### Recommendations may take up to 1hr to appear in the UI
 
-Microservice that generates recommendations is configured to run on a schedule, so they will not immediately appear when an incident is created.  This is a Flexera One limitation and not necessarily related to Meta Policies.
+Microservice that generates recommendations is configured to run on a schedule, so they will not immediately appear when an incident is created. This is a Flexera One limitation and not necessarily related to Meta Policies.
 
 ### Child Applied Policies and Incidents are not currently visible in the UI
 
@@ -114,7 +114,7 @@ It's not possible to view incidents from child policies in the UI beside the Cos
 
 ### Recommendations from Child Policy Incidents take minimum 1day to disappear
 
-Cost Savings Recommendations disappear when the Child Applied Policy is terminated, which happens on schedule depending `param_policy_schedule` (default: daily, [weekly, monthly]). Child Policies and Incidents are hidden from UI, and so this can be a little confusing and it's not possible using UI to trigger terminate or run now of child policy to clean up incidents/recommendations in < 1hr.  Must use API to "run" all child policies and trigger the ad-hoc "clean" when the child policies delete themselves if they don't have a parent policy that exists.
+Cost Savings Recommendations disappear when the Child Applied Policy is terminated, which happens on schedule depending `param_policy_schedule` (default: daily, [weekly, monthly]). Child Policies and Incidents are hidden from UI, and so this can be a little confusing and it's not possible using UI to trigger terminate or run now of child policy to clean up incidents/recommendations in < 1hr. Must use API to "run" all child policies and trigger the ad-hoc "clean" when the child policies delete themselves if they don't have a parent policy that exists.
 
 ----
 
@@ -122,11 +122,11 @@ Cost Savings Recommendations disappear when the Child Applied Policy is terminat
 
 ### Child Policy Template Modifications
 
-A "child" policy is essentially just a standard policy template [i.e. from the catalog] which has some additional datasources and logic to make it work with the Meta Parent Policy.  The child policy can be used exactly as before and the additions have no resulting impact to their current functionality.
+A "child" policy is essentially just a standard policy template [i.e. from the catalog] which has some additional datasources and logic to make it work with the Meta Parent Policy. The child policy can be used exactly as before and the additions have no resulting impact to their current functionality.
 
 #### **Increment Version and Update CHANGELOG**
 
-These changes should follow the standard change management processes, which includes bumping the version and updating the CHANGELOG.  Example CHANGELOG message:
+These changes should follow the standard change management processes, which includes bumping the version and updating the CHANGELOG. Example CHANGELOG message:
 `- Added logic required for "Meta Policy" use-cases`
 
 #### **Add Flexera API datasource if not already present**
@@ -177,7 +177,7 @@ end
 
 #### **Identify "first" datasource and Add Header**
 
-The easiest way to identify the "first" datasource absolutely is to apply the policy and then "View Logs" -- the first datasource listed is the one that should be modified.  The header parameter below should be added to the request.
+The easiest way to identify the "first" datasource absolutely is to apply the policy and then "View Logs" -- the first datasource listed is the one that should be modified. The header parameter below should be added to the request.
 
 ```ruby
 # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
@@ -203,7 +203,7 @@ end
 
 #### **Modify Policy Validation `check` statements**
 
-All `check` statements needs to be modified to add an additional `logic_or()` statement to check if the `ds_parent_policy_terminated` is true.  This is required to ensure that the policy does not generate incidents if there is a parent policy and it has been deleted.
+All `check` statements needs to be modified to add an additional `logic_or()` statement to check if the `ds_parent_policy_terminated` is true. This is required to ensure that the policy does not generate incidents if there is a parent policy and it has been deleted.
 
 ```ruby
 # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
@@ -227,7 +227,7 @@ end
 
 #### **Append Common Meta Policy Logic**
 
-The majority of additions for child policies are common to all policies.  Generally it is recommended to place this at the bottom with the following comments.
+The majority of additions for child policies are common to all policies. Generally it is recommended to place this at the bottom with the following comments.
 
 <details><summary>Common Meta Policy Logic (Click to Expand)</summary>
 
@@ -313,7 +313,7 @@ end
 
 ### Meta Parent Policy Template
 
-The Meta Parent Policy Template is a new policy template, that is associated with a specific child policy template.  We have a script to compile the Meta Parent Policy Templates once the child policy template has the appropriate "meta" code added to it and those changes have been published.
+The Meta Parent Policy Template is a new policy template, that is associated with a specific child policy template. We have a script to compile the Meta Parent Policy Templates once the child policy template has the appropriate "meta" code added to it and those changes have been published.
 
 When we want to create a new Meta Parent policy template regularly, we should append the list defined in [tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb](tools/meta_parent_policy_compiler/meta_parent_policy_compiler.rb)
 

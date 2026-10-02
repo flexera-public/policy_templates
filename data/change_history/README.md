@@ -8,7 +8,7 @@ This directory contains an auto-generated record of all pull requests merged int
 
 **Script:** [`tools/change_history/`](https://github.com/flexera-public/policy_templates/tree/master/tools/change_history)
 
-**Workflow:** [Update Change History](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-change-history.yaml) — runs every time a pull request is merged (excluding PRs that update this file itself).
+**Workflow:** [Update Change History](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-change-history.yaml) - runs every time a pull request is merged (excluding PRs that update this file itself).
 
 **Description:** A chronological list of all merged pull requests in the repository, including metadata such as labels, description, and which files were modified. This file feeds the [HISTORY.md](https://github.com/flexera-public/policy_templates/blob/master/HISTORY.md) human-readable changelog at the repository root.
 

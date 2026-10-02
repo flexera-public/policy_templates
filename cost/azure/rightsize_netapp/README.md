@@ -4,7 +4,7 @@
 
 This policy template checks NetApp capacity pools and volumes in Azure Subscriptions. Based on the capacity pool and volume space used and provided thresholds, capacity pools and volumes can be recommended to resize to meet a desired used percentage. For instance, for a volume of 200 GiB with a used capacity of 80 GiB and a threshold of 80%, the recommended volume size will be 100 GiB. Information for capacity pools and volumes recommended to resize will be sent to the user-specified email addresses.
 
-### Policy Saving Details
+### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size.
 

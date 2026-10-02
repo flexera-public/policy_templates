@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.5
+
+- Fixed an issue where the policy could fail to generate a report if a Savings Plan was missing a purchase date.
+
+## v0.2.4
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.3
 
 - Fixed issue with incident table that cause policy execution to fail

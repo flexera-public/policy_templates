@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.5.0",
+  version: "4.6.3",
   provider: "Google",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -44,7 +44,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -198,7 +198,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -206,7 +206,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -214,12 +214,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -433,6 +441,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -557,6 +567,8 @@ script "js_disks_label_filtered", type: "javascript" do
   parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_labels = _.compact(_.map(param_exclusion_labels, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -634,6 +646,8 @@ script "js_disks_region_filtered", type: "javascript" do
   parameters "ds_disks_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_disks_label_filtered, function(disk) {
       include_disk = _.contains(param_regions_list, disk['region'])
@@ -1003,7 +1017,7 @@ script "js_recommendations_incident", type:"javascript" do
   // Message for incident output
   total_disks = ds_disks_region_filtered.length.toString()
   total_unused_disks = result.length.toString()
-  unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
+  unused_disks_percentage = total_disks == 0 ? '0.00%' : (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
   disk_noun = "disk"
   if (total_disks > 1) { disk_noun = "disks" }
@@ -1233,7 +1247,7 @@ define snapshot_disk($disk) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       name: join([$disk["resourceName"], "-final-snapshot"])
@@ -1269,7 +1283,7 @@ define get_operation_status($operation) return $response, $operation_status do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1292,7 +1306,7 @@ define delete_disk($disk) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1328,7 +1342,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

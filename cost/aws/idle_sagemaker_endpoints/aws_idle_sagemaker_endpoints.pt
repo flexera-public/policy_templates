@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.1",
   provider: "AWS",
   service: "SageMaker",
   policy_set: "Idle SageMaker Endpoints",
@@ -42,7 +42,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_stats_lookback" do
@@ -195,6 +195,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -651,6 +659,8 @@ script "js_sagemaker_endpoints_tag_filtered", type: "javascript" do
   parameters "ds_sagemaker_endpoints_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_tags = _.compact(_.map(param_exclusion_tags, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -1041,7 +1051,7 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
     // Skip endpoints that exceed the minimum invocations threshold
     if (invocations > param_min_invocations) { return }
 
-    // Skip serverless endpoints — they have no dedicated compute and incur no continuous cost
+    // Skip serverless endpoints - they have no dedicated compute and incur no continuous cost
     if (resource['productionVariants'] && resource['productionVariants'].length > 0) {
       var all_serverless = _.every(resource['productionVariants'], function(v) {
         return !!(v['CurrentServerlessConfig'] || v['ServerlessConfig'])
@@ -1060,7 +1070,7 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
       var variant_parts = []
 
       _.each(resource['productionVariants'], function(variant, idx) {
-        // Detect serverless variants — they have CurrentServerlessConfig instead of CurrentInstanceType
+        // Detect serverless variants - they have CurrentServerlessConfig instead of CurrentInstanceType
         var serverless_config = variant['CurrentServerlessConfig'] || variant['ServerlessConfig']
         var vtype = variant['CurrentInstanceType'] || variant['DesiredInstanceType'] || ""
         // Fall back to the instance type from DescribeEndpointConfig if DescribeEndpoint omits it

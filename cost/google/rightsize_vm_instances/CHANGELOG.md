@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.4.3
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v0.4.2
+
+- Fixed an issue where missing CPU or memory statistics from Google monitoring data could cause the policy to fail instead of skipping unavailable measurements.
+- Fixed an issue where VM counts with no matching running instances could produce invalid percentage values in incident details.
+- Fixed an issue where some downsizing recommendations could select an instance type without valid pricing data and then fail while estimating savings.
+
+## v0.4.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.4.0
+
+- Increased the default `Minimum Savings Threshold` from 0 to 1, so that recommendations with no meaningful savings are no longer reported by default.
+
+## v0.3.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.3.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

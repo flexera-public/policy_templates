@@ -17,7 +17,7 @@ Current limitations:
 
 This policy template has the following input parameters:
 
-- *FlexNet Manager host* - Flexera One FlexNet Manager host.  *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
+- *FlexNet Manager host* - Flexera One FlexNet Manager host. *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
 - *FlexNet Manager Report ID* - FlexNet Manager Report ID. *Required*.
 - *Report Title in the Mail* - Report header in the report result
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify

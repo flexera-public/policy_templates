@@ -11,7 +11,7 @@ The Google Label Cardinality Report child policy produces an incident where each
 When a meta parent policy applies child policies to multiple Google Projects and then consolidates the child incidents into a single combined incident, a naive approach would simply stack all the rows from all child incidents together. This would be incorrect for a cardinality report because:
 
 - The same label key appears once per child incident (once per project)
-- Stacking the rows would produce duplicate entries for each label key — one per project
+- Stacking the rows would produce duplicate entries for each label key - one per project
 - Each project's cardinality figure is only for that project, not the combined total
 
 A correct consolidated cardinality report must:
@@ -37,8 +37,8 @@ The consolidated incident produced by this meta parent contains one row per uniq
 
 When updating the child policy (`google_label_cardinality.pt`) in a way that changes its incident output format (field names, value format, summary template text), you must also manually update this meta parent policy to reflect those changes. Specifically:
 
-- The `js_ds_label_report_combined_incidents` script filters child incidents by checking if the summary contains `"Google Label Keys Found"` — update this string if the child policy's summary template changes
-- The `value_list` field is split on `", "` (comma-space) — if the child policy changes its separator, update the split logic here
-- The `type` and `key` fields are used as the grouping key — if these field names change in the child policy, update accordingly
+- The `js_ds_label_report_combined_incidents` script filters child incidents by checking if the summary contains `"Google Label Keys Found"` - update this string if the child policy's summary template changes
+- The `value_list` field is split on `", "` (comma-space) - if the child policy changes its separator, update the split logic here
+- The `type` and `key` fields are used as the grouping key - if these field names change in the child policy, update accordingly
 
 Version the meta parent independently using semantic versioning and update the CHANGELOG for each change.

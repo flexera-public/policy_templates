@@ -42,7 +42,7 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 #### Algorithm
 
-- **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 × 4 × 1.5) = 3.
+- **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 x 4 x 1.5) = 3.
 - **Candidate instances** in the same region must satisfy all of the following compatibility constraints:
   - Current generation only (no previous-generation or bare-metal types)
   - Same CPU architecture (x86_64, arm64, etc.)
@@ -57,7 +57,7 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is resized or terminated.
 
-- The `Estimated Monthly Savings` for underutilized instances is calculated by multiplying the instance's CCO monthly cost by the ratio of the list price reduction: `cco_cost × (current_list_price − recommended_list_price) / current_list_price`.
+- The `Estimated Monthly Savings` for underutilized instances is calculated by multiplying the instance's CCO monthly cost by the ratio of the list price reduction: `cco_cost x (current_list_price - recommended_list_price) / current_list_price`.
 - The `Estimated Monthly Savings` for idle instances is the full CCO monthly cost of the instance (since termination eliminates 100% of the spend).
 - The CCO monthly cost is derived by multiplying one day's amortized cost from Flexera CCO by 30.44 (the average number of days per month).
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
@@ -79,7 +79,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Set to 0 to report all findings.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1. Set to 0 to report all findings regardless of savings.
 - *Allow Intel/AMD Recommendations* - Whether to allow recommendations that switch between Intel and AMD processors (both x86_64). Set to `Yes` to allow cross-manufacturer recommendations; `No` (default) to keep the same CPU manufacturer.
 - *Statistic Lookback Period* - How many days back to look at CPU and memory data for instances. Maximum is 90 days (AWS CloudWatch data retention limit).
 - *Rightsizing Safety Factor* - A multiplier applied to peak utilization when computing required resources for a rightsized instance. Default is 1.5 (50% headroom). Set higher for more conservative recommendations.

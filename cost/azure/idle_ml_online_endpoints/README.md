@@ -28,7 +28,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Azure Endpoint* - The Azure API endpoint to use. Use the default value of `management.azure.com` unless targeting Azure China (`management.chinacloudapi.cn`).
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 0 (all idle endpoints are reported).
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1. Set to 0 to report all idle endpoints regardless of savings.
 - *Statistic Lookback Period* - How many days back to query Azure Monitor metrics for inference traffic. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days. Default is 30 days.
 - *Requests Threshold* - Endpoints with total `RequestsPerMinute` metric values at or below this threshold over the lookback period are flagged as idle. Set to 0 to flag only endpoints with absolutely zero traffic. Higher values can be used to catch near-idle endpoints.
 - *Allow/Deny Subscriptions* - Allow or Deny entered subscriptions to filter results.

@@ -1,5 +1,33 @@
 # Changelog
 
+## v8.1.4
+
+- Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
+
+## v8.1.3
+
+- Fixed an issue where the policy could fail with a "must be a string" error when filtering instances by the schedule tag key due to how the tag key parameter was sanitized.
+
+## v8.1.2
+
+- Fixed an issue where an instance without a Name tag could incorrectly display the name of a different, previously processed instance in the incident report.
+
+## v8.1.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v8.1.0
+
+- Added a region error-reporting check that surfaces a clear incident when the policy is unable to access one or more AWS regions, instead of silently omitting data from those regions.
+
+## v8.0.12
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v8.0.11
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v8.0.10
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

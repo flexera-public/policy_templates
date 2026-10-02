@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.3.2
+
+- Fixed an issue where the AutoScaling Group dimension was never included in CloudWatch memory metric queries for instances that are part of an Auto Scaling Group, which could result in memory utilization data not being retrieved for those instances.
+
+## v0.3.1
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.3.0
+
+- Added a region-error-reporting incident that alerts if the policy is unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+
+## v0.2.8
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.2.7
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.6
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

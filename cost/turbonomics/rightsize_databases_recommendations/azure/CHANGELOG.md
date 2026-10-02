@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.11
+
+- Fixed an issue where the Resource ID could be missing from the report for databases that have more than one vendor identifier.
+
+## v0.5.10
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+- Fixed `run_script` parameter order for the filtered recommendations script (datasources before parameters).
+
+## v0.5.9
+
+- Added `hash_exclude` for volatile savings and utilization fields so that recalculated estimates alone no longer cause incidents to be treated as changed/reopened.
+
+## v0.5.8
+
+- Fixed an issue that could cause the policy to fail when retrieving business unit information
+
 ## v0.5.7
 
 - Updated documentation link in policy description. Functionality unchanged.

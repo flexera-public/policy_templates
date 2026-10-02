@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.3
+
+- Combined reports now skip child incidents that do not include result rows instead of failing intermittently.
+
+## v0.4.2
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.4.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.4.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

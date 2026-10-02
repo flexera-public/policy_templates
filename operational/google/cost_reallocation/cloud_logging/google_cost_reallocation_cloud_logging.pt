@@ -8,7 +8,7 @@ severity "critical"
 default_frequency "hourly"
 category "Operational"
 info(
-  version: "0.1.4",
+  version: "0.1.9",
   provider: "Google",
   service: "Cloud Logging",
   category: "Operational",
@@ -163,6 +163,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_centralized_logging_projects"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_centralized_logging_projects = _.compact(_.map(param_centralized_logging_projects, function(item) { return item.trim() }))
   if (param_centralized_logging_projects.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_centralized_logging_projects, project['id']) || _.contains(param_centralized_logging_projects, project['name']) || _.contains(param_centralized_logging_projects, project['number'])
@@ -281,6 +283,10 @@ script "js_flexera_api_hosts", type: "javascript" do
     "api.optima-apac.flexeraeng.com": {
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com"
+    },
+    "api.optima.flexeraengdev.com": {
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com"
     }
   }
 
@@ -446,7 +452,7 @@ end
 datasource "ds_rule_based_dimensions" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
   end
   result do
@@ -485,7 +491,7 @@ datasource "ds_rule_based_dimensions_rules" do
   iterate $ds_rule_based_dimensions_effectiveAt_list
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effectiveAt")])
   end
 end
@@ -524,7 +530,7 @@ datasource "ds_tag_dimensions_used_in_rbd_rules_tag_key" do
   iterate $ds_tag_dimensions_used_in_rbd_rules
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions/", iter_item])
   end
   result do
@@ -826,7 +832,10 @@ script "js_calculated_proportions", type: "javascript" do
           }
         }
         // Else we have a value and can get allocation percentage
-        var allocation_percentage = parseInt(usage_amount) / parseInt(ds_cloud_logging_utilization_allocations['total_usage'])
+        var allocation_percentage = 0
+        if (parseInt(ds_cloud_logging_utilization_allocations['total_usage']) != 0) {
+          allocation_percentage = parseInt(usage_amount) / parseInt(ds_cloud_logging_utilization_allocations['total_usage'])
+        }
         if (allocation_percentage >= 1) {
           console.log("Warning: allocation_percentage >= 1.  This is not expected.") // Excluded from console.log test
           console.log("vendor_account=" + project + " usage_amount=" + usage_amount + " allocation_percentage=" + allocation_percentage) // Excluded from console.log test
@@ -1230,19 +1239,21 @@ end
 
 datasource "ds_cbi_commit" do
   request do
-    run_script $js_cbi_commit, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit, $ds_cbi_upload_file, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_commit", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_file", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  bill_upload_id = ds_cbi_upload_file.length > 0 ? ds_cbi_upload_file[0]["billUploadId"] : ""
+
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_create_bill_upload["id"] + '/operations',
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + bill_upload_id + '/operations',
     headers: {
       "User-Agent": "RS Policies",
     },

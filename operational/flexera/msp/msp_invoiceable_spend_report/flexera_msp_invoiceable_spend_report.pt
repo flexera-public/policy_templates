@@ -9,7 +9,7 @@ severity "low"
 default_frequency "monthly"
 info(
   provider: "Flexera",
-  version: "0.1.0",
+  version: "0.1.4",
   service: "Cloud Cost Optimization",
   policy_set: "Invoiceable Spend Report",
   skip_permissions: "true",
@@ -145,6 +145,11 @@ script "js_flexera_api_hosts", type: "javascript" do
       ui: "app.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com"
+    },
+    "api.optima.flexeraengdev.com": {
+      ui: "app.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com"
     }
   }
 
@@ -239,7 +244,7 @@ end
 datasource "ds_organizations" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/msp/v1/orgs/", rs_org_id, "/customers"])
     ignore_status 403
   end
@@ -261,6 +266,8 @@ script "js_organizations_filtered", type: "javascript" do
   parameters "ds_organizations", "param_child_orgs_allow_or_deny", "param_child_orgs_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_child_orgs_list = _.compact(_.map(param_child_orgs_list, function(item) { return item.trim() }))
   var result = [];
 
   var org_list = _.map(param_child_orgs_list, function(org_id) {
@@ -304,7 +311,7 @@ end
 datasource "ds_parent_org_rbds" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
   end
 end
@@ -318,6 +325,8 @@ script "js_request_parent_org_costs", type: "javascript" do
   parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_parent_org_billing_center_ids_override", "param_contractual_exclusions", "param_contractual_exclusions_json", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_parent_org_billing_center_ids_override = _.compact(_.map(param_parent_org_billing_center_ids_override, function(item) { return item.trim() }))
   var exclusion_expressions = [];
 
   // Match-nothing filter for excluded-cost queries when no exclusions are configured
@@ -611,6 +620,9 @@ script "js_report", type: "javascript" do
   parameters "ds_flexera_api_hosts", "ds_dates", "ds_currency_code", "ds_currency_reference", "ds_request_parent_org_costs", "ds_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated_excluded", "ds_children_org_costs", "ds_identify_errors", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_billing_period", "param_bill_source_currencies", "param_contractual_exclusions", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_child_orgs_list = _.compact(_.map(param_child_orgs_list, function(item) { return item.trim() }))
+  param_bill_source_currencies = _.compact(_.map(param_bill_source_currencies, function(item) { return item.trim() }))
   function sumCostRows(rows) {
     var total = 0;
     _.each(rows || [], function(row) {
@@ -937,7 +949,7 @@ script "js_report", type: "javascript" do
     }
   });
 
-  // Build structured incident data for export — one row per bill source
+  // Build structured incident data for export - one row per bill source
   var exclusionsLabel = (param_contractual_exclusions && param_contractual_exclusions.length > 0) ? param_contractual_exclusions.join(", ") : "None";
   var exclusionFilterJson = "";
   if (ds_request_parent_org_costs.length > 0 && ds_request_parent_org_costs[0].filter_excluded_costs) {

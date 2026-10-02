@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.9.0",
+  version: "0.10.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -40,9 +40,9 @@ parameter "param_vendor_list" do
   type "list"
   category "Filters"
   label "Cloud Vendor List"
-  description "A list of cloud vendors to email recommendations for."
-  allowed_values ["AWS", "Azure", "Google", "Oracle"]
-  default ["AWS", "Azure", "Google", "Oracle"]
+  description "A list of cloud vendors/services to email recommendations for."
+  allowed_values ["AWS", "Azure", "Google", "Oracle", "Kubernetes"]
+  default ["AWS", "Azure", "Google", "Oracle", "Kubernetes"]
 end
 
 parameter "param_accounts_allow_or_deny" do
@@ -146,7 +146,7 @@ script "js_recommendation_types", type:"javascript" do
   result "result"
   code <<-'EOS'
   result = {
-    // Policy templates
+    // Cloud policy templates
     "AWS Resources Under Extended Support": "Compute",
     "AWS EC2 Compute Optimizer Recommendations": "Compute",
     "AWS Idle Compute Instances": "Compute",
@@ -158,6 +158,7 @@ script "js_recommendation_types", type:"javascript" do
     "AWS Resources Under or Approaching Extended Support": "Compute",
     "AWS Rightsize EBS Volumes": "Storage",
     "AWS Rightsize EC2 Instances": "Compute",
+    "AWS Rightsize EC2 Instances (Cross-Family)": "Compute",
     "AWS Rightsize RDS Instances": "Database",
     "AWS Rightsize ElastiCache": "Database",
     "AWS Rightsize Redshift": "Database",
@@ -183,6 +184,7 @@ script "js_recommendation_types", type:"javascript" do
     "Azure Long Stopped Compute Instances": "Compute",
     "Azure Old Snapshots": "Snapshot",
     "Azure Rightsize Compute Instances": "Compute",
+    "Azure Rightsize Compute Instances (Cross-Family)": "Compute",
     "Azure Rightsize Managed Disks": "Storage",
     "Azure Rightsize MySQL Single Servers": "Database",
     "Azure Rightsize MySQL Flexible Servers": "Database",
@@ -223,6 +225,10 @@ script "js_recommendation_types", type:"javascript" do
     "Oracle Cloud Advisor: Rightsize Base Database Service": "Database",
     "Oracle Cloud Advisor: Rightsize Load Balancers": "Network",
     "Oracle Cloud Advisor: Unattached Volumes": "Storage",
+    // Kubernetes policy templates
+    "Kubecost Cluster Rightsizing Recommendation": "Compute",
+    "Kubecost Container Request Rightsizing Recommendations": "Compute",
+    "Kubernetes - Rightsizing Recommendations": "Compute",
     // Rules engine
     "AWS Idle EBS Volume": "Storage",
     "AWS Idle EBS Volumes": "Storage",
@@ -446,6 +452,11 @@ script "js_recommendations_filtered_vendor", type: "javascript" do
 
     vendor_list = _.map(param_vendor_list, function(vendor) { return vendor.toLowerCase() })
 
+    if (_.contains(vendor_list, "kubernetes")) {
+      vendor_list.push("kubecost")
+      vendor_list.push("flexera")
+    }
+
     if (param_vendor_list.length > 0 && recommendation['vendor']) {
       include_recommendation = _.contains(vendor_list, recommendation['vendor'].toLowerCase())
     }
@@ -463,11 +474,14 @@ script "js_recommendations_filtered_account", type: "javascript" do
   parameters "ds_recommendations_filtered_vendor", "param_accounts_allow_or_deny", "param_accounts_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_accounts_list = _.compact(_.map(param_accounts_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_vendor, function(recommendation) {
     include_recommendation = true
 
     if (param_accounts_list.length > 0) {
-      include_recommendation = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
+      account_name = typeof(recommendation['accountName']) == 'string' ? recommendation['accountName'] : ''
+      include_recommendation = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, account_name.toLowerCase())
       if (param_accounts_allow_or_deny == 'Deny') { include_recommendation = !include_recommendation }
     }
 
@@ -519,6 +533,8 @@ script "js_recommendations_filtered_bc", type: "javascript" do
   parameters "ds_recommendations_filtered_dimension", "ds_billing_centers_table", "param_bc_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_bc_list = _.compact(_.map(param_bc_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_dimension, function(recommendation) {
     include_recommendation = true
 
@@ -526,7 +542,8 @@ script "js_recommendations_filtered_bc", type: "javascript" do
       include_recommendation = false
 
       // Add known top-level BC from recommendation
-      billing_centers = [ recommendation['billingCenterName'], recommendation['billingCenterName'].toLowerCase() ]
+      billing_center_name = typeof(recommendation['billingCenterName']) == 'string' ? recommendation['billingCenterName'] : ''
+      billing_centers = [ recommendation['billingCenterName'], billing_center_name.toLowerCase() ]
 
       if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
         bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
@@ -583,6 +600,8 @@ script "js_recommendations_filtered_pollist", type: "javascript" do
   parameters "ds_recommendations_filtered_reclist", "param_policy_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_policy_list = _.compact(_.map(param_policy_list, function(item) { return item.trim() }))
   result = _.filter(ds_recommendations_filtered_reclist, function(recommendation) {
     include_recommendation = true
 
@@ -608,6 +627,8 @@ script "js_recommendations_organized", type: "javascript" do
   result = []
 
   _.each(ds_recommendations_filtered_pollist, function(recommendation) {
+    if (recommendation['detailsExtended'] == null || typeof(recommendation['detailsExtended']) != 'object') { recommendation['detailsExtended'] = {} }
+
     billingCenterTopLevel = recommendation['billingCenterName']
     billingCenterBottomLevel = ""
 
@@ -785,6 +806,7 @@ policy "pol_recommendations" do
     EOS
     check eq(val(item, "accountID"), "")
     escalate $esc_email
+    hash_exclude "savings", "savingsCurrency", "tags"
     export do
       resource_level true
       field "billingCenter" do

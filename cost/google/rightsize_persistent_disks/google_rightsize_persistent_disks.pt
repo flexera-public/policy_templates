@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.3",
   provider: "Google",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -34,7 +34,7 @@ parameter "param_min_savings" do
   label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
-  default 0
+  default 1
 end
 
 parameter "param_days_unattached" do
@@ -258,6 +258,14 @@ script "js_flexera_api_hosts", type: "javascript" do
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -410,6 +418,8 @@ script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_projects_list = _.compact(_.map(param_projects_list, function(item) { return item.trim() }))
   if (param_projects_list.length > 0) {
     result = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
@@ -476,6 +486,8 @@ script "js_zones_filtered", type: "javascript" do
   parameters "ds_zones", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_regions_list = _.compact(_.map(param_regions_list, function(item) { return item.trim() }))
   if (param_regions_list.length > 0) {
     result = _.filter(ds_zones, function(zone) {
       include_zone = _.contains(param_regions_list, zone['region'])
@@ -535,6 +547,8 @@ script "js_disks_label_filtered", type: "javascript" do
   parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_exclusion_labels = _.compact(_.map(param_exclusion_labels, function(item) { return item.trim() }))
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -603,7 +617,7 @@ script "js_disks_label_filtered", type: "javascript" do
 EOS
 end
 
-# Monitoring stats for IOPS and throughput — one datasource per metric
+# Monitoring stats for IOPS and throughput - one datasource per metric
 datasource "ds_disk_read_iops_stats" do
   iterate $ds_zones_filtered
   request do
@@ -855,6 +869,7 @@ script "js_disk_costs_grouped", type: "javascript" do
   result = {}
 
   _.each(ds_disk_costs, function(item) {
+    if (!item['resourceID']) { return }
     id = item['resourceID'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
@@ -1257,7 +1272,7 @@ script "js_rightsize_disks_incident", type: "javascript" do
 
     if (recommended_idx >= current_idx) { return }
 
-    // Calculate savings using Flexera billing cost × price ratio
+    // Calculate savings using Flexera billing cost x price ratio
     var currentCost = ds_disk_costs_grouped[disk['id'].toLowerCase()] || 0
     if (currentCost == 0) { currentCost = ds_disk_costs_grouped[disk['name'].toLowerCase()] || 0 }
 
@@ -1702,7 +1717,7 @@ define snapshot_disk($disk) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     },
     body: {
       name: join([$disk["resourceName"], "-final-snapshot"])
@@ -1738,7 +1753,7 @@ define get_operation_status($operation) return $response, $operation_status do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1761,7 +1776,7 @@ define delete_disk($disk) return $response do
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
-      "content-type": "application/json"
+      "Content-Type": "application/json"
     }
   )
 
@@ -1832,7 +1847,7 @@ script "js_make_terminate_request", type: "javascript" do
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],
-    path: ["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/" + policy_id : ""].join(''),
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
     verb: ds_parent_policy_terminated ? "DELETE" : "GET"
   }
 EOS
@@ -1845,5 +1860,5 @@ end
 script "js_is_deleted", type: "javascript" do
   parameters "ds_terminate_self"
   result "result"
-  code 'result = { path: "/" }'
+  code 'result = { path: "/"}'
 end

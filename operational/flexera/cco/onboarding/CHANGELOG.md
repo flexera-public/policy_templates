@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.13
+
+- Fixed an issue where the "Enable Automatic Action" check for outdated applied policies always reported as non-compliant, even when the automatic update option was correctly configured.
+- Fixed an issue where the unallocated cost percentage for rule-based dimensions could display as "NaN%" instead of 0% for organizations with no recorded cost during the analysis period.
+
+## v0.1.12
+
+- Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
+
+## v0.1.11
+
+- Replaced non-ASCII punctuation (em dashes, curly quotes, etc.) with standard ASCII equivalents for consistent rendering in the Flexera UI. No functional changes.
+
+## v0.1.10
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
+## v0.1.9
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.8
 
 - Removed suffix from Service Account created by Onboarding policy template to better support Policy Manager use-cases

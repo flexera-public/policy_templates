@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2.1
+
+- Added `Account Number` parameter to support meta policies. Basic functionality unchanged.
+
+## v3.2.0
+
+- Added support for meta parent policy. Basic functionality unchanged.
+
+## v3.1.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

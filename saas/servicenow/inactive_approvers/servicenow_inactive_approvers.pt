@@ -8,7 +8,7 @@ category "SaaS Management"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.0",
+  version: "3.1.3",
   provider: "ServiceNow",
   service: "",
   policy_set: "",
@@ -94,6 +94,18 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_servicenow_name" do
+  run_script $js_servicenow_name, $param_servicenow_name
+end
+
+script "js_servicenow_name", type: "javascript" do
+  parameters "param_servicenow_name"
+  result "result"
+  code <<-'EOS'
+  result = { value: param_servicenow_name.trim() }
+EOS
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -105,7 +117,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -113,7 +125,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -121,12 +133,20 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
     }
   }
 
@@ -145,7 +165,7 @@ end
 
 datasource "ds_servicenow_roles" do
   request do
-    run_script $js_servicenow_roles, $param_servicenow_roles, $param_servicenow_name
+    run_script $js_servicenow_roles, $ds_servicenow_name, $param_servicenow_roles
   end
   result do
     encoding "json"
@@ -157,14 +177,16 @@ datasource "ds_servicenow_roles" do
 end
 
 script "js_servicenow_roles", type: "javascript" do
-  parameters "param_servicenow_roles", "param_servicenow_name"
+  parameters "ds_servicenow_name", "param_servicenow_roles"
   result "request"
   code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_servicenow_roles = _.compact(_.map(param_servicenow_roles, function(item) { return item.trim() }))
   query = _.map(param_servicenow_roles, function(role) { return "name=" + role }).join("^OR")
 
   var request = {
     auth: "auth_servicenow",
-    host: param_servicenow_name + ".service-now.com",
+    host: ds_servicenow_name + ".service-now.com",
     path: "api/now/table/sys_user_role",
     query_params: { "sysparm_fields": "name,sys_id", "sysparm_query": query },
     headers: { "User-Agent": "RS Policies" }
@@ -176,7 +198,7 @@ datasource "ds_servicenow_user_roles" do
   iterate $ds_servicenow_roles
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([val($ds_servicenow_name, "value"), ".service-now.com"])
     path "/api/now/table/sys_user_has_role"
     query "sysparm_fields", "role,sys_id,inherited,user"
     query "sysparm_query", join(["role=", val(iter_item, "sys_id")])
@@ -197,7 +219,7 @@ datasource "ds_servicenow_approver_users" do
   iterate $ds_servicenow_user_roles
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([val($ds_servicenow_name, "value"), ".service-now.com"])
     path "/api/now/table/sys_user"
     query "sysparm_query", join(["sys_id=", val(iter_item, "user_id")])
     query "sysparm_fields", "sys_id,name,user_name,last_login_time,vip,email"
@@ -222,7 +244,7 @@ datasource "ds_approvals" do
   iterate $ds_servicenow_approver_users
   request do
     auth $auth_servicenow
-    host join([$param_servicenow_name, ".service-now.com"])
+    host join([val($ds_servicenow_name, "value"), ".service-now.com"])
     path "/api/now/table/sysapproval_approver"
     query "sysparm_query", join(["sys_updated_by=", val(iter_item, "username")])
     query "sysparm_fields", "approver,sys_updated_on,state,sys_updated_by"
