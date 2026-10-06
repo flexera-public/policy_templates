@@ -12,6 +12,8 @@ A bucket is considered compliant if it has at least one enabled [lifecycle rule]
 - A lifecycle rule that only transitions noncurrent (previous) object versions.
 - Uploading objects directly into the Intelligent-Tiering storage class.
 
+If the policy is not allowed to read a bucket's lifecycle configuration (due to missing the permission `s3:GetLifecycleConfiguration`, or denied access by a bucket policy ), the bucket is treated as non-compliant. If none of the buckets returned any lifecycle rules, the incident includes a note suggesting that you to check the credential's permissions.
+
 **S3 Intelligent Tiering** automatically moves your data between different storage tiers based on access patterns, optimizing costs without performance impact. This feature is ideal for data with unpredictable access patterns and can provide significant cost savings with zero operational overhead.
 
 ### Policy Savings Details

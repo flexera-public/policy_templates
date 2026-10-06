@@ -3,9 +3,7 @@
 ## v5.0.0
 
 - **Action required:** This policy now requires the `s3:GetLifecycleConfiguration` permission.
-- Corrected how the policy determines which S3 bucket is compliant or not.
-- A bucket is now considered compliant if it has at least one lifecycle rule enabled that moves objects to Intelligent-Tiering.
-- Previous versions of this policy determines compliance by checking "Intelligent-Tiering archive settings". This update will no longer check the "Intelligent-Tiering archive settings".
+- Corrected how the policy determines which S3 bucket is compliant or not. A bucket is now considered compliant if only if it has at least one lifecycle rule enabled that moves objects to Intelligent-Tiering. Previously, compliance is determined by checking "Intelligent-Tiering archive settings". This update will no longer check the "Intelligent-Tiering archive settings".
 - Corrected the recommendation text and incident description to explain what makes a bucket compliant.
 
 ## v4.2.12

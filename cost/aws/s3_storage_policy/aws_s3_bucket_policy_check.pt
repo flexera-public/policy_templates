@@ -633,7 +633,8 @@ datasource "ds_aws_bucket_lifecycle_rules" do
     query "lifecycle", ""
     header "User-Agent", "RS Policies"
     # Ignore Buckets with no lifecycle configuration which return 404 NoSuchLifecycleConfiguration
-    ignore_status [404]
+    # Ignore 403 AccessDenied errors; these Buckets are also reported as non-compliant, see js_combined_bucket_info
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -653,7 +654,7 @@ script "js_aws_buckets_with_it_status", type: "javascript" do
   parameters "ds_aws_buckets_tag_filtered", "ds_aws_bucket_lifecycle_rules"
   result "result"
   code <<-'EOS'
-  // Buckets without a lifecycle configuration return 404 and are absent from ds_aws_bucket_lifecycle_rules
+  // Buckets without a lifecycle configuration (404) or that deny access to it (403) are absent from ds_aws_bucket_lifecycle_rules
   rules_by_bucket = _.groupBy(ds_aws_bucket_lifecycle_rules, "name")
 
   result = _.map(ds_aws_buckets_tag_filtered, function(bucket) {
@@ -674,6 +675,7 @@ script "js_aws_buckets_with_it_status", type: "javascript" do
       creation_date: bucket['creation_date'],
       host: bucket['host'],
       tags: bucket['tags'],
+      has_lifecycle_rules: rules.length > 0,
       has_it_transition: has_it_transition
     }
   })
@@ -947,6 +949,17 @@ script "js_combined_bucket_info", type: "javascript" do
     }
   })
 
+  // If no bucket returned lifecycle rules, the credential may be missing s3:GetLifecycleConfiguration.
+  lifecycle_note = ""
+  buckets_with_rules = _.filter(ds_aws_buckets_with_it_status, function(bucket) { return bucket['has_lifecycle_rules'] })
+
+  if (ds_aws_buckets_with_it_status.length > 0 && buckets_with_rules.length == 0) {
+    lifecycle_note = "None of the " + ds_aws_buckets_with_it_status.length + " S3 bucket(s) checked returned any lifecycle rules. " +
+      "If you expected some of these buckets to have lifecycle rules, verify that the AWS credential has the " +
+      "'s3:GetLifecycleConfiguration' permission and that no bucket policies deny access to it. " +
+      "Buckets whose lifecycle configuration cannot be read are reported as not using Intelligent Tiering."
+  }
+
   // Dummy entry to ensure validation always occurs
   result.push({ resourceID: "", tags: "", policy_name: "AWS S3 Buckets Without Intelligent Tiering" })
 
@@ -955,6 +968,7 @@ script "js_combined_bucket_info", type: "javascript" do
       "policy_name": ds_applied_policy.name,
       "total_savings": total_savings.toFixed(2),
       "errors": ds_identify_errors || [],
+      "lifecycle_note": lifecycle_note
   }
 EOS
 end
@@ -978,6 +992,12 @@ Frequent, Infrequent, and Archive Instant Access tiers have the same low-latency
 ## Total Estimated Savings
 
 We estimate **${{ with index data 0 }}{{ .metadata.total_savings}}{{ end }}** monthly savings if all reported buckets have a lifecycle rule transitioning objects to Intelligent Tiering. This was derived from the `TimedStorage-ByteHrs` usage + cost values from a recent 24hr period and a conservative 30% savings factor from switching S3 Standard to S3 Intelligent Tiering.
+{{- with index data 0 }}{{ if .metadata.lifecycle_note }}
+
+## Note
+
+{{ .metadata.lifecycle_note }}
+{{- end }}{{ end }}
 {{- with index data 0 }}{{ if .metadata.errors }}
 
 ## Errors Found
