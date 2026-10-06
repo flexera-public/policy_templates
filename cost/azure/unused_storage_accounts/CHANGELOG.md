@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0
+
+- Performance enhancement to avoid 429 throttling error when calling Azure Storage API.
+- Additional permission `Microsoft.ResourceGraph/resources/read` is required due to above enhancement.
+
 ## v0.5.2
 
 - Fixed an issue where the incident summary could display an invalid percentage value when there were no storage accounts found to analyze.
