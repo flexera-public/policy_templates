@@ -6,8 +6,6 @@ This policy template checks all of the applied policy templates in the Flexera O
 
 ## Input Parameters
 
-This policy template has the following input parameters:
-
 - *Email Addresses* - A list of email addresses to notify.
 - *Allow/Deny Applied Policies* - Allow or Deny entered Applied Policies to filter results. See below for details.
 - *Allow/Deny Applied Policies List* - A list of allowed or denied Applied Policy template names and IDs. Leave blank to report on all applied policy templates in an error state.
