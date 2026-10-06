@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.0.0
+
+- Changed from using a dedicated ignore list to using an Allow/Deny list with a corresponding filter parameter, providing more flexibility for filtering applied policies.
+- Added error checks to prevent policy execution failure in some edge cases.
+- Added API error handling to gracefully handle authentication and access issues.
+
 ## v4.1.4
 
 - Fixed an issue where the child policy error report could fail to run, and could incorrectly include non-child policies, when reporting on child policy errors was enabled.

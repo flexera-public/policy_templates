@@ -8,7 +8,7 @@ category "Operational"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "4.1.4",
+  version: "5.0.0",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation",
@@ -27,11 +27,20 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_ignore_list" do
+parameter "param_applied_policies_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Applied Policies"
+  description "Allow or Deny entered Applied Policies. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Deny"
+end
+
+parameter "param_applied_policies_list" do
   type "list"
   category "Filters"
-  label "Applied Policy Template Ignore List"
-  description "A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state."
+  label "Allow/Deny Applied Policies List"
+  description "A list of allowed or denied Applied Policy template names and IDs. Leave blank to report on all applied policy templates in an error state. See the README for more details."
   default []
 end
 
@@ -140,6 +149,7 @@ datasource "ds_applied_policies" do
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
     query "filter", 'metaParentPolicyId eq "null"'
+    ignore_status [403, 404]
   end
   result do
     collect jmes_path(response, "values[*]") do
@@ -175,19 +185,17 @@ datasource "ds_applied_policies" do
 end
 
 datasource "ds_bad_applied_policies" do
-  run_script $js_bad_applied_policies, $ds_applied_policies, $ds_applied_policy, $param_ignore_list, $param_incident_csv, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_bad_applied_policies, $ds_applied_policies_filtered, $ds_applied_policy, $param_incident_csv, f1_app_host, rs_org_id, rs_project_id
 end
 
 script "js_bad_applied_policies", type: "javascript" do
-  parameters "ds_applied_policies", "ds_applied_policy", "param_ignore_list", "param_incident_csv", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_applied_policies_filtered", "ds_applied_policy", "param_incident_csv", "f1_app_host", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  // Remove any leading/trailing whitespace the user may have accidentally entered
-  param_ignore_list = _.compact(_.map(param_ignore_list, function(item) { return item.trim() }))
   var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
-  bad_policies = _.filter(ds_applied_policies, function(policy) {
-    return policy['status'] == "error" && !(_.contains(param_ignore_list, policy['id']) || _.contains(param_ignore_list, policy['name']))
+  bad_policies = _.filter(ds_applied_policies_filtered, function(policy) {
+    return policy['status'] == "error"
   })
 
   result = _.map(bad_policies, function(policy) {
@@ -196,16 +204,16 @@ script "js_bad_applied_policies", type: "javascript" do
     return {
       id: policy['id'],
       name: [ policy['name'], "||", policy_url ].join(''),
-      error: policy['error'],
-      category: policy['category'],
-      frequency: policy['frequency'],
-      severity: policy['severity'],
-      skip_approvals: policy['skip_approvals'],
-      scope: policy['scope'],
-      created_by: policy['created_by'],
-      created_at: policy['created_at'],
-      updated_at: policy['updated_at'],
-      errored_at: policy['errored_at'],
+      error: policy['error'] || "No error details available",
+      category: policy['category'] || "Unknown",
+      frequency: policy['frequency'] || "Unknown",
+      severity: policy['severity'] || "Unknown",
+      skip_approvals: policy['skip_approvals'] || false,
+      scope: policy['scope'] || "Unknown",
+      created_by: policy['created_by'] || "Unknown",
+      created_at: policy['created_at'] || "Unknown",
+      updated_at: policy['updated_at'] || "Unknown",
+      errored_at: policy['errored_at'] || "Unknown",
       policy_name: ds_applied_policy['name']
     }
   })
@@ -227,6 +235,56 @@ script "js_child_boolean_logic", type: "javascript" do
   code <<-'EOS'
   result = []
   if (param_child_templates == "Yes") { result = [1] }
+EOS
+end
+
+datasource "ds_applied_policies_filtered" do
+  run_script $js_applied_policies_filtered, $ds_applied_policies, $param_applied_policies_allow_or_deny, $param_applied_policies_list
+end
+
+script "js_applied_policies_filtered", type: "javascript" do
+  parameters "ds_applied_policies", "param_applied_policies_allow_or_deny", "param_applied_policies_list"
+  result "result"
+  code <<-'EOS'
+  param_applied_policies_list = _.compact(_.map(param_applied_policies_list, function(item) { return item.trim() }))
+  if (param_applied_policies_list.length > 0) {
+    result = _.filter(ds_applied_policies, function(policy) {
+      include_policy = _.contains(param_applied_policies_list, policy['id']) || _.contains(param_applied_policies_list, policy['name'])
+
+      if (param_applied_policies_allow_or_deny == "Deny") {
+        include_policy = !include_policy
+      }
+
+      return include_policy
+    })
+  } else {
+    result = ds_applied_policies
+  }
+EOS
+end
+
+datasource "ds_child_applied_policies_filtered" do
+  run_script $js_child_applied_policies_filtered, $ds_child_applied_policies, $param_applied_policies_allow_or_deny, $param_applied_policies_list
+end
+
+script "js_child_applied_policies_filtered", type: "javascript" do
+  parameters "ds_child_applied_policies", "param_applied_policies_allow_or_deny", "param_applied_policies_list"
+  result "result"
+  code <<-'EOS'
+  param_applied_policies_list = _.compact(_.map(param_applied_policies_list, function(item) { return item.trim() }))
+  if (param_applied_policies_list.length > 0) {
+    result = _.filter(ds_child_applied_policies, function(policy) {
+      include_policy = _.contains(param_applied_policies_list, policy['id']) || _.contains(param_applied_policies_list, policy['name'])
+
+      if (param_applied_policies_allow_or_deny == "Deny") {
+        include_policy = !include_policy
+      }
+
+      return include_policy
+    })
+  } else {
+    result = ds_child_applied_policies
+  }
 EOS
 end
 
@@ -271,49 +329,50 @@ datasource "ds_child_applied_policies" do
 end
 
 datasource "ds_bad_child_applied_policies" do
-  run_script $js_bad_child_applied_policies, $ds_child_applied_policies, $ds_applied_policy, $param_ignore_list, $param_incident_csv, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_bad_child_applied_policies, $ds_child_applied_policies_filtered, $ds_applied_policy, $param_incident_csv, f1_app_host, rs_org_id, rs_project_id
 end
 
 script "js_bad_child_applied_policies", type: "javascript" do
-  parameters "ds_child_applied_policies", "ds_applied_policy", "param_ignore_list", "param_incident_csv", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_child_applied_policies_filtered", "ds_applied_policy", "param_incident_csv", "f1_app_host", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  // Remove any leading/trailing whitespace the user may have accidentally entered
-  param_ignore_list = _.compact(_.map(param_ignore_list, function(item) { return item.trim() }))
   var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   policy_table = {}
-  _.each(ds_child_applied_policies, function(policy) { policy_table[policy['id']] = policy })
+  _.each(ds_child_applied_policies_filtered, function(policy) { policy_table[policy['id']] = policy })
 
-  child_policies = _.filter(ds_child_applied_policies, function(policy) {
+  child_policies = _.filter(ds_child_applied_policies_filtered, function(policy) {
     return typeof(policy["parent"]) == 'string' && policy["parent"] != ''
   })
 
   bad_policies = _.filter(child_policies, function(policy) {
-    return policy['status'] == "error" && !(_.contains(param_ignore_list, policy['id']) || _.contains(param_ignore_list, policy['name']))
+    return policy['status'] == "error"
   })
 
   result = _.map(bad_policies, function(policy) {
     meta_parent_policy_id = policy["parent"] ? policy["parent"].split(':')[6] : null
+    parent_policy = policy_table[meta_parent_policy_id]
+    parent_policy_name = (parent_policy && parent_policy['name']) ? parent_policy['name'] : "Unknown"
+
     policy_url = [ "https://", f1_app_host, "/orgs/", rs_org_id, "/automation/applied-policies/projects/", rs_project_id, "?policyId=", policy['id'] ].join('')
     parent_url = [ "https://", f1_app_host, "/orgs/", rs_org_id, "/automation/applied-policies/projects/", rs_project_id, "?policyId=", meta_parent_policy_id ].join('')
 
     return {
       id: policy['id'],
       name: [ policy['name'], "||", policy_url ].join(''),
-      error: policy['error'],
-      category: policy['category'],
-      frequency: policy['frequency'],
-      severity: policy['severity'],
-      skip_approvals: policy['skip_approvals'],
-      scope: policy['scope'],
-      created_by: policy['created_by'],
-      created_at: policy['created_at'],
-      updated_at: policy['updated_at'],
-      errored_at: policy['errored_at'],
+      error: policy['error'] || "No error details available",
+      category: policy['category'] || "Unknown",
+      frequency: policy['frequency'] || "Unknown",
+      severity: policy['severity'] || "Unknown",
+      skip_approvals: policy['skip_approvals'] || false,
+      scope: policy['scope'] || "Unknown",
+      created_by: policy['created_by'] || "Unknown",
+      created_at: policy['created_at'] || "Unknown",
+      updated_at: policy['updated_at'] || "Unknown",
+      errored_at: policy['errored_at'] || "Unknown",
       policy_name: ds_applied_policy['name'],
       parent_id: meta_parent_policy_id,
-      parent_name: [ policy_table[meta_parent_policy_id]['name'], "||", parent_url ].join('')
+      parent_name: [ parent_policy_name, "||", parent_url ].join('')
     }
   })
 
