@@ -1,14 +1,14 @@
 name "AWS S3 Buckets Without Intelligent Tiering"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template scans all AWS S3 buckets and reports any that don't have intelligent tiering enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+short_description "This Policy Template scans all AWS S3 buckets and reports any that don't have a lifecycle rule transitioning objects to the Intelligent-Tiering storage class. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy"
 category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "4.2.12",
+  version: "5.0.0",
   provider: "AWS",
   service: "Storage",
   policy_set: "Object Store Optimization",
@@ -624,24 +624,60 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_bucket_policies" do
+datasource "ds_aws_bucket_lifecycle_rules" do
   iterate $ds_aws_buckets_tag_filtered
   request do
     auth $auth_aws
     host val(iter_item, "host")
     path join(["/", val(iter_item, "name"), "/"])
-    query "intelligent-tiering", ""
-    ignore_status [404, 403]
+    query "lifecycle", ""
+    header "User-Agent", "RS Policies"
+    # Ignore Buckets with no lifecycle configuration which return 404 NoSuchLifecycleConfiguration
+    ignore_status [404]
   end
   result do
     encoding "xml"
-    field "it_configuration", xpath(response, "//ListIntelligentTieringConfigurationsResult/IntelligentTieringConfiguration")
-    field "name", val(iter_item, "name")
-    field "region", val(iter_item, "region")
-    field "creation_date", val(iter_item, "creation_date")
-    field "host", val(iter_item, "host")
-    field "tags", val(iter_item, "tags")
+    collect xpath(response, "//LifecycleConfiguration/Rule", "array") do
+      field "status", xpath(col_item, "Status")
+      field "transition_storage_classes", xpath(col_item, "Transition/StorageClass", "array")
+      field "name", val(iter_item, "name")
+    end
   end
+end
+
+datasource "ds_aws_buckets_with_it_status" do
+  run_script $js_aws_buckets_with_it_status, $ds_aws_buckets_tag_filtered, $ds_aws_bucket_lifecycle_rules
+end
+
+script "js_aws_buckets_with_it_status", type: "javascript" do
+  parameters "ds_aws_buckets_tag_filtered", "ds_aws_bucket_lifecycle_rules"
+  result "result"
+  code <<-'EOS'
+  // Buckets without a lifecycle configuration return 404 and are absent from ds_aws_bucket_lifecycle_rules
+  rules_by_bucket = _.groupBy(ds_aws_bucket_lifecycle_rules, "name")
+
+  result = _.map(ds_aws_buckets_tag_filtered, function(bucket) {
+    rules = rules_by_bucket[bucket['name']] || []
+
+    // Any enabled rule that transitions current objects to Intelligent-Tiering counts,
+    // regardless of the rule's filter (prefix, tags, size) or transition timing
+    has_it_transition = _.some(rules, function(rule) {
+      storage_classes = rule['transition_storage_classes']
+      if (typeof(storage_classes) == 'string') { storage_classes = [ storage_classes ] }
+
+      return rule['status'] == "Enabled" && _.contains(storage_classes, "INTELLIGENT_TIERING")
+    })
+
+    return {
+      name: bucket['name'],
+      region: bucket['region'],
+      creation_date: bucket['creation_date'],
+      host: bucket['host'],
+      tags: bucket['tags'],
+      has_it_transition: has_it_transition
+    }
+  })
+EOS
 end
 
 datasource "ds_billing_centers" do
@@ -768,11 +804,11 @@ EOS
 end
 
 datasource "ds_identify_errors" do
-  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $ds_get_aws_buckets, $ds_aws_buckets_with_region, $ds_aws_buckets_tag_filtered, $ds_aws_bucket_policies, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $ds_get_aws_buckets, $ds_aws_buckets_with_region, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_identify_errors", type: "javascript" do
-  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "ds_get_aws_buckets", "ds_aws_buckets_with_region", "ds_aws_buckets_tag_filtered", "ds_aws_bucket_policies", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "ds_get_aws_buckets", "ds_aws_buckets_with_region", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
   var errors = [];
@@ -837,45 +873,6 @@ script "js_identify_errors", type: "javascript" do
     errors.push("We were unable to s3:GetBucketLocation for the following S3 Bucket resources. This can happen if the bucket is in a region that is Denied by IAM (SCP or Permission Boundary) or the IAM Role does not have the required Permission Policy attached: " + _.pluck(missing_buckets, 'name').join(", "));
   }
 
-  // Check for buckets where we couldn't retrieve intelligent tiering configuration
-  // Compare ds_aws_buckets_tag_filtered (expected buckets) with ds_aws_bucket_policies (buckets with IT config data)
-  var buckets_with_policies_indexed = _.groupBy(ds_aws_bucket_policies, function(b) {
-    return b.name;
-  });
-  var failed_it_config_buckets = [];
-  _.each(ds_aws_buckets_tag_filtered, function(bucket) {
-    var found = buckets_with_policies_indexed[bucket.name];
-    if (found == undefined || found.length == 0) {
-      failed_it_config_buckets.push(bucket.name);
-    }
-  });
-
-  if (failed_it_config_buckets.length > 0) {
-    var failure_rate = (failed_it_config_buckets.length / ds_aws_buckets_tag_filtered.length) * 100;
-    var error_message = "";
-
-    if (failure_rate === 100) {
-      // All buckets failed - likely a permission issue at the account level
-      error_message = "We were unable to retrieve Intelligent Tiering configuration for any of the " +
-        ds_aws_buckets_tag_filtered.length + " S3 bucket(s) in scope. " +
-        "This indicates that the AWS credential is missing the 's3:ListBucketIntelligentTieringConfigurations' permission " +
-        "at the account level. To resolve this issue, add the 's3:ListBucketIntelligentTieringConfigurations' permission " +
-        "to the IAM role or policy attached to the credential used by this policy.";
-    } else {
-      // Some buckets failed - likely bucket-level permission restrictions or bucket policies
-      error_message = "We were unable to retrieve Intelligent Tiering configuration for " +
-        failed_it_config_buckets.length + " out of " + ds_aws_buckets_tag_filtered.length +
-        " S3 bucket(s). This can happen if the AWS credential does not have the " +
-        "'s3:ListBucketIntelligentTieringConfigurations' permission for specific buckets, or if bucket policies " +
-        "are restricting access. Failed buckets: " + failed_it_config_buckets.sort().join(", ") +
-        ". To resolve this issue: (1) Verify the AWS credential has 's3:ListBucketIntelligentTieringConfigurations' " +
-        "permission, (2) Check for restrictive bucket policies that may be denying access, or (3) Use exclusion tags " +
-        "to filter out buckets that should not be evaluated by this policy.";
-    }
-
-    errors.push(error_message);
-  }
-
   // Deduplicate identical errors
   errors = _.uniq(errors);
   errors = _.map(errors, function(err) {
@@ -895,15 +892,15 @@ EOS
 end
 
 datasource "ds_combined_bucket_info" do
-  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy, $ds_costs_grouped_by_resource_id, $ds_identify_errors, $ds_currency, $param_incident_csv
+  run_script $js_combined_bucket_info, $ds_aws_buckets_with_it_status, $ds_aws_account, $ds_applied_policy, $ds_costs_grouped_by_resource_id, $ds_identify_errors, $ds_currency, $param_incident_csv
 end
 
 script "js_combined_bucket_info", type: "javascript" do
-  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy", "ds_costs_grouped_by_resource_id", "ds_identify_errors", "ds_currency", "param_incident_csv"
+  parameters "ds_aws_buckets_with_it_status", "ds_aws_account", "ds_applied_policy", "ds_costs_grouped_by_resource_id", "ds_identify_errors", "ds_currency", "param_incident_csv"
   result "result"
   code <<-'EOS'
-  buckets_without_it = _.filter(ds_aws_bucket_policies, function(bucket) {
-    return bucket['it_configuration'] == "" || bucket['it_configuration'] == null || bucket['it_configuration'] == undefined
+  buckets_without_it = _.reject(ds_aws_buckets_with_it_status, function(bucket) {
+    return bucket['has_it_transition']
   })
 
   var total_savings = 0;
@@ -926,7 +923,7 @@ script "js_combined_bucket_info", type: "javascript" do
     }
 
     var recommendationDetails = [
-        "S3 Intelligent-Tiering delivers automatic cost savings by moving data on a granular object level between access tiers when access patterns change. Recommendation is to add a Bucket Lifecycle Policy to transition objects to Intelligent Tiering storage class after a specified period (). Full details and instructions available on [AWS Documentation > Amazon S3 > Using S3 Intelligent-Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-intelligent-tiering.html) and [Setting an S3 Lifecycle configuration on a bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/how-to-set-lifecycle-configuration-intro.html)",
+        "S3 Intelligent-Tiering delivers automatic cost savings by moving data on a granular object level between access tiers when access patterns change. Recommendation is to add a Bucket Lifecycle Policy to transition objects to Intelligent Tiering storage class after a specified period. This bucket will no longer be reported once it has an enabled lifecycle rule that transitions objects to the Intelligent Tiering storage class. Full details and instructions available on [AWS Documentation > Amazon S3 > Using S3 Intelligent-Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-intelligent-tiering.html) and [Setting an S3 Lifecycle configuration on a bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/how-to-set-lifecycle-configuration-intro.html)",
         " ",
         "Example AWS CLI command to add lifecycle policy to transition all objects to Intelligent Tiering storage class immediately:",
         "```",
@@ -972,7 +969,7 @@ policy "pol_aws_intelligent_tiering" do
     detail_template <<-'EOS'
 # AWS S3 Buckets Without Intelligent Tiering Found
 
-There were {{ len data }} AWS S3 Buckets without Intelligent Tiering found. S3 Intelligent-Tiering is the ideal storage class for data with unknown, changing, or unpredictable access patterns, independent of object size or retention period.
+There were {{ len data }} AWS S3 Buckets without Intelligent Tiering found. A bucket is reported when none of its enabled lifecycle rules transition objects to the Intelligent-Tiering storage class. S3 Intelligent-Tiering is the ideal storage class for data with unknown, changing, or unpredictable access patterns, independent of object size or retention period.
 
 AWS recommends using S3 Intelligent-Tiering as the default storage class for virtually any workload, especially data lakes, data analytics, new applications, and user-generated content.
 
@@ -980,7 +977,7 @@ Frequent, Infrequent, and Archive Instant Access tiers have the same low-latency
 
 ## Total Estimated Savings
 
-We estimate **${{ with index data 0 }}{{ .metadata.total_savings}}{{ end }}** monthly savings if all reported buckets have Intelligent Tiering enabled. This was derived from the `TimedStorage-ByteHrs` usage + cost values from a recent 24hr period and a conservative 30% savings factor from switching S3 Standard to S3 Intelligent Tiering.
+We estimate **${{ with index data 0 }}{{ .metadata.total_savings}}{{ end }}** monthly savings if all reported buckets have a lifecycle rule transitioning objects to Intelligent Tiering. This was derived from the `TimedStorage-ByteHrs` usage + cost values from a recent 24hr period and a conservative 30% savings factor from switching S3 Standard to S3 Intelligent Tiering.
 {{- with index data 0 }}{{ if .metadata.errors }}
 
 ## Errors Found
