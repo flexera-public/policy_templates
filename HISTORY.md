@@ -6,6 +6,25 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5071](https://github.com/flexera-public/policy_templates/pull/5071): POL-1852 Applied Policy Template Errors: Filtering Updates
+
+*Major Update*
+
+#### Description
+
+> `Applied Policy Template Errors`
+> - Changed from using a dedicated ignore list to using an Allow/Deny list with a corresponding filter parameter, providing more flexibility for filtering applied policies.
+> - Added error checks to prevent policy execution failure in some edge cases.
+> - Added API error handling to gracefully handle authentication and access issues.
+>
+
+#### Metadata
+
+- **Policies**: [Applied Policy Template Errors](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/README.md)
+- **Merged At**: 2026-10-06 13:41:37 UTC
+
+---
+
 ### PR [#5042](https://github.com/flexera-public/policy_templates/pull/5042): FOPTS-30968 Use dot-style S3 endpoints for per-bucket requests
 
 *Unpublished, Bug Fix*
@@ -1810,22 +1829,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md), [Meta Parent: Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md)
 - **Merged At**: 2026-06-04 16:48:26 UTC
-
----
-
-### PR [#4501](https://github.com/flexera-public/policy_templates/pull/4501): POL-1774 AWS RI/SP - Fixes for Multiple Options
-
-*Major Update, Minor Update*
-
-#### Description
-
-> Updates the `AWS Reserved Instances Recommendations` policy template so that, when a user selects multiple terms or payment types, multiple API calls are made and the results genuinely contain all of the recommendations. This functionality has also been added to the `AWS Savings Plan Recommendations` policy template.
->
-
-#### Metadata
-
-- **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md), [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
-- **Merged At**: 2026-06-04 13:39:12 UTC
 
 ---
 
