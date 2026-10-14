@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.1",
+  version: "0.3.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1460,6 +1460,55 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     if (inst['name'] != undefined) { instance_type_map[inst['name']] = inst }
   })
 
+  // Parse the specs of every non-superseded candidate type once up front
+  var candidate_types = []
+  _.each(ds_azure_compute_instance_types, function(inst) {
+    if (!inst['name'] || inst['superseded']) { return }
+    var specs = inst['specs'] || {}
+    candidate_types.push({
+      name: inst['name'],
+      arch: specs['CpuArchitectureType'],
+      is_amd: isAMD(inst['name']),
+      vcpus: parseInt(specs['vCPUs']),
+      mem_gb: parseFloat(specs['MemoryGB']),
+      hyper_v_gens: (specs['HyperVGenerations'] || 'V1,V2').split(','),
+      premium_io: specs['PremiumIO'] === true,
+      local_disk: inst['localDisk'] === true,
+      max_data_disks: parseInt(specs['MaxDataDiskCount']),
+      max_nics: parseInt(specs['MaxNetworkInterfaces']),
+      accel_net: specs['AcceleratedNetworkingEnabled'] === true,
+      disk_bps: parseInt(specs['UncachedDiskBytesPerSecond']) || 0,
+      disk_iops: parseInt(specs['UncachedDiskIOPS']) || 0
+    })
+  })
+
+  // 'priced_candidates_cache' stores a map of list, each list stores candidates sorted cheapest first.
+  // Entries are built when accessed.
+  // Map key: "{pricing region}|{os}"
+  // Map value: list of candidates, sorted cheapest first
+  var priced_candidates_cache = {}
+  function getPricedCandidates(pretty_region, os_type) {
+    var key = pretty_region + '|' + os_type
+    if (!priced_candidates_cache[key]) {
+      var region_pricing = ds_azure_vm_pricing[pretty_region] || {}
+      var priced = []
+      _.each(candidate_types, function(cand) {
+        var price_info = region_pricing[cand['name']] && region_pricing[cand['name']][os_type]
+        var price = price_info ? price_info['pricePerUnit'] : null
+        if (price) { priced.push({ cand: cand, price: price }) }
+      })
+      priced_candidates_cache[key] = _.sortBy(priced, function(entry) { return entry['price'] })
+    }
+    return priced_candidates_cache[key]
+  }
+
+  // 'shortlist_cache' stores a map of list, each list is a shortlist of cheaper candidates
+  // that pass every gate, sorted cheapest first.
+  // Entries are built when accessed.
+  // Map key: "<instance type>|<pricing region>|<os>"
+  // Map value: shortlist of cheaper candidates that pass every gate
+  var shortlist_cache = {}
+
   var currency = ds_currency['symbol'] || '$'
   var currency_sep = ds_currency['separator'] || ','
 
@@ -1616,82 +1665,84 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
       available_for_sub_region = ds_azure_available_sizes[subscription_id][region]
     }
 
+    // Build (or reuse) the shortlist for this instance type, region and OS
+    var shortlist_key = instance_type + '|' + pretty_region + '|' + os_type
+    var shortlist = shortlist_cache[shortlist_key]
+    if (!shortlist) {
+      shortlist = []
+      var priced_candidates = getPricedCandidates(pretty_region, os_type)
+
+      for (var pi = 0; pi < priced_candidates.length; pi++) {
+        var priced_entry = priced_candidates[pi]
+
+        // Pricing check: sorted cheapest first, so everything from here on costs at least as much
+        if (priced_entry['price'] >= current_price) { break }
+
+        var shortlist_cand = priced_entry['cand']
+        if (shortlist_cand['name'] === instance_type) { continue }
+
+        // Gate 2: Same CPU architecture
+        if (shortlist_cand['arch'] !== current_arch) { continue }
+
+        // Gate 3: Intel/AMD vendor gate (for x64 only)
+        if (current_arch === 'x64' && param_allow_mixed_x86_vendors !== 'Yes') {
+          if (shortlist_cand['is_amd'] !== current_is_amd) { continue }
+        }
+
+        // Gate 6: HyperV generation -- candidate must support all generations the current type does
+        var gen_ok = _.every(current_hyper_v_gens, function(g) {
+          return _.contains(shortlist_cand['hyper_v_gens'], g.trim())
+        })
+        if (!gen_ok) { continue }
+
+        // Gate 7: Premium storage
+        if (current_premium_io && !shortlist_cand['premium_io']) { continue }
+
+        // Gate 8: Local/temp disk
+        if (current_local_disk && !shortlist_cand['local_disk']) { continue }
+
+        shortlist.push(priced_entry)
+      }
+
+      shortlist_cache[shortlist_key] = shortlist
+    }
+
+    // Apply the per-VM gates. The shortlist is sorted cheapest first, so the first
+    // candidate that passes is the cheapest fit and the search can stop there.
     var best_candidate_name = null
     var best_price = current_price
 
-    _.each(ds_azure_compute_instance_types, function(candidate) {
-      var cand_name = candidate['name']
-      if (!cand_name || cand_name === instance_type) { return }
-      if (candidate['superseded']) { return }
-
-      var cand_specs = candidate['specs']
+    for (var si = 0; si < shortlist.length; si++) {
+      var cand = shortlist[si]['cand']
 
       // Gate 1: Not restricted/unavailable in this subscription+region
-      if (!available_for_sub_region[cand_name]) { return }
-
-      // Gate 2: Same CPU architecture
-      if (cand_specs['CpuArchitectureType'] !== current_arch) { return }
-
-      // Gate 3: Intel/AMD vendor gate (for x64 only)
-      if (current_arch === 'x64' && param_allow_mixed_x86_vendors !== 'Yes') {
-        var cand_is_amd = isAMD(cand_name)
-        if (cand_is_amd !== current_is_amd) { return }
-      }
+      if (!available_for_sub_region[cand['name']]) { continue }
 
       // Gate 4: vCPU requirement
-      if (parseInt(cand_specs['vCPUs']) < required_vcpus) { return }
+      if (cand['vcpus'] < required_vcpus) { continue }
 
       // Gate 5: Memory requirement
-      if (parseFloat(cand_specs['MemoryGB']) < required_mem_gb) { return }
-
-      // Gate 6: HyperV generation -- candidate must support all generations the current type does
-      var cand_hyper_v = cand_specs['HyperVGenerations'] || 'V1,V2'
-      var cand_hyper_v_gens = cand_hyper_v.split(',')
-      var gen_ok = _.every(current_hyper_v_gens, function(g) {
-        return _.contains(cand_hyper_v_gens, g.trim())
-      })
-      if (!gen_ok) { return }
-
-      // Gate 7: Premium storage
-      if (current_premium_io && cand_specs['PremiumIO'] !== true) { return }
-
-      // Gate 8: Local/temp disk
-      if (current_local_disk && candidate['localDisk'] !== true) { return }
+      if (cand['mem_gb'] < required_mem_gb) { continue }
 
       // Gate 9: Data disk count
-      if (parseInt(cand_specs['MaxDataDiskCount']) < data_disk_count) { return }
+      if (cand['max_data_disks'] < data_disk_count) { continue }
 
       // Gate 10: NIC count
-      if (parseInt(cand_specs['MaxNetworkInterfaces']) < nic_count) { return }
+      if (cand['max_nics'] < nic_count) { continue }
 
       // Gate 11: Accelerated networking
-      if (current_accel_net && cand_specs['AcceleratedNetworkingEnabled'] !== true) { return }
+      if (current_accel_net && !cand['accel_net']) { continue }
 
       // Gate 12: Disk throughput (only applied when peak throughput data is available)
-      if (disk_peak_bps > 0) {
-        var cand_disk_bps = parseInt(cand_specs['UncachedDiskBytesPerSecond']) || 0
-        if (cand_disk_bps > 0 && cand_disk_bps < (disk_peak_bps * safety)) { return }
-      }
+      if (disk_peak_bps > 0 && cand['disk_bps'] > 0 && cand['disk_bps'] < (disk_peak_bps * safety)) { continue }
 
       // Gate 13: Disk IOPS (only applied when peak IOPS data is available)
-      if (disk_peak_iops > 0) {
-        var cand_disk_iops = parseInt(cand_specs['UncachedDiskIOPS']) || 0
-        if (cand_disk_iops > 0 && cand_disk_iops < (disk_peak_iops * safety)) { return }
-      }
+      if (disk_peak_iops > 0 && cand['disk_iops'] > 0 && cand['disk_iops'] < (disk_peak_iops * safety)) { continue }
 
-      // Pricing check
-      var cand_price = null
-      if (ds_azure_vm_pricing[pretty_region] &&
-          ds_azure_vm_pricing[pretty_region][cand_name] &&
-          ds_azure_vm_pricing[pretty_region][cand_name][os_type]) {
-        cand_price = ds_azure_vm_pricing[pretty_region][cand_name][os_type]['pricePerUnit']
-      }
-      if (!cand_price) { return }
-      if (cand_price >= best_price) { return }
-
-      best_price = cand_price
-      best_candidate_name = cand_name
-    })
+      best_candidate_name = cand['name']
+      best_price = shortlist[si]['price']
+      break
+    }
 
     if (best_candidate_name) {
       var cand_info = instance_type_map[best_candidate_name]
