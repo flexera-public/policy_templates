@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.5
+
+- Fixed an issue where the policy would fail with an error instead of raising an incident whenever running virtual machines were found.
+- Fixed an issue where the `Minimum Age (Days)` setting was not applied correctly. The policy now only reports virtual machines that have been running for at least the specified number of days.
+
 ## v0.2.4
 
 - Fixed HTTP request headers to use properly-cased "Content-Type" instead of "content-type" so the policy engine correctly overrides its default content type.
