@@ -40,6 +40,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
+  - `Microsoft.ResourceGraph/resources/read`
   - `Microsoft.Storage/storageAccounts/read`
   - `Microsoft.Storage/storageAccounts/managementPolicies/read`
 
