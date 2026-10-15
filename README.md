@@ -452,6 +452,12 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
 
+#### MongoDB
+
+* Atlas
+
+  * [MongoDB Atlas Common Bill Ingestion](./cost/mongodb_atlas/cbi_mongodb_atlas)
+
 #### Oracle
 
 * Common Bill Ingestion
