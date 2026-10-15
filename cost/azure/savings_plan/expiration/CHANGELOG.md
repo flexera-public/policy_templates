@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0
+
+- Added `Exclude Expired Savings Plans` parameter to optionally leave Savings Plans that have already expired out of the report.
+- Added `Exclude Auto-Renewing Savings Plans` parameter to optionally leave Savings Plans that are set to renew automatically out of the report.
+- Added an `Auto-Renew` column to the incident to show whether each Savings Plan is set to renew automatically.
+- The incident now states how many Savings Plans were left out of the report by the new parameters.
+- Fixed an issue where Savings Plans with no purchase date could show a purchase date of 1970-01-01 in the incident.
+
 ## v0.2.5
 
 - Fixed an issue where the policy could fail to generate a report if a Savings Plan was missing a purchase date.

@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "0.2.5",
+  version: "0.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -43,6 +43,24 @@ parameter "param_days_expiration" do
   description "The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans."
   min_value 0
   default 15
+end
+
+parameter "param_exclude_expired" do
+  type "string"
+  category "Policy Settings"
+  label "Exclude Expired Savings Plans"
+  description "Whether or not to exclude Savings Plans that have already expired. NOTE: If 'Days Until Expiration' is set to '0' and this is set to 'Yes', the policy will not report any Savings Plans."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_auto_renew" do
+  type "string"
+  category "Policy Settings"
+  label "Exclude Auto-Renewing Savings Plans"
+  description "Whether or not to exclude Savings Plans that have renewal enabled (Renewal set to 'Yes' in the Azure portal)."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_incident_csv" do
@@ -331,22 +349,42 @@ datasource "ds_savings_plan_order_details" do
 end
 
 datasource "ds_azure_expiring_savings_plans" do
-  run_script $js_azure_expiring_savings_plans, $ds_savings_plan_order_details, $ds_applied_policy, $param_days_expiration, $param_incident_csv
+  run_script $js_azure_expiring_savings_plans, $ds_savings_plan_order_details, $ds_applied_policy, $param_days_expiration, $param_exclude_auto_renew, $param_exclude_expired, $param_incident_csv
 end
 
 script "js_azure_expiring_savings_plans", type: "javascript" do
-  parameters "ds_azure_savings_plan_order_details", "ds_applied_policy", "param_days_expiration", "param_incident_csv"
+  parameters "ds_azure_savings_plan_order_details", "ds_applied_policy", "param_days_expiration", "param_exclude_auto_renew", "param_exclude_expired", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
   today = new Date()
+  sp_total = 0
+  auto_renew_excluded = 0
+  expired_excluded = 0
 
   _.each(ds_azure_savings_plan_order_details, function(sp) {
-    purchase_date = new Date(sp['purchaseDate'])
+    // autoRenew comes from properties.renew; accept a boolean or a string "true" so the check can't silently fail
+    auto_renew = sp['autoRenew'] === true || String(sp['autoRenew']).toLowerCase() == "true"
+
+    if (param_exclude_auto_renew == "Yes" && auto_renew) {
+      auto_renew_excluded += 1
+      return
+    }
 
     expiration_date = new Date(sp['expirationDate'])
+
+    if (param_exclude_expired == "Yes" && expiration_date < today) {
+      expired_excluded += 1
+      return
+    }
+
+    sp_total += 1
+
+    // new Date(null) is 1970-01-01 rather than an invalid date, so guard missing values explicitly
+    purchase_date = sp['purchaseDate'] ? new Date(sp['purchaseDate']) : new Date(NaN)
+
     days_until_expiration = Math.round((expiration_date - today) / 1000 / 60 / 60 / 24)
     if (days_until_expiration < 0) { days_until_expiration = 0 }
 
@@ -359,6 +397,7 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
         purchaseDate: isNaN(purchase_date.getTime()) ? "" : purchase_date.toISOString(),
         expirationDate: expiration_date.toISOString(),
         daysUntilExpiration: days_until_expiration,
+        autoRenew: auto_renew ? "Yes" : "No",
         lookbackPeriod: param_days_expiration,
         policy_name: ds_applied_policy['name'],
         message: ""
@@ -367,7 +406,6 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
   })
 
   if (result.length > 0) {
-    sp_total = ds_azure_savings_plan_order_details.length
     expiring_sp_total = result.length
     expiring_sp_percentage = (expiring_sp_total / sp_total * 100).toFixed(2) + '%'
 
@@ -386,6 +424,18 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
       ") ", verb, " going to expire within ",
       param_days_expiration, " ", day, ".\n\n"
     ].join('')
+
+    if (auto_renew_excluded > 0) {
+      excluded_noun = auto_renew_excluded == 1 ? "Savings Plan" : "Savings Plans"
+      excluded_verb = auto_renew_excluded == 1 ? "was" : "were"
+      findings += auto_renew_excluded + " " + excluded_noun + " with renewal enabled " + excluded_verb + " excluded from this report.\n\n"
+    }
+
+    if (expired_excluded > 0) {
+      excluded_noun = expired_excluded == 1 ? "Savings Plan" : "Savings Plans"
+      excluded_verb = expired_excluded == 1 ? "was" : "were"
+      findings += expired_excluded + " already expired " + excluded_noun + " " + excluded_verb + " excluded from this report.\n\n"
+    }
 
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
@@ -421,6 +471,9 @@ policy "pol_azure_expiring_savings_plans" do
       end
       field "daysUntilExpiration" do
         label "Days Until Expiration"
+      end
+      field "autoRenew" do
+        label "Auto-Renew"
       end
       field "purchaseDate" do
         label "Savings Plan Purchase Date"
