@@ -8,6 +8,8 @@ This Policy Template obtains a list of all Savings Plans in the Azure estate and
 
 - The policy leverages the Azure Resource Manager API to obtain a list of Savings Plans from the `/providers/Microsoft.BillingAccounts/savingsPlanOrders/savingsPlans` API endpoint.
 - The policy then compares the `properties.expiryDateTime` field of each Savings Plan to today's date to determine how many days from expiration each Savings Plan is.
+- The policy uses the `properties.renew` field of each Savings Plan to determine whether it is set to renew automatically.
+- Savings Plans that have already expired, or that are set to renew automatically, are optionally excluded from the results based on user-specified parameters.
 - The policy then raises an incident with a list of any Savings Plans set to expire in fewer days than the user specified via the `Days Until Expiration` parameter.
 
 ## Input Parameters
@@ -15,6 +17,8 @@ This Policy Template obtains a list of all Savings Plans in the Azure estate and
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Days Until Expiration* - The number of days before the Azure Savings Plan expires. All Savings Plans set to expire in fewer days than the specified value will be included in the report.
+- *Exclude Expired Savings Plans* - Whether or not to exclude Savings Plans that have already expired. If `Days Until Expiration` is set to '0' and this is set to 'Yes', the policy will not report any Savings Plans.
+- *Exclude Auto-Renewing Savings Plans* - Whether or not to exclude Savings Plans that are set to renew automatically (Renewal set to 'Yes' in the Azure portal).
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
