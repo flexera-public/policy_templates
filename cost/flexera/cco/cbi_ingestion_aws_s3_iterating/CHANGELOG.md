@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0
+
+- Added logic to create the CBI endpoint (bill connect) automatically if it does not already exist.
+- The Flexera credential now requires the `org_owner` role.
+
 ## v0.1.6
 
 - Fixed an issue where the policy would fail with an "unexpected response status" or "cannot unmarshal object into Go struct field" error when listing or downloading cost files from S3, caused by an internal hostname value not being passed to the request correctly.

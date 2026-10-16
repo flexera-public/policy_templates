@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0
+
+- Added logic to create the CBI endpoint (bill connect) automatically if it does not already exist.
+- The Flexera credential now requires the `org_owner` role.
+
 ## v0.1.3
 
 - Fixed an issue where the policy would fail with an "invalid argument in join" error when listing or downloading cost files from Google Cloud Storage, caused by internal bucket name and prefix values not being passed to the request correctly.

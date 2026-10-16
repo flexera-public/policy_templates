@@ -12,6 +12,7 @@ NOTE: Because of the complexities involved in this policy template, it is recomm
 
 - The policy uses the Azure Storage API to connect to the storage container containing the CSV files with cost data and obtain the relevant files for the specified month (or current month if none is specified.)
 - The policy then sends those reports, unmodified, into a Flexera CBI endpoint so that they can be ingested and then visible on the platform.
+- If the CBI endpoint does not already exist, the policy template creates it automatically. If no CBI Endpoint ID is provided, one is generated from the CBI Endpoint Type and the Cloud Vendor.
 - The policy does this over the course of multiple runs to avoid hitting memory and other constraints. **It is recommended that the default frequency of 15 minutes be used; the policy may not function correctly or as expected if a longer frequency is selected.**
 - It is recommended that this policy be applied twice, with Month To Ingest set to Current Month for one instance and with it set to Previous Month for the other. This is to ensure that any changes made to billing data after the month ends are brought into the Flexera platform.
 
@@ -21,7 +22,9 @@ This policy template has the following input parameters:
 
 - *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month.
 - *Billing Period* - The year and month to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for the Month To Ingest parameter. Example: 2022-09
-- *Flexera CBI Endpoint* - The name of the Flexera CBI endpoint to use. Example: cbi-oi-optima-laborcosts
+- *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/).
+- *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use for ingested costs. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
+- *Cloud Vendor* - The value the ingested costs should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
 - *Azure Blob Storage Hostname* - The hostname for the Azure Blob Storage container that stores the costs. Ex: billing-files.blob.core.windows.net
 - *Azure Blob Storage Container* - The name of the Azure Blob Storage container that stores the costs. Ex: cost_reports
 - *Block Size* - The number of files to upload with each execution of the policy. The default value of 20 is recommended.
@@ -29,6 +32,7 @@ This policy template has the following input parameters:
 
 ## Policy Actions
 
+- Creates the CBI endpoint (bill connect) in Flexera CCO if it does not already exist
 - Uploads stored billing data to Flexera CCO
 - Sends an email notification
 
@@ -44,14 +48,15 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `csm_bill_upload_admin`
+  - `org_owner`*
+
+  \* The `org_owner` role is only required if the CBI endpoint (Bill Connect) does not already exist. If the CBI endpoint already exists, the `org_owner` role is not required.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Additional Requirements
 
 The blobs containing costs must have the `.csv` file extension and must contain the year and month in YYYY-MM format. Example: cost_data_2025-04-08.csv
-
-This policy template also requires a valid CBI endpoint created using the [Flexera Bill Connect API](https://reference.rightscale.com/optima-bill/#/CBIBillConnects/CBIBillConnects_create).
 
 ## Supported Clouds
 
