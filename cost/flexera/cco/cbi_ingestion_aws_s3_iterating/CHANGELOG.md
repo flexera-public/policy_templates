@@ -2,11 +2,9 @@
 
 ## v1.0.0
 
-- The policy template now creates the CBI endpoint (bill connect) automatically if it does not already exist. Previously, the CBI endpoint had to be created in advance using the Flexera Bill Connect API.
-- Added the `CBI (Common Bill Ingestion) Endpoint Type` parameter, which determines whether a newly created CBI endpoint uses the Common Bill Ingestion Format or the FOCUS Format.
-- Added the required `Cloud Vendor` parameter, which sets the `Cloud Vendor` dimension for a newly created CBI endpoint. A value must now be provided when applying the policy template.
-- The `CBI (Common Bill Ingestion) Endpoint ID` parameter is now optional. If it is left blank, the endpoint ID is generated automatically from the endpoint type and cloud vendor.
-- Creating a CBI endpoint requires the `org_owner` role on the Flexera credential. The role is not required if the CBI endpoint already exists. See the README for details.
+- Added logic to create the CBI endpoint (bill connect) automatically if it does not already exist.
+- The Flexera credential now requires the `org_owner` role.
+
 
 ## v0.1.6
 
