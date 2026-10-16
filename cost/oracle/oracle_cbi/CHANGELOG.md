@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.0.0
+
+- The policy template now creates the CBI endpoint (bill connect) automatically if it does not already exist. Previously, the CBI endpoint had to be created in advance using the Flexera Bill Connect API.
+- The `Flexera CBI Endpoint` parameter is now optional. If it is left blank, the default endpoint `cbi-oi-oracle-oraclecloud` is used and created if necessary.
+- The `Flexera CBI Endpoint` parameter now only accepts values that begin with `cbi-oi-oracle-`.
+- Creating a CBI endpoint requires the `org_owner` role on the Flexera credential. The role is not required if the CBI endpoint already exists. See the README for details.
+
 ## v3.3.7
 
 - Fixed an issue where the status message could fail to generate immediately after a new bill upload was created with no files yet.

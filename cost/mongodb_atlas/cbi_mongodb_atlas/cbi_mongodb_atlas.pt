@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "1.0.0",
   provider: "MongoDB",
   service: "Atlas",
   policy_set: "Common Bill Ingestion",
@@ -50,7 +50,7 @@ parameter "param_cbi_endpoint" do
   type "string"
   category "Policy Settings"
   label "Flexera CBI Endpoint"
-  description "The ID of the existing Flexera Common Bill Ingestion endpoint that receives MongoDB Atlas costs."
+  description "The ID of the Flexera Common Bill Ingestion endpoint that receives MongoDB Atlas costs. The endpoint is created automatically if it does not already exist."
   allowed_pattern /^cbi-oi-optima-[-_0-9a-zA-Z]{1,20}$/
   default "cbi-oi-optima-mongodb-atlas"
 end
@@ -98,6 +98,148 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+# Branching logic: Create a new bill connect if it doesn't already exist
+datasource "ds_to_create_bill_connect" do
+  run_script $js_to_create_bill_connect, $ds_existing_bill_connects, $param_cbi_endpoint
+end
+
+script "js_to_create_bill_connect", type: "javascript" do
+  parameters "ds_existing_bill_connects", "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
+    return connect["id"] == param_cbi_endpoint
+  })
+
+  if (existing_bill_connect == undefined) {
+    prefix = "cbi-oi-optima"
+
+    result = [{
+      billIdentifier: param_cbi_endpoint.split(prefix + "-")[1],
+      integrationId: prefix,
+      name: "mongodb_atlas",
+      params: {
+        displayName: "MongoDB Atlas",
+        vendorName: "MongoDB Atlas"
+      }
+    }]
+  }
+EOS
+end
+
+datasource "ds_create_bill_connect" do
+  iterate $ds_to_create_bill_connect
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/cbi"])
+    header "User-Agent", "RS Policies"
+    body_field "billIdentifier", val(iter_item, "billIdentifier")
+    body_field "integrationId", val(iter_item, "integrationId")
+    body_field "name", val(iter_item, "name")
+    body_field "params", val(iter_item, "params")
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "kind", jmes_path(response, "kind")
+    field "billIdentifier", jmes_path(response, "cbi.billIdentifier")
+    field "integrationId", jmes_path(response, "cbi.integrationId")
+    field "name", jmes_path(response, "cbi.name")
+    field "displayName", jmes_path(response, "cbi.params.displayName")
+    field "vendorName", jmes_path(response, "cbi.params.vendorName")
+  end
+end
+
+# Branching logic: Select newly created CBI endpoint if it exists. Otherwise, select existing one.
+datasource "ds_cbi_endpoint" do
+  run_script $js_cbi_endpoint, $ds_create_bill_connect, $ds_existing_bill_connects, $param_cbi_endpoint
+end
+
+script "js_cbi_endpoint", type: "javascript" do
+  parameters "ds_create_bill_connect", "ds_existing_bill_connects", "param_cbi_endpoint"
+  result "result"
+  code <<-'EOS'
+  if (ds_create_bill_connect.length > 0) {
+    result = ds_create_bill_connect[0]
+  } else {
+    result = _.find(ds_existing_bill_connects, function(connect) { return connect["id"] == param_cbi_endpoint })
+  }
+EOS
+end
 
 datasource "ds_mongodb_atlas_org_groups" do
   request do
@@ -306,7 +448,7 @@ datasource "ds_create_bill_upload" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
-    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
     body_field "billingPeriod", val(iter_item, "period")
   end
   result do

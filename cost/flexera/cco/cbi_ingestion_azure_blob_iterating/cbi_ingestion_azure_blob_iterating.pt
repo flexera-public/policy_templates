@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "0.1.5",
+  version: "1.0.0",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -38,12 +38,30 @@ parameter "param_specific_period" do
   default "2020-01"
 end
 
+parameter "param_cbi_type" do
+  type "string"
+  category "Policy Settings"
+  label "CBI (Common Bill Ingestion) Endpoint Type"
+  description "Whether costs are being sent to an endpoint for Common Bill Ingestion Format or FOCUS Format"
+  allowed_values "Common Bill Ingestion", "FOCUS"
+  default "Common Bill Ingestion"
+end
+
 parameter "param_cbi_endpoint" do
   type "string"
   category "Policy Settings"
   label "CBI (Common Bill Ingestion) Endpoint ID"
-  description "The ID of CBI endpoint to create/use for ingested costs. Ex: cbi-oi-optima-laborcosts"
+  description "The ID of CBI endpoint to create/use for ingested costs. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts"
   allowed_pattern /^(cbi-oi-optima-[a-z]+|cbi-oi-focus-[a-z]+|)$/
+  default ""
+end
+
+parameter "param_cbi_cloud_vendor" do
+  type "string"
+  category "Policy Settings"
+  label "Cloud Vendor"
+  description "The value the ingested costs should have for the 'Cloud Vendor' dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created."
+  min_length 1
   # No default value, user input required
 end
 
@@ -118,6 +136,54 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    },
+    "api.optima.flexeraengdev.com": {
+      api: "api.flexeratest.com",
+      flexera: "api.flexeratest.com",
+      fsm: "api.fsm.flexeraengdev.com",
+      grs: "grs-front.iam-us-east-1.flexeraengdev.com",
+      ui: "app.flexeratest.com",
+      tld: "flexeratest.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_dates" do
   run_script $js_dates, $param_billing_period, $param_specific_period
 end
@@ -144,12 +210,133 @@ script "js_dates", type: "javascript" do
 EOS
 end
 
+datasource "ds_cbi_endpoint_id" do
+  run_script $js_cbi_endpoint_id, $param_cbi_endpoint, $param_cbi_cloud_vendor, $param_cbi_type
+end
+
+script "js_cbi_endpoint_id", type: "javascript" do
+  parameters "param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
+  result "result"
+  code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
+  result = param_cbi_endpoint
+
+  if (param_cbi_endpoint == "") {
+    prefix = "cbi-oi-optima-"
+    if (param_cbi_type == "FOCUS") { prefix = "cbi-oi-focus-" }
+
+    // Make the Cloud Vendor lowercase, replace spaces with underscores,
+    // remove any non-alphabetical characters, and remove any underscores at the start/end of the string
+    result = prefix + param_cbi_cloud_vendor.toLowerCase().replace(/ /g, '_').replace(/[^a-z_]/g, '').replace(/^_+|_+$/g, '')
+  }
+EOS
+end
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+# Branching logic: Create a new bill connect if it doesn't already exist
+datasource "ds_to_create_bill_connect" do
+  run_script $js_to_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id, $param_cbi_cloud_vendor, $param_cbi_type
+end
+
+script "js_to_create_bill_connect", type: "javascript" do
+  parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor", "param_cbi_type"
+  result "result"
+  code <<-'EOS'
+  // Remove any leading/trailing whitespace the user may have accidentally entered
+  param_cbi_cloud_vendor = param_cbi_cloud_vendor.trim()
+  result = []
+
+  existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
+    return connect["id"] == ds_cbi_endpoint_id
+  })
+
+  if (existing_bill_connect == undefined) {
+    prefix = "cbi-oi-optima"
+    if (param_cbi_type == "FOCUS") { prefix = "cbi-oi-focus" }
+
+    result = [{
+      billIdentifier: ds_cbi_endpoint_id.split(prefix + "-")[1],
+      integrationId: prefix,
+      name: param_cbi_cloud_vendor.toLowerCase().trim().replace(/ /g, '_'),
+      params: {
+        displayName: param_cbi_cloud_vendor,
+        vendorName: param_cbi_cloud_vendor.trim().replace(/ /g, '_')
+      }
+    }]
+  }
+EOS
+end
+
+datasource "ds_create_bill_connect" do
+  iterate $ds_to_create_bill_connect
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/cbi"])
+    header "User-Agent", "RS Policies"
+    body_field "billIdentifier", val(iter_item, "billIdentifier")
+    body_field "integrationId", val(iter_item, "integrationId")
+    body_field "name", val(iter_item, "name")
+    body_field "params", val(iter_item, "params")
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "kind", jmes_path(response, "kind")
+    field "created_at", jmes_path(response, "created_at")
+    field "updated_at", jmes_path(response, "updated_at")
+    field "billIdentifier", jmes_path(response, "cbi.billIdentifier")
+    field "integrationId", jmes_path(response, "cbi.integrationId")
+    field "name", jmes_path(response, "cbi.name")
+    field "displayName", jmes_path(response, "cbi.params.displayName")
+    field "vendorName", jmes_path(response, "cbi.params.vendorName")
+  end
+end
+
+# Branching logic: Select newly created CBI endpoint if it exists. Otherwise, select existing one.
+datasource "ds_cbi_endpoint" do
+  run_script $js_cbi_endpoint, $ds_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id
+end
+
+script "js_cbi_endpoint", type: "javascript" do
+  parameters "ds_create_bill_connect", "ds_existing_bill_connects", "ds_cbi_endpoint_id"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_existing_bill_connects, function(connect) { return connect["id"] == ds_cbi_endpoint_id })
+  if (ds_create_bill_connect.length > 0) { result = ds_create_bill_connect[0] }
+EOS
+end
+
 datasource "ds_existing_bill_uploads" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    query "billConnectId", $param_cbi_endpoint
+    query "billConnectId", val($ds_cbi_endpoint, "id")
     query "billingPeriod", val($ds_dates, 'period')
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
@@ -252,7 +439,7 @@ datasource "ds_create_bill_upload" do
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
     header "allow_redirects", "False"
-    body_field "billConnectId", $param_cbi_endpoint
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
     body_field "billingPeriod", val($ds_dates, 'period')
   end
   result do
@@ -474,11 +661,11 @@ EOS
 end
 
 datasource "ds_status" do
-  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_keys, $ds_cost_object_keys_sliced, $ds_dates, $param_commit_delay, $param_cbi_endpoint
+  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_keys, $ds_cost_object_keys_sliced, $ds_dates, $ds_cbi_endpoint, $param_commit_delay
 end
 
 script "js_status", type: "javascript" do
-  parameters "ds_create_bill_upload", "ds_commit_bill_upload", "ds_bill_upload", "ds_cost_object_keys", "ds_cost_object_keys_sliced", "ds_dates", "param_commit_delay", "param_cbi_endpoint"
+  parameters "ds_create_bill_upload", "ds_commit_bill_upload", "ds_bill_upload", "ds_cost_object_keys", "ds_cost_object_keys_sliced", "ds_dates", "ds_cbi_endpoint", "param_commit_delay"
   result "result"
   code <<-'EOS'
   result = {
@@ -507,17 +694,17 @@ script "js_status", type: "javascript" do
 
   if (ds_commit_bill_upload.length != 0) {
     message.push('Bill Upload was committed. Cycle will restart with next execution.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: Bill Upload Committed'
+    result['title'] = ds_cbi_endpoint['id'] + ' Bill Ingestion: Bill Upload Committed'
   }
 
   if (ds_commit_bill_upload.length == 0 && files_remaining == 0) {
     message.push('All files uploaded. Bill Upload will be committed on next execution if ', param_commit_delay, ' hour(s) have passed since previous commit.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: All Files Uploaded'
+    result['title'] = ds_cbi_endpoint['id'] + ' Bill Ingestion: All Files Uploaded'
   }
 
   if (ds_commit_bill_upload.length == 0 && files_remaining != 0) {
     message.push('Additional files still need to be uploaded. More files will be uploaded on next execution.')
-    result['title'] = param_cbi_endpoint + ' Bill Ingestion: Some Files Uploaded. More Files Remain.'
+    result['title'] = ds_cbi_endpoint['id'] + ' Bill Ingestion: Some Files Uploaded. More Files Remain.'
   }
 
   result['message'] = message.join('')
