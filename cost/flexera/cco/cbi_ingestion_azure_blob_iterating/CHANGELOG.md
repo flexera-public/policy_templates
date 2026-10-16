@@ -5,7 +5,6 @@
 - Added logic to create the CBI endpoint (bill connect) automatically if it does not already exist.
 - The Flexera credential now requires the `org_owner` role.
 
-
 ## v0.1.5
 
 - Fixed an issue where the policy would fail with an "unexpected response status" or "invalid argument in join" error when listing or downloading cost files from Azure Blob Storage, caused by internal hostname and container values not being passed to the request correctly.
