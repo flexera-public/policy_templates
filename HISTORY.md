@@ -6,6 +6,94 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5095](https://github.com/flexera-public/policy_templates/pull/5095): POL-1859 Create CBI Endpoint Support
+
+*Unpublished, Major Update*
+
+#### Description
+
+> Most of our CBI-related policy templates support creating the CBI endpoint if it does not exist, but a handful do not. This updates the latter so that this is supported across the board.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/5095) for these details.
+- **Merged At**: 2026-10-16 14:24:06 UTC
+
+---
+
+### PR [#5091](https://github.com/flexera-public/policy_templates/pull/5091): POL-1854 Azure Expiring Savings Plans - Add Exclude Auto-Renew / Exclude Expired options
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> Adds two optional filters to the Azure Expiring Savings Plans policy template, requested by a customer, plus a small bug fix. Version bumped to v0.3.0 (minor: both new parameters default to "No", so existing applied policies behave exactly as before).
+>
+> - **Exclude Auto-Renewing Savings Plans** (Yes/No, default No): leaves out Savings Plans that are set to renew automatically, based on the `properties.renew` field returned by the Azure Savings Plans API.
+> - **Exclude Expired Savings Plans** (Yes/No, default No): leaves out Savings Plans that have already expired.
+> - New **Auto-Renew** column in the incident table/CSV so users can see each Savings Plan's renewal status.
+> - When either filter excludes anything, the incident message states how many Savings Plans were excluded. Excluded Savings Plans are also left out of the "analyzed" total used for the percentage.
+> - **Bug fix:** a Savings Plan with no purchase date showed `1970-01-01` (`new Date(null)` is the Unix epoch, not an invalid date, so the existing `isNaN` guard didn't catch it). It now shows blank.
+>
+> README (How It Works, Input Parameters) and CHANGELOG updated.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Expiring Savings Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/expiration/README.md)
+- **Merged At**: 2026-10-16 09:20:37 UTC
+
+---
+
+### PR [#5062](https://github.com/flexera-public/policy_templates/pull/5062): FOPTS-31838 Bug fix for "Google Long Running VM Instances" (v0.2.4)
+
+*Bug Fix*
+
+#### Description
+
+> Bug fix for "Google Long Running VM Instances" (v0.2.4)
+>
+
+#### Metadata
+
+- **Policies**: [Google Long Running VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances/README.md)
+- **Merged At**: 2026-10-14 19:54:30 UTC
+
+---
+
+### PR [#5061](https://github.com/flexera-public/policy_templates/pull/5061): FOPTS-30711 Optimized 'Azure Rightsize Compute Instances (Cross-Family)' for faster execution speed.
+
+*Bug Fix*
+
+#### Description
+
+> Optimized 'Azure Rightsize Compute Instances (Cross-Family)' for faster execution speed.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/README.md)
+- **Merged At**: 2026-10-14 19:43:57 UTC
+
+---
+
+### PR [#5057](https://github.com/flexera-public/policy_templates/pull/5057): FOAA-1535 - New Policy Template: MongoDB Atlas CBI
+
+*New Policy Template*
+
+#### Description
+
+> Introduces the MongoDB Atlas CBI Policy Template to public repo.  This has been used over the years by various customers, and recently we did the needful to make this more accessible in the public repo here, and Policy Template Catalog
+>
+
+#### Metadata
+
+- **Policies**: [MongoDB Atlas Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/mongodb_atlas/cbi_mongodb_atlas/README.md)
+- **Merged At**: 2026-10-13 18:22:27 UTC
+
+---
+
 ### PR [#5071](https://github.com/flexera-public/policy_templates/pull/5071): POL-1852 Applied Policy Template Errors: Filtering Updates
 
 *Major Update*
@@ -1736,99 +1824,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4542) for these details.
 - **Merged At**: 2026-06-09 14:06:49 UTC
-
----
-
-### PR [#4535](https://github.com/flexera-public/policy_templates/pull/4535): POL-1777 Azure Sentinel Commitment Tier Recommendations Fix
-
-*Minor Update*
-
-#### Description
-
-> `Azure Sentinel Commitment Tier Recommendations`
-> - Fixed bug where workspaces using Azure Sentinel Simplified pricing (unified SKU) received no recommendations or incorrect savings estimates. The policy now detects the pricing scheme per workspace via the OperationsManagement Solutions API and applies the correct rate model: Simplified workspaces use the all-inclusive Sentinel unified rate; Classic workspaces continue to use the sum of Log Analytics and Sentinel component rates.
-> - Added `Pricing Scheme` field to the incident table, indicating whether each recommendation was generated using Classic or Simplified pricing.
-> - Added downgrade and PAYG switch recommendations: the policy now evaluates all commitment tiers in both directions and checks whether switching to Pay-As-You-Go pricing would be cheaper than a workspace's current commitment tier.
->
-> Also fixes a bug in the Policy API script that was generating a false positive for this policy template.
->
-
-#### Metadata
-
-- **Policies**: [Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md)
-- **Merged At**: 2026-06-09 13:24:03 UTC
-
----
-
-### PR [#4536](https://github.com/flexera-public/policy_templates/pull/4536): POL-1779 Untagged Resources: Tag Dimension Support
-
-*Major Update, Minor Update*
-
-#### Description
-
-> Adds functionality to the Azure/Google Untagged policy templates to support Tag Dimensions, similar to the AWS policy template. Also corrects a bug in the AWS policy template.
->
-> Additionally, improves the Policy API script to avoid some false positives caused by the Google Unlabeled Resources policy.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4536) for these details.
-- **Merged At**: 2026-06-08 19:40:28 UTC
-
----
-
-### PR [#4510](https://github.com/flexera-public/policy_templates/pull/4510): POL-1776 Google Committed Use Discount Recommender: "Any" Option
-
-*Minor Update*
-
-#### Description
-
-> Adds an 'Any' option to the term parameter for `Google Committed Use Discount Recommender` to enable reporting of both 1 Year and 3 Year commitments.
->
-> Also updates the Policy API script to solve some false positives associated with this policy template.
->
-
-#### Metadata
-
-- **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
-- **Merged At**: 2026-06-05 14:13:38 UTC
-
----
-
-### PR [#4508](https://github.com/flexera-public/policy_templates/pull/4508): POL-1775 Azure RI/SP - Fixes for Multiple Options
-
-*Minor Update*
-
-#### Description
-
-> Updates the `Azure Reserved Instances Recommendations` and `Azure Savings Plan Recommendations` policy templates so that, when I user selects multiple terms or payment types, multiple API calls are made and the results genuinely contain all of the recommendations.
->
-
-#### Metadata
-
-- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md), [Azure Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/recommendations/README.md)
-- **Merged At**: 2026-06-05 12:59:01 UTC
-
----
-
-### PR [#4491](https://github.com/flexera-public/policy_templates/pull/4491): POL-1770 Fix Calculation: Azure Sentinel Commitment Tier Recommendations
-
-*Minor Update*
-
-#### Description
-
-> `Azure Sentinel Commitment Tier Recommendations`
-> - Fixed incorrect overage billing calculation: usage exceeding a commitment tier's daily GB level is now billed at the tier's effective per-GB rate (`Tier Daily Rate / Tier GB Level`) rather than the Pay-As-You-Go rate, consistent with Microsoft Sentinel pricing.
->
-> `tools/policy_api_list_generation/policy_api_list_generator.py`
-> - Fixed issue causing false positives with Microsoft.Sentinel API calls.
->
-
-#### Metadata
-
-- **Policies**: [Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md), [Meta Parent: Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md)
-- **Merged At**: 2026-06-04 16:48:26 UTC
 
 ---
 
