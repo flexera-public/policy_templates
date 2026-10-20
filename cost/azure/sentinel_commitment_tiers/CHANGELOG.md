@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.0
+
+- Removed support for workspaces on Classic Microsoft Sentinel pricing.
+- Workspaces linked to a dedicated cluster and workspaces on legacy tiers (`LACluster`, `Free`, `Standalone`, `PerNode`, `Standard`, and `Premium`) are now skipped, since their billing cannot be modeled by this policy template.
+- Fixed inaccurate savings estimates.
+- Workspaces with fewer than 7 complete days of ingestion data are now skipped.
+
 ## v0.4.1
 
 - Fixed bug where sometimes commitment tiers were undetected and Pay-As-You-Go pricing was incorrectly used instead, resulting in oversized savings estimates.
