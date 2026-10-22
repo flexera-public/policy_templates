@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.7
+
+- Fixed currency conversion. The previous exchange rate source (exchangeratesapi.io) now requires an API key and was returning an error; rates now come from the keyless AllRatesToday open API (European Central Bank reference rates).
+
 ## v2.0.6
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.

@@ -16,7 +16,7 @@ We recommend running this policy on a weekly cadence and applying it to your mas
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._
 _Note 2: The account you apply the policy to is unimportant as Flexera CCO metrics are scoped to the Org._
-_Note 3: Exchange rates are calculated at execution time using [https://exchangeratesapi.io/](https://exchangeratesapi.io/)._
+_Note 3: Exchange rates are calculated at execution time using the keyless [AllRatesToday open API](https://allratestoday.com/open-api/) (European Central Bank reference rates). Organizations whose currency is not one of the 30 currencies in the ECB reference table cannot be converted._
 
 ## Cost Metrics
 
