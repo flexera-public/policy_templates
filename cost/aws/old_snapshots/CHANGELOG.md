@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.7.2
+
+- Fixed issue where deletion action would fail for EC2 snapshots.
+
 ## v8.7.1
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
