@@ -6,6 +6,22 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5109](https://github.com/flexera-public/policy_templates/pull/5109): POL-1866 AWS Old Snapshots: Fix Delete Action
+
+*Minor Update*
+
+#### Description
+
+> Fixes an issue in the AWS Old Snapshots policy template where EC2 snapshots would not be properly deleted. This was caused by the "service" field being set to "EC2" for EC2 snapshots (line 605) but the Cloud Workflow was checking for a value of "EBS" instead (lines 1433 and 1439).
+>
+
+#### Metadata
+
+- **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md), [Meta Parent: AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
+- **Merged At**: 2026-10-23 13:14:39 UTC
+
+---
+
 ### PR [#5095](https://github.com/flexera-public/policy_templates/pull/5095): POL-1859 Create CBI Endpoint Support
 
 *Unpublished, Major Update*
@@ -1807,23 +1823,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Savings Plan Purchase Analysis](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/purchase_analysis/README.md)
 - **Merged At**: 2026-06-10 19:37:35 UTC
-
----
-
-### PR [#4542](https://github.com/flexera-public/policy_templates/pull/4542): POL-1781 Fix Tag Filtering Logic
-
-*Unpublished, Minor Update*
-
-#### Description
-
-> Fixed bug in many policy templates where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of excluding those that did not match
->
-> (Dangerfile warnings/errors not related to the above change)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4542) for these details.
-- **Merged At**: 2026-06-09 14:06:49 UTC
 
 ---
 
