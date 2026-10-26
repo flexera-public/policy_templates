@@ -4,6 +4,16 @@
 
 This Policy Template scans all S3 buckets in your AWS account and identifies buckets that don't have [S3 Intelligent Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) enabled. An incident is created listing all non-compliant buckets.
 
+A bucket is considered compliant if it has at least one enabled [lifecycle rule](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) that transitions objects to the `INTELLIGENT_TIERING` storage class. Rules that apply only to part of a bucket (for example, a prefix or tag filter) or that transition objects after a number of days still count.
+
+**The following do not make a bucket compliant on their own:**
+
+- An Intelligent-Tiering archive configuration (the Archive Access and Deep Archive Access tier settings), since it does not move any objects into the Intelligent-Tiering storage class.
+- A lifecycle rule that only transitions noncurrent (previous) object versions.
+- Uploading objects directly into the Intelligent-Tiering storage class.
+
+If the policy is not allowed to read a bucket's lifecycle configuration (due to missing the permission `s3:GetLifecycleConfiguration`, or denied access by a bucket policy ), the bucket is treated as non-compliant. If none of the buckets returned any lifecycle rules, the incident includes a note suggesting that you to check the credential's permissions.
+
 **S3 Intelligent Tiering** automatically moves your data between different storage tiers based on access patterns, optimizing costs without performance impact. This feature is ideal for data with unpredictable access patterns and can provide significant cost savings with zero operational overhead.
 
 ### Policy Savings Details
@@ -53,7 +63,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
-  - `s3:GetIntelligentTieringConfiguration`
+  - `s3:GetLifecycleConfiguration`
 
   Example IAM Permission Policy:
 
@@ -69,7 +79,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
-                  "s3:GetIntelligentTieringConfiguration"
+                  "s3:GetLifecycleConfiguration"
               ],
               "Resource": "*"
           }
