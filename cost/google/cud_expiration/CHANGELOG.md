@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.4.0
+
+- Added `Exclude Expired Committed Use Discounts` parameter to optionally leave Committed Use Discounts that have already expired out of the report.
+- Added `Exclude Auto-Renewing Committed Use Discounts` parameter to optionally leave Committed Use Discounts that are set to renew automatically out of the report.
+- Added an `Auto-Renew` column to the incident to show whether each Committed Use Discount is set to renew automatically.
+- The incident now states how many Committed Use Discounts were left out of the report by the new parameters.
+
 ## v3.3.2
 
 - Added input sanitization to trim leading and trailing whitespace from string and list parameter values.
