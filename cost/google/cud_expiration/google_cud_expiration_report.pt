@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.3.2",
+  version: "3.4.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Committed Use Discount",
@@ -34,6 +34,24 @@ parameter "param_days_expiration" do
   description "The number of days until expiration to include a Committed Use Discount in the report. Set to '0' to only report expired Committed Use Discounts."
   min_value 0
   default 15
+end
+
+parameter "param_exclude_expired" do
+  type "string"
+  category "Policy Settings"
+  label "Exclude Expired Committed Use Discounts"
+  description "Whether or not to exclude Committed Use Discounts that have already expired. NOTE: If 'Days Until Expiration' is set to '0' and this is set to 'Yes', the policy will not report any Committed Use Discounts."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_auto_renew" do
+  type "string"
+  category "Policy Settings"
+  label "Exclude Auto-Renewing Committed Use Discounts"
+  description "Whether or not to exclude Committed Use Discounts that are set to renew automatically."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -303,6 +321,7 @@ datasource "ds_google_cuds" do
       field "plan", jmes_path(col_item, 'plan')
       field "endTimestamp", jmes_path(col_item, 'endTimestamp')
       field "startTimestamp", jmes_path(col_item, 'startTimestamp')
+      field "autoRenew", jmes_path(col_item, 'autoRenew')
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
     end
@@ -332,11 +351,11 @@ EOS
 end
 
 datasource "ds_expiring_google_cuds" do
-  run_script $js_expiring_google_cuds, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_days_expiration, $param_incident_csv
+  run_script $js_expiring_google_cuds, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_days_expiration, $param_exclude_expired, $param_exclude_auto_renew, $param_incident_csv
 end
 
 script "js_expiring_google_cuds", type: "javascript" do
-  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_days_expiration", "param_incident_csv"
+  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_days_expiration", "param_exclude_expired", "param_exclude_auto_renew", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -344,6 +363,8 @@ script "js_expiring_google_cuds", type: "javascript" do
   today = new Date()
 
   result = []
+  auto_renew_excluded = 0
+  expired_excluded = 0
 
   _.each(ds_google_cuds_regions_filtered, function(cud) {
     expiration_date = new Date(cud["endTimestamp"])
@@ -351,11 +372,26 @@ script "js_expiring_google_cuds", type: "javascript" do
     if (daysUntilExpiration < 0) { daysUntilExpiration = 0 }
 
     if (cud["status"] == "EXPIRED" || (cud["status"] == "ACTIVE" && daysUntilExpiration <= param_days_expiration)) {
+      // Accept a boolean or a string "true" so the check can't silently fail
+      auto_renew = cud["autoRenew"] === true || String(cud["autoRenew"]).toLowerCase() == "true"
+
+      // Only count Committed Use Discounts that would otherwise have been reported
+      if (param_exclude_auto_renew == "Yes" && auto_renew) {
+        auto_renew_excluded += 1
+        return
+      }
+
+      if (param_exclude_expired == "Yes" && cud["status"] == "EXPIRED") {
+        expired_excluded += 1
+        return
+      }
+
       result.push({
         resourceID: cud["id"],
         resourceName: cud["name"],
         region: cud["region"],
         status: cud["status"],
+        autoRenew: auto_renew ? "Yes" : "No",
         plan: cud["plan"],
         endDate: new Date(cud["endTimestamp"]).toISOString().split("T")[0],
         startDate: new Date(cud["startTimestamp"]).toISOString().split("T")[0],
@@ -363,10 +399,27 @@ script "js_expiring_google_cuds", type: "javascript" do
         accountName: cud["projectName"],
         daysUntilExpiration: daysUntilExpiration,
         policy_name: ds_applied_policy["name"],
+        exclusion_message: "",
         csv_message: csv_message
       })
     }
   })
+
+  exclusion_message = ""
+
+  if (auto_renew_excluded > 0) {
+    excluded_noun = auto_renew_excluded == 1 ? "Committed Use Discount" : "Committed Use Discounts"
+    excluded_verb = auto_renew_excluded == 1 ? "was" : "were"
+    exclusion_message += auto_renew_excluded + " " + excluded_noun + " set to renew automatically " + excluded_verb + " excluded from this report.\n\n"
+  }
+
+  if (expired_excluded > 0) {
+    excluded_noun = expired_excluded == 1 ? "Committed Use Discount" : "Committed Use Discounts"
+    excluded_verb = expired_excluded == 1 ? "was" : "were"
+    exclusion_message += expired_excluded + " already expired " + excluded_noun + " " + excluded_verb + " excluded from this report.\n\n"
+  }
+
+  if (result.length > 0) { result[0]["exclusion_message"] = exclusion_message }
 
   // Dummy entry to ensure validation occurs at least once
   result.push({
@@ -374,6 +427,7 @@ script "js_expiring_google_cuds", type: "javascript" do
     resourceName: "",
     region: "",
     status: "",
+    autoRenew: "",
     plan: "",
     endDate: "",
     startDate: "",
@@ -381,6 +435,7 @@ script "js_expiring_google_cuds", type: "javascript" do
     accountName: "",
     daysUntilExpiration: "",
     policy_name: "",
+    exclusion_message: "",
     csv_message: ""
   })
 EOS
@@ -393,7 +448,7 @@ end
 policy "pol_expiring_google_cuds" do
   validate_each $ds_expiring_google_cuds do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Expiring Google Committed Use Discounts Found"
-    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
+    detail_template "{{ with index data 0 }}{{ .exclusion_message }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     export do
@@ -415,6 +470,9 @@ policy "pol_expiring_google_cuds" do
       end
       field "daysUntilExpiration" do
         label "Days Until Expiration"
+      end
+      field "autoRenew" do
+        label "Auto-Renew"
       end
       field "plan" do
         label "Plan"
