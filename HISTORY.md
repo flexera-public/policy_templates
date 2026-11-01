@@ -6,6 +6,31 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5081](https://github.com/flexera-public/policy_templates/pull/5081): FOPTS-31940 Fix S3 Intelligent-Tiering policy
+
+*Major Update*
+
+#### Description
+
+> Fix S3 Intelligent-Tiering policy
+>
+> Previously, the policy checks for "Intelligent-Tiering archive configurations".
+> This PR changes the policy to check for "Intelligent-Tiering lifecycle rule".
+>
+> "Intelligent-Tiering lifecycle rule" is the actual rule that moves objects into Intelligent-Tiering storage class.
+> "Intelligent-Tiering archive configurations" controls whether objects that are already in Intelligent-Tiering can move into the optional Archive Access and Deep Archive Access tiers or not.
+>
+> Customers usually configure both the "Intelligent-Tiering lifecycle rule" and the "Intelligent-Tiering archive configurations" in production, thus the previous policy would work.
+> But in some scenarios, customer might only configure the "Intelligent-Tiering lifecycle rule" but not the "Intelligent-Tiering archive configurations".
+>
+
+#### Metadata
+
+- **Policies**: [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy/README.md)
+- **Merged At**: 2026-10-26 17:40:20 UTC
+
+---
+
 ### PR [#5109](https://github.com/flexera-public/policy_templates/pull/5109): POL-1866 AWS Old Snapshots: Fix Delete Action
 
 *Minor Update*
@@ -1801,28 +1826,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md), [Azure Untagged Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms/README.md), [Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md)
 - **Merged At**: 2026-06-11 18:31:14 UTC
-
----
-
-### PR [#4554](https://github.com/flexera-public/policy_templates/pull/4554): POL-1782 AWS Savings Plan Purchase Analysis: Coverage Target Support
-
-*Minor Update*
-
-#### Description
-
-> `AWS Savings Plan Purchase Analysis`
-> - Added `Automatic (Linked Account Credentials)` option to `Account Scope` parameter to infer scope instead of specifying it
-> - Added `Analysis Type` parameter to support both `Custom Commitment` and `Target Average Coverage` analysis types
-> - Updated `Hourly Purchase Commitment` parameter description to clarify it is only applicable for the `Custom Commitment` analysis type
-> - Added `Target Coverage Percentage` parameter to support `SavingsPlansTargetCoverage` when Analysis Type is set to `Target Average Coverage`
-> - Added `Target Coverage Percentage` field to incident report output
-> - Added `Analysis Type` field to incident report output
->
-
-#### Metadata
-
-- **Policies**: [AWS Savings Plan Purchase Analysis](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/purchase_analysis/README.md)
-- **Merged At**: 2026-06-10 19:37:35 UTC
 
 ---
 
