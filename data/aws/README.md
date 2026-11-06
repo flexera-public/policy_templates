@@ -260,8 +260,9 @@ Instance types that have no entry in `instance_types.json` have `null` for both 
 | `superseded` | object | Recommended replacement types by category: `regular`, `next_gen`, `burstable`, `amd` |
 | `ec2_classic` | boolean | Whether the type was available on EC2-Classic |
 | `enhanced_networking` | boolean | Whether the type supports enhanced networking |
+| `burst_info` | object | Optional. CPU credit information for burstable instance types: `credits_per_hour` and `max_earnable_credits` |
 | `vcpu` | string | Number of vCPUs (as a string) |
-| `nfu` | string | Normalized Factor Unit count (as a string) |
+| `nfu` | string or null | Normalized Factor Unit count (as a string); `null` for EC2 sizes without a defined count, such as `48xlarge`, `96xlarge`, and `metal` |
 | `memory` | string | Memory in GiB (as a string) |
 
 **Generation values:**
@@ -278,9 +279,11 @@ The `p2`, `f1`, and `g3s` families are `previous` rather than `retired` because 
 
 The `db.*` entries are Amazon RDS DB instance classes, so their values follow the [RDS DB instance class documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html) instead of the EC2 sources. The `db.m1`, `db.m2`, `db.m3`, `db.m4`, `db.r3`, `db.r4`, `db.t1`, and `db.t2` classes are `retired`: RDS ended support for `db.m4`, `db.r4`, and `db.t2` on 2024-12-31, no longer allows new `db.m3` and `db.r3` DB instances and began automatically upgrading existing ones on 2023-02-01, and no longer documents `db.m1`, `db.m2`, and `db.t1`. All other `db.*` classes are `current`, because RDS documents them as supported and does not publish a list of previous generation classes.
 
+The `db.*` entries cover the standard `db.<instance type>` classes in the RDS documentation, including the `metal` classes. The `.tpcN.memNx` variants of those classes are not included. Unlike EC2 entries, `db.*` entries have no `ec2_classic`, `enhanced_networking`, or `burst_info` fields. When adding a `db.*` class, set `nfu` to twice the vCPU count, as every existing non-burstable class that is not `retired` does, and set `superseded` only if RDS offers a newer replacement class; otherwise it is `null`.
+
 The `generation_next` field is the date when an instance type is expected to move to the next stage: from `current` to `previous`, or from `previous` to `retired`. A date is recorded only if it can be verified in official AWS documentation or announcements; otherwise the field is explicitly `null`. It is always `null` for `retired` types, because they have no next stage. When this data was last reviewed (2026-11-06), no upcoming date had been published for any EC2 instance type or RDS DB instance class, so every entry is `null`. AWS does not announce when a type stops being current generation, and its [EC2 FAQ](https://aws.amazon.com/ec2/faqs/) states that previous generation instances remain fully supported and that customers will be notified if AWS decides to deprecate them. Dates that have already passed, such as those listed above for the `p3`, `u-9tb1`, `u-12tb1`, `u-18tb1`, `u-24tb1`, `db.m3`, `db.m4`, `db.r3`, `db.r4`, and `db.t2` types, are not recorded because they are not upcoming changes.
 
-This data is a point-in-time snapshot that must be updated manually when AWS changes the status of an instance type or announces a date for a change. New instance types that appear in `aws_ec2_instance_types.json` have `null` for `generation` and `generation_next` until an entry for them is added to this file.
+This data is a point-in-time snapshot that must be updated manually when AWS changes the status of an instance type or announces a date for a change. As of 2026-11-06, this file has an entry for every instance type in `aws_ec2_instance_types.json`. EC2 instance types that AWS adds after that date have `null` for `generation` and `generation_next` in that file until an entry for them is added here. The entry for a newly released type is `current` with a `null` `generation_next`, and its `up` and `down` values place it in the chain of its instance family, ordered by vCPU count and then memory.
 
 **Example:**
 
