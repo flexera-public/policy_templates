@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Fetches Azure Compute VM SKU data from the Azure Management API and merges it
-with the instance size flexibility (ISF) ratio table and manual override data.
+with the instance size flexibility (ISF) ratio table and manual override data
+from data/azure/instance_types.json (superseded, nfu, lifecycle, lifecycle_next).
 
 Produces: data/azure/azure_compute_instance_types.json
 Usage: python3 azure_compute_instance_types.py
@@ -115,6 +116,9 @@ def main():
                 "tier": item.get("tier", "None"),
                 "size": item.get("size", "None"),
                 "family": item.get("family", "None"),
+                # Manually maintained in instance_types.json; null if the SKU is not listed there
+                "lifecycle": manual_data.get(item.get("name"), {}).get("lifecycle"),
+                "lifecycle_next": manual_data.get(item.get("name"), {}).get("lifecycle_next"),
                 "superseded": "None",
                 "localDisk": None,
                 "specs": { "nfu": isf_table.get(item.get("name"), None) }

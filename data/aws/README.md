@@ -19,6 +19,10 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 - `burst_info`
 - `superseded`
 - `ec2_classic`
+- `generation`
+- `generation_next`
+
+Instance types that have no entry in `instance_types.json` have `null` for both `generation` and `generation_next`.
 
 **Structure:** Array of objects, one per EC2 instance type.
 
@@ -36,6 +40,8 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 | `burst_info` | object or null | CPU burst credit info for burstable instance types; `null` for non-burstable types |
 | `superseded` | object or null | Recommended replacement instance types by category (`regular`, `next_gen`, `burstable`, `amd`); `null` if not superseded |
 | `ec2_classic` | boolean | Whether the instance type was available on EC2-Classic (legacy network) |
+| `generation` | string or null | Generation of the instance type: `current`, `previous`, or `retired`. `null` if the type is not listed in `instance_types.json`. See the generation values in the `instance_types.json` section below. |
+| `generation_next` | string or null | Date, in `YYYY-MM-DD` format, when the instance type is expected to move to the next generation stage (`current` to `previous`, or `previous` to `retired`); `null` if AWS has not announced a date or if the type is not listed in `instance_types.json` |
 
 **Example:**
 
@@ -72,7 +78,9 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
   },
   "burst_info": null,
   "superseded": null,
-  "ec2_classic": false
+  "ec2_classic": false,
+  "generation": "current",
+  "generation_next": null
 }
 ```
 
@@ -239,12 +247,14 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 
 ### instance_types.json
 
-**Description:** Legacy reference data for EC2 instance types. This file is older and manually maintained. It should not be used in new policy templates. It exists to ensure that older policy templates continue to function and to supply some fields (such as `superseded`, `burst_info`, and `ec2_classic`) to the auto-generated `aws_ec2_instance_types.json` until automation is built for those fields.
+**Description:** Legacy reference data for EC2 instance types. This file is older and manually maintained. It should not be used in new policy templates. It exists to ensure that older policy templates continue to function and to supply some fields (such as `superseded`, `burst_info`, `ec2_classic`, `generation`, and `generation_next`) to the auto-generated `aws_ec2_instance_types.json` until automation is built for those fields. Each entry also records the generation of the instance type and, when AWS has announced one, the date it is expected to change, as described in the generation values below.
 
 **Structure:** Object keyed by instance type name → specifications object.
 
 | Field | Type | Description |
 | --- | --- | --- |
+| `generation` | string | Generation of the instance type: `current`, `previous`, or `retired`. See the generation values below. |
+| `generation_next` | string or null | Date, in `YYYY-MM-DD` format, when the instance type is expected to move to the next generation stage (`current` to `previous`, or `previous` to `retired`); `null` if AWS has not announced a date. See the generation values below. |
 | `up` | string or null | Next larger instance type in the same family |
 | `down` | string or null | Next smaller instance type in the same family |
 | `superseded` | object | Recommended replacement types by category: `regular`, `next_gen`, `burstable`, `amd` |
@@ -254,11 +264,31 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 | `nfu` | string | Normalized Factor Unit count (as a string) |
 | `memory` | string | Memory in GiB (as a string) |
 
+**Generation values:**
+
+- `current` - A current generation instance type that AWS recommends for new deployments.
+- `previous` - An older generation instance type. It can still be launched in at least one AWS Region, but AWS no longer treats it as current generation.
+- `retired` - The instance type can no longer be launched, either because AWS has removed it or ended its sale, or because the name does not match any instance type that AWS offers.
+
+For EC2 instance types, the values come from the [EC2 Instance Types guide](https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html) and the EC2 [DescribeInstanceTypes](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTypes.html) API. A type is `previous` if the guide lists it as a [previous generation instance](https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html) or if the API reports `CurrentGeneration` as `false` (the `properties.currentGeneration` field in `aws_ec2_instance_types.json`). The API is more recent than the guide for the `c5`, `c6gn`, `d2`, `g5`, `m5`, `m6i`, `r5`, `r6i`, `r7g`, and `r7gd` families, which the guide still lists as current generation, so these families are `previous`. `p3dn.24xlarge` is the reverse: the guide lists it as previous generation but the API reports it as current generation, so it is also `previous`. All other types that the guide lists and the API reports as current generation are `current`.
+
+An EC2 type is `retired` when AWS has removed it. The `p3` family was [removed on 2026-01-01](https://docs.aws.amazon.com/ec2/latest/instancetypes/doc-history.html) and the `u-9tb1`, `u-12tb1`, `u-18tb1`, and `u-24tb1` families reached end of sale on 2025-06-20. The `dl1` and `g4ad` families are no longer returned by the API and are not listed in any Region on the [instance types by Region](https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-regions.html) page. Very old types that the guide and the API no longer mention at all (`cc1`, `cc2`, `cg1`, `cr1`, `g2`, `hi1`, and `hs1`) are also `retired`, as are the `g4` family and the `m6g.24xlarge` and `m6gd.24xlarge` sizes, whose names do not match any instance type that AWS offers.
+
+The `p2`, `f1`, and `g3s` families are `previous` rather than `retired` because the instance types by Region page still lists them in AWS GovCloud (US-West). The `i3.metal` and `u-6tb1.metal` sizes are `current` because the guide still lists them as current generation, even though the API does not return them.
+
+The `db.*` entries are Amazon RDS DB instance classes, so their values follow the [RDS DB instance class documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html) instead of the EC2 sources. The `db.m1`, `db.m2`, `db.m3`, `db.m4`, `db.r3`, `db.r4`, `db.t1`, and `db.t2` classes are `retired`: RDS ended support for `db.m4`, `db.r4`, and `db.t2` on 2024-12-31, no longer allows new `db.m3` and `db.r3` DB instances and began automatically upgrading existing ones on 2023-02-01, and no longer documents `db.m1`, `db.m2`, and `db.t1`. All other `db.*` classes are `current`, because RDS documents them as supported and does not publish a list of previous generation classes.
+
+The `generation_next` field is the date when an instance type is expected to move to the next stage: from `current` to `previous`, or from `previous` to `retired`. A date is recorded only if it can be verified in official AWS documentation or announcements; otherwise the field is explicitly `null`. It is always `null` for `retired` types, because they have no next stage. When this data was last reviewed (2026-11-06), no upcoming date had been published for any EC2 instance type or RDS DB instance class, so every entry is `null`. AWS does not announce when a type stops being current generation, and its [EC2 FAQ](https://aws.amazon.com/ec2/faqs/) states that previous generation instances remain fully supported and that customers will be notified if AWS decides to deprecate them. Dates that have already passed, such as those listed above for the `p3`, `u-9tb1`, `u-12tb1`, `u-18tb1`, `u-24tb1`, `db.m3`, `db.m4`, `db.r3`, `db.r4`, and `db.t2` types, are not recorded because they are not upcoming changes.
+
+This data is a point-in-time snapshot that must be updated manually when AWS changes the status of an instance type or announces a date for a change. New instance types that appear in `aws_ec2_instance_types.json` have `null` for `generation` and `generation_next` until an entry for them is added to this file.
+
 **Example:**
 
 ```json
 {
   "m5.large": {
+    "generation": "previous",
+    "generation_next": null,
     "up": "m5.xlarge",
     "down": "m5.medium",
     "superseded": { "regular": "m6i.large", "next_gen": "m7i.large", "burstable": "", "amd": "m6a.large" },

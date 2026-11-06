@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Fetches all EC2 instance types from the AWS DescribeInstanceTypes API and merges
-them with manual supplementary data (burst info, NFUs, supersession).
+them with manual supplementary data from data/aws/instance_types.json (burst
+info, NFUs, supersession, generation, generation_next).
 
 Produces: data/aws/aws_ec2_instance_types.json
 Usage: python3 aws_ec2_instance_types.py
@@ -268,7 +269,10 @@ def process_instance_types(instance_list, manual_data, nfu_table):
             "properties": extract_properties(item),
             "burst_info": manual_data.get(instance_type, {}).get("burst_info"),
             "superseded": manual_data.get(instance_type, {}).get("superseded"),
-            "ec2_classic": manual_data.get(instance_type, {}).get("ec2_classic", "none")
+            "ec2_classic": manual_data.get(instance_type, {}).get("ec2_classic", "none"),
+            # Manually maintained in instance_types.json; null if the type is not listed there
+            "generation": manual_data.get(instance_type, {}).get("generation"),
+            "generation_next": manual_data.get(instance_type, {}).get("generation_next")
         }
         
         # Add GPU info if available
