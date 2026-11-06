@@ -16,8 +16,12 @@ The following files are produced by scripts in [`tools/cloud_data/azure/`](https
 
 Some fields are currently sourced from the legacy `instance_types.json` file until proper automation is built to derive them:
 
+- `lifecycle`
+- `lifecycle_next`
 - `superseded`
 - `specs.nfu`
+
+VM sizes that have no entry in `instance_types.json` have `null` for both `lifecycle` and `lifecycle_next`.
 
 **Structure:** Array of objects, one per VM SKU.
 
@@ -27,6 +31,8 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 | `tier` | string | Pricing tier, e.g. `"Standard"` or `"Basic"` |
 | `size` | string | Size portion of the name, e.g. `"D2s_v3"` |
 | `family` | string | Azure VM family identifier, e.g. `"standardDSv3Family"` |
+| `lifecycle` | string or null | Lifecycle stage of the VM size: `current`, `extended`, `eol`, or `retired`. `null` if the size is not listed in `instance_types.json`. See the lifecycle stages in the `instance_types.json` section below. |
+| `lifecycle_next` | string or null | Date, in `YYYY-MM-DD` format, when the VM size moves to the next lifecycle stage; `null` if the date is not known |
 | `superseded` | object | Recommended replacement SKUs, e.g. `{ "regular": "Standard_D2s_v5" }` |
 | `localDisk` | boolean | Whether the VM size includes a local (temporary) disk |
 | `specs` | object | Raw Azure API capability values: `vCPUs`, `MemoryGB`, `MaxDataDiskCount`, `PremiumIO`, `AcceleratedNetworkingEnabled`, `nfu`, and many others |
@@ -39,6 +45,8 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
   "tier": "Standard",
   "size": "D2s_v3",
   "family": "standardDSv3Family",
+  "lifecycle": "eol",
+  "lifecycle_next": "2029-11-15",
   "superseded": { "regular": "Standard_D2s_v5" },
   "localDisk": false,
   "specs": {
@@ -393,23 +401,37 @@ The following files do not have automated generation scripts that pull from live
 
 ### instance_types.json
 
-**Description:** Legacy VM instance type data. An older, manually maintained counterpart to `azure_compute_instance_types.json`. **Do not use this file in new policy templates.** It is retained only to ensure existing policy templates that reference it continue to function. Some fields in `azure_compute_instance_types.json` (specifically `superseded` and `specs.nfu`) are currently sourced from this file.
+**Description:** Legacy VM instance type data. An older, manually maintained counterpart to `azure_compute_instance_types.json`. **Do not use this file in new policy templates.** It is retained only to ensure existing policy templates that reference it continue to function. Some fields in `azure_compute_instance_types.json` (specifically `lifecycle`, `lifecycle_next`, `superseded`, and `specs.nfu`) are currently sourced from this file. Each entry also records the lifecycle stage of the VM size, based on Microsoft's [VM lifecycle](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/lifecycle-overview) model, and the date it moves to the next stage when that date is known.
 
 **Structure:** Object keyed by VM size name → resize and specification object.
 
 | Field | Type | Description |
 | --- | --- | --- |
+| `lifecycle` | string | Lifecycle stage of the VM size: `current`, `extended`, `eol`, or `retired`. See the lifecycle stages below. |
+| `lifecycle_next` | string or null | Date, in `YYYY-MM-DD` format, when the VM size moves to the next lifecycle stage; `null` if the date is not known |
 | `up` | string or null | The next larger VM size in the same family |
 | `down` | string or null | The next smaller VM size in the same family |
 | `superseded` | object or null | Recommended replacement sizes, e.g. `{ "regular": "Standard_D2s_v5" }` |
 | `vcpu` | number | Number of vCPUs |
+| `nfu` | string | Optional. Instance size flexibility ratio, e.g. `"4"`. When present, it is used for `specs.nfu` in `azure_compute_instance_types.json` instead of the ratio from Microsoft's Instance Size Flexibility (ISF) data. Entries that omit this field use the ISF ratio. |
 | `memory` | string | Memory in GB as a string, e.g. `"8"` |
+
+**Lifecycle stages:**
+
+- `current` - The newest generations in a VM family. Recommended for new deployments.
+- `extended` - Fully supported older generations with no announced retirement date.
+- `eol` - End of life. Retirement has been announced. The size remains available until the retirement date, but new subscriptions may be restricted from using it. `lifecycle_next` is the retirement date.
+- `retired` - The size can no longer be created, resized into, or run.
+
+The stages and retirement dates come from Microsoft's [VM lifecycle overview](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/lifecycle-overview), [End of Life Azure VM size series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/end-of-life-sizes-list), and [retirement announcements](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions). Microsoft does not publish a `current` or `extended` label for every series, so where there is no explicit label, the newest generations of a family are treated as `current` and older generations with no announced retirement are treated as `extended`. The few legacy sizes that Microsoft no longer documents at all (the NVv2 series and `Standard_PB6s`) are treated as `retired`. Microsoft does not publish dates for the move from `current` to `extended`, so `lifecycle_next` is only set for `eol` sizes and is `null` for every other stage. Regional retirement extensions are not reflected. This data is a point-in-time snapshot that must be updated manually when Microsoft changes a series' lifecycle stage. As of 2026-11-06, this file has an entry for every VM size in `azure_compute_instance_types.json`. VM sizes that Microsoft adds after that date have `null` lifecycle fields in that file until an entry for them is added here. The entry for a newly released size is `current` with a `null` `lifecycle_next`, and its `up` and `down` values place it in the chain of its VM family, ordered by memory and then vCPU count.
 
 **Example:**
 
 ```json
 {
   "Standard_D2s_v3": {
+    "lifecycle": "eol",
+    "lifecycle_next": "2029-11-15",
     "up": "Standard_D4s_v3",
     "down": "Standard_D1s_v3",
     "superseded": { "regular": "Standard_D2s_v5" },
