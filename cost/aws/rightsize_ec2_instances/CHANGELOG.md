@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.9.0
+
+- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'No', previous generation EC2 instance types, as defined by AWS, are never recommended.
+
 ## v5.8.2
 
 - Fixed an issue where instances without CPU or memory utilization data could still be reported as idle or underutilized.

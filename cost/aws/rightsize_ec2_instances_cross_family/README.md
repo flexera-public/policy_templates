@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template analyzes AWS EC2 instances using Amazon CloudWatch metrics to identify instances that are idle (candidates for termination) or underutilized (candidates for cross-family rightsizing). Unlike same-family downsizing, cross-family rightsizing searches the entire catalog of current-generation instance types in the same region to find the cheapest option that can still satisfy the observed workload. Incidents report estimated monthly savings and trigger optional automated actions to resize or terminate instances after approval.
+This policy template analyzes AWS EC2 instances using Amazon CloudWatch metrics to identify instances that are idle (candidates for termination) or underutilized (candidates for cross-family rightsizing). Unlike same-family downsizing, cross-family rightsizing searches the entire catalog of current-generation instance types in the same region (and, optionally, previous-generation instance types) to find the cheapest option that can still satisfy the observed workload. Incidents report estimated monthly savings and trigger optional automated actions to resize or terminate instances after approval.
 
 NOTE: It is recommended that you use this policy template *or* the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template but not both at the same time to avoid duplicate recommendations.
 
@@ -44,7 +44,8 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 - **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 x 4 x 1.5) = 3.
 - **Candidate instances** in the same region must satisfy all of the following compatibility constraints:
-  - Current generation only (no previous-generation or bare-metal types)
+  - Not a bare-metal instance type
+  - Current generation only, unless the `Recommend Previous Generation Instance Types` parameter (`param_recommend_previous_generation`) is set to `Yes` to also allow [previous generation instance types](https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html)
   - Same CPU architecture (x86_64, arm64, etc.)
   - Same CPU burst model (burstable instances only recommend other burstable types)
   - Same GPU presence (instances with a GPU only recommend GPU types; non-GPU instances only recommend non-GPU types)
@@ -81,6 +82,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Default is 1. Set to 0 to report all findings regardless of savings.
 - *Allow Intel/AMD Recommendations* - Whether to allow recommendations that switch between Intel and AMD processors (both x86_64). Set to `Yes` to allow cross-manufacturer recommendations; `No` (default) to keep the same CPU manufacturer.
+- *Recommend Previous Generation Instance Types* - Whether to recommend [previous generation EC2 instance types](https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html), as defined by AWS. AWS encourages the use of current generation instance types for the best performance. Set to `No` (default) to only recommend current generation instance types, or `Yes` to also allow previous generation instance types. Instances that already use a previous generation instance type can still be recommended to move to a current generation instance type.
 - *Statistic Lookback Period* - How many days back to look at CPU and memory data for instances. Maximum is 90 days (AWS CloudWatch data retention limit).
 - *Rightsizing Safety Factor* - A multiplier applied to peak utilization when computing required resources for a rightsized instance. Default is 1.5 (50% headroom). Set higher for more conservative recommendations.
 - *Automatic Actions* - When set, the policy will automatically take the selected action(s) without manual approval. Leave blank to require manual approval for all actions.
