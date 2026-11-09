@@ -2,7 +2,7 @@
 
 ## v5.9.0
 
-- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'No', previous generation EC2 instance types, as defined by AWS, are never recommended; instances that already use a previous generation instance type will not receive downsize recommendations in that case. The default value is 'Yes', which preserves the existing behavior.
+- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'No', previous generation EC2 instance types, as defined by AWS, are never recommended.
 
 ## v5.8.2
 

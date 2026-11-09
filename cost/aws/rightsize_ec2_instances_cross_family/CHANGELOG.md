@@ -2,7 +2,7 @@
 
 ## v0.3.0
 
-- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'Yes', previous generation EC2 instance types, as defined by AWS, can also be recommended. The default value is 'No', so only current generation instance types are recommended, as before.
+- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'Yes', previous generation EC2 instance types, as defined by AWS, can also be recommended.
 
 ## v0.2.2
 
