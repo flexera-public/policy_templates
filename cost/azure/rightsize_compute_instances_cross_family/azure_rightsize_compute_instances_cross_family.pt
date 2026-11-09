@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.2",
+  version: "0.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -121,6 +121,15 @@ parameter "param_allow_mixed_x86_vendors" do
   description "Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_lifecycle_stages" do
+  type "list"
+  category "Filters"
+  label "Allowed Instance Lifecycle Stages"
+  description "The lifecycle stages, as defined by Microsoft, that a virtual machine size can be in to be recommended as a replacement. See the README for more details."
+  allowed_values ["Current", "Extended", "End-of-Life"]
+  default ["Current", "Extended", "End-of-Life"]
 end
 
 parameter "param_exclude_databricks" do
@@ -1402,11 +1411,11 @@ end
 
 # Main recommendation logic: idle detection and cross-family rightsizing
 datasource "ds_idle_and_rightsize_instances" do
-  run_script $js_idle_and_rightsize_instances, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_compute_instance_types, $ds_azure_vm_pricing, $ds_azure_available_sizes, $ds_applied_policy, $ds_currency, $ds_flexera_api_hosts, $ds_region_table, $param_stats_lookback, $param_stats_safety_factor, $param_allow_mixed_x86_vendors, $param_min_savings, rs_org_id, rs_project_id
+  run_script $js_idle_and_rightsize_instances, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_compute_instance_types, $ds_azure_vm_pricing, $ds_azure_available_sizes, $ds_applied_policy, $ds_currency, $ds_flexera_api_hosts, $ds_region_table, $param_stats_lookback, $param_stats_safety_factor, $param_allow_mixed_x86_vendors, $param_lifecycle_stages, $param_min_savings, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_rightsize_instances", type: "javascript" do
-  parameters "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_compute_instance_types", "ds_azure_vm_pricing", "ds_azure_available_sizes", "ds_applied_policy", "ds_currency", "ds_flexera_api_hosts", "ds_region_table", "param_stats_lookback", "param_stats_safety_factor", "param_allow_mixed_x86_vendors", "param_min_savings", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_compute_instance_types", "ds_azure_vm_pricing", "ds_azure_available_sizes", "ds_applied_policy", "ds_currency", "ds_flexera_api_hosts", "ds_region_table", "param_stats_lookback", "param_stats_safety_factor", "param_allow_mixed_x86_vendors", "param_lifecycle_stages", "param_min_savings", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   function formatNumber(number, separator) {
@@ -1444,6 +1453,17 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     return false
   }
 
+  // Map the lifecycle stages selected in the parameter to the 'lifecycle' values used in the instance type data.
+  // Retired is deliberately absent, so retired instance types are never recommended.
+  var lifecycle_values = { "Current": "current", "Extended": "extended", "End-of-Life": "eol" }
+  var allowed_lifecycles = _.compact(_.map(param_lifecycle_stages, function(stage) { return lifecycle_values[stage] }))
+
+  // Instance types with no lifecycle data are newly released, so they are treated as current
+  function isAllowedLifecycle(inst) {
+    var lifecycle = _.isString(inst['lifecycle']) ? inst['lifecycle'].toLowerCase() : 'current'
+    return _.contains(allowed_lifecycles, lifecycle)
+  }
+
   // Tiered idle CPU threshold based on vCPU count - larger instances need less % utilization
   // to constitute "real" usage, so the threshold scales down as core count grows.
   function getIdleCpuThreshold(vcpus) {
@@ -1464,6 +1484,10 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
   var candidate_types = []
   _.each(ds_azure_compute_instance_types, function(inst) {
     if (!inst['name'] || inst['superseded']) { return }
+
+    // Gate 14: Lifecycle stage -- candidate must be in one of the allowed lifecycle stages
+    if (!isAllowedLifecycle(inst)) { return }
+
     var specs = inst['specs'] || {}
     candidate_types.push({
       name: inst['name'],

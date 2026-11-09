@@ -30,6 +30,22 @@ For each running Azure virtual machine, the policy collects CPU, memory, disk, a
 1. Accelerated networking preserved (if current instance has accelerated networking, candidate must too)
 1. Disk throughput preserved (candidate `UncachedDiskBytesPerSecond` must meet peak observed throughput x safety factor)
 1. Disk IOPS preserved (candidate `UncachedDiskIOPS` must meet peak observed IOPS x safety factor)
+1. Must be in one of the lifecycle stages allowed by the `Allowed Instance Lifecycle Stages` parameter; retired sizes are never recommended (see [Instance Lifecycle Stages](#instance-lifecycle-stages) below)
+
+### Instance Lifecycle Stages
+
+Microsoft assigns each Azure virtual machine size to a [lifecycle stage](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/lifecycle-overview). This policy template recognizes the following stages when determining which sizes can be recommended:
+
+- `Current` - The newest generations of a virtual machine family.
+- `Extended` - Older generations that are still fully supported and have no announced retirement date.
+- `End-of-Life` - Sizes with an announced retirement date. These sizes remain available until that date, but may already be restricted for some subscriptions.
+
+The `Allowed Instance Lifecycle Stages` parameter selects which of these stages can be used for recommended sizes. All three are allowed by default.
+
+- Retired sizes, which can no longer be created, resized into, or run, are never recommended, regardless of the parameter value.
+- Only the lifecycle stage of the recommended size is considered. The lifecycle stage of a virtual machine's current size does not affect whether it is evaluated.
+- If no stages are selected, no resize recommendations are made. Idle virtual machines can still be recommended for deletion or power off, since these recommendations do not involve a recommended size.
+- Virtual machine sizes that are too new to have a lifecycle stage assigned yet are treated as `Current`.
 
 ### Policy Savings Details
 
@@ -63,6 +79,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
 - *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Allow Intel/AMD Recommendations* - Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance.
+- *Allowed Instance Lifecycle Stages* - The lifecycle stages, as defined by Microsoft, that a virtual machine size can be in to be recommended as a replacement. Sizes in a stage that is not selected are never recommended. Retired sizes are never recommended, regardless of this setting. See [Instance Lifecycle Stages](#instance-lifecycle-stages) for more details. Default: `Current`, `Extended`, and `End-of-Life`
 - *Exclude Databricks Instances* - Whether or not to filter virtual machines used for Azure Databricks from the results. If set to "Yes", virtual machines for Azure Databricks will not be included in the results.
 - *Statistic Lookback Period* - How many days back to look at CPU, memory, disk, and network metrics for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Rightsizing Safety Factor* - A multiplier applied to p95 utilization when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization.

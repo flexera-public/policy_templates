@@ -15,6 +15,22 @@ NOTE: This policy template only reports on underutilized and idle virtual machin
 - The recommendation provided for Idle Instances is a deletion action. These instances can be deleted or powered off in an automated manner or after approval.
 - The policy identifies all instances that have CPU and/or memory utilization below the user-specified underutilized thresholds and provides the relevant recommendation.
 - The recommendation provided for Underutilized Instances is a downsize action. These instances can be downsized in an automated manner or after approval.
+- Downsize recommendations only use virtual machine sizes in the lifecycle stages allowed by the `Allowed Instance Lifecycle Stages` parameter. See [Instance Lifecycle Stages](#instance-lifecycle-stages) below for more details.
+
+### Instance Lifecycle Stages
+
+Microsoft assigns each Azure virtual machine size to a [lifecycle stage](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/lifecycle-overview). This policy template recognizes the following stages when determining which sizes can be recommended:
+
+- `Current` - The newest generations of a virtual machine family.
+- `Extended` - Older generations that are still fully supported and have no announced retirement date.
+- `End-of-Life` - Sizes with an announced retirement date. These sizes remain available until that date, but may already be restricted for some subscriptions.
+
+The `Allowed Instance Lifecycle Stages` parameter selects which of these stages can be used for recommended sizes. All three are allowed by default.
+
+- Retired sizes, which can no longer be created, resized into, or run, are never recommended, regardless of the parameter value.
+- Downsize recommendations step through the next smaller sizes within the same virtual machine family and stop before the first size that is not in an allowed stage. This means a virtual machine receives no downsize recommendation if its next smaller size is not in an allowed stage. Sizes are never skipped over to find one that is in an allowed stage, since this would reduce capacity by more than the policy template expects.
+- If no stages are selected, no downsize recommendations are made. Idle virtual machines can still be recommended for deletion or power off, since these recommendations do not involve a recommended size.
+- Virtual machine sizes that are too new to have a lifecycle stage assigned yet are treated as `Current`.
 
 ### Policy Savings Details
 
@@ -41,6 +57,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Exclude Stopped Virtual Machines* - Whether or not to filter stopped virtual machines from the results. If set to `Yes`, only running virtual machines will be included in the results.
 - *Exclude Databricks* - Whether or not to filter virtual machines used for Azure Databricks from the results. If set to `Yes`, virtual machines for Azure Databricks will not be included in the results.
 - *Filter Recommendations That Change Local Disk* - Whether to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type. Set to `Exclude` to filter out downsize recommendations where local disk support changes. Default: `Include All`
+- *Allowed Instance Lifecycle Stages* - The lifecycle stages, as defined by Microsoft, that a virtual machine size can be in to be recommended as a replacement. Sizes in a stage that is not selected are never recommended. Retired sizes are never recommended, regardless of this setting. See [Instance Lifecycle Stages](#instance-lifecycle-stages) for more details. Default: `Current`, `Extended`, and `End-of-Life`
 - *Idle Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for deletion. Set to -1 to ignore CPU utilization for idle instance recommendations.
 - *Idle Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for deletion. Set to -1 to ignore memory utilization for idle instance recommendations.
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization for underutilized instance recommendations.
