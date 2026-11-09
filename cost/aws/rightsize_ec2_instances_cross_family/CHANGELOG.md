@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added a new `Recommend Previous Generation Instance Types` parameter. When set to 'Yes', previous generation EC2 instance types, as defined by AWS, can also be recommended. The default value is 'No', so only current generation instance types are recommended, as before.
+
 ## v0.2.2
 
 - Fixed an issue where the CPU and memory utilization chart could be generated with no data displayed for instances that only had memory utilization data available.

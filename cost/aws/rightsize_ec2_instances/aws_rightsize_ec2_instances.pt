@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.8.2",
+  version: "5.9.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -96,6 +96,15 @@ parameter "param_filter_gpu" do
   description "Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations."
   allowed_values "Include GPU Instances", "Exclude GPU Instances"
   default "Include GPU Instances"
+end
+
+parameter "param_recommend_previous_generation" do
+  type "string"
+  category "Filters"
+  label "Recommend Previous Generation Instance Types"
+  description "Whether to recommend previous generation EC2 instance types, as defined by AWS. AWS encourages the use of current generation instance types for the best performance. Select 'No' to never recommend a previous generation instance type. Note that instances that already use a previous generation instance type will not receive downsize recommendations when 'No' is selected, because recommendations are limited to other sizes within the same instance family. See the README for more details"
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -1317,16 +1326,19 @@ EOS
 end
 
 datasource "ds_aws_instance_size_map" do
-  run_script $js_aws_instance_size_map, $ds_aws_instance_types_map
+  run_script $js_aws_instance_size_map, $ds_aws_instance_types_map, $param_recommend_previous_generation
 end
 
 script "js_aws_instance_size_map", type: "javascript" do
-  parameters "ds_aws_instance_types_map"
+  parameters "ds_aws_instance_types_map", "param_recommend_previous_generation"
   result "result"
   code <<-'EOS'
   // Build lookup table keyed by instance name with 'down' field.
   // Instances are grouped by family and sorted by size_rank ascending.
   // Each instance's 'down' pointer is the next smaller instance in the same family.
+  // The 'down' pointer is null if the next smaller instance type is not a current generation
+  // instance type, as reported by AWS, and previous generation instance types should not be
+  // recommended. Sizes are never skipped over.
   // Metal instances (size_rank == null) are excluded from the sizing chain.
   result = {}
 
@@ -1345,9 +1357,16 @@ script "js_aws_instance_size_map", type: "javascript" do
     members.sort(function(a, b) { return a['size_rank'] - b['size_rank'] })
 
     _.each(members, function(instance, idx) {
-      result[instance['name']] = {
-        down: idx > 0 ? members[idx - 1]['name'] : null
+      var down = null
+
+      if (idx > 0) {
+        var smaller = members[idx - 1]
+        var is_current_generation = smaller['properties'] && smaller['properties']['currentGeneration']
+
+        if (is_current_generation || param_recommend_previous_generation == 'Yes') { down = smaller['name'] }
       }
+
+      result[instance['name']] = { down: down }
     })
   })
 EOS

@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.2.2",
+  version: "0.3.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -94,6 +94,15 @@ parameter "param_allow_mixed_x86_vendors" do
   category "Filters"
   label "Allow Intel/AMD Recommendations"
   description "Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_recommend_previous_generation" do
+  type "string"
+  category "Filters"
+  label "Recommend Previous Generation Instance Types"
+  description "Whether to recommend previous generation EC2 instance types, as defined by AWS. AWS encourages the use of current generation instance types for the best performance. Select 'No' to only recommend current generation instance types. Instances that already use a previous generation instance type can still be recommended to move to a current generation instance type. See the README for more details"
   allowed_values "Yes", "No"
   default "No"
 end
@@ -1637,11 +1646,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_aws_instance_types_map, $ds_aws_ec2_pricing, $ds_instance_costs_grouped, $ds_applied_policy, $ds_currency, $param_stats_lookback, $param_stats_safety_factor, $param_allow_mixed_x86_vendors, $param_min_savings, $param_filter_gpu
+  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_aws_instance_types_map, $ds_aws_ec2_pricing, $ds_instance_costs_grouped, $ds_applied_policy, $ds_currency, $param_stats_lookback, $param_stats_safety_factor, $param_allow_mixed_x86_vendors, $param_recommend_previous_generation, $param_min_savings, $param_filter_gpu
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_aws_instance_types_map", "ds_aws_ec2_pricing", "ds_instance_costs_grouped", "ds_applied_policy", "ds_currency", "param_stats_lookback", "param_stats_safety_factor", "param_allow_mixed_x86_vendors", "param_min_savings", "param_filter_gpu"
+  parameters "ds_merged_metrics", "ds_aws_instance_types_map", "ds_aws_ec2_pricing", "ds_instance_costs_grouped", "ds_applied_policy", "ds_currency", "param_stats_lookback", "param_stats_safety_factor", "param_allow_mixed_x86_vendors", "param_recommend_previous_generation", "param_min_savings", "param_filter_gpu"
   result "result"
   code <<-'EOS'
   function formatNumber(number, separator) {
@@ -1832,7 +1841,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       var c = inst_types_by_name[candidate_name]
       if (!c) { return }
       if (!c['properties']) { return }
-      if (!c['properties']['currentGeneration']) { return }
+      if (!c['properties']['currentGeneration'] && param_recommend_previous_generation != 'Yes') { return }
       if (c['properties']['bareMetal']) { return }
 
       var c_arch = c['cpu']['architectures'][0]
