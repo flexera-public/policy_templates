@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.8.0
+
+- Added the `Allowed Instance Lifecycle Stages` parameter, which controls which Azure virtual machine size lifecycle stages (`Current`, `Extended`, `End-of-Life`) are allowed for recommended sizes.
+- Virtual machine sizes that Microsoft has retired are no longer recommended as downsize targets.
+
 ## v6.7.2
 
 - Fixed an issue where the policy could fail with an error if a virtual machine's power state could not be determined.
