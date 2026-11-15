@@ -6,6 +6,58 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#5148](https://github.com/flexera-public/policy_templates/pull/5148): FOPTS-34057 Fix Budget Alerts configured threshold evaluation
+
+*Bug Fix*
+
+#### Description
+
+> Fixed Actual Spend and Forecasted Spend alerts to use the configured Threshold Percentage, preventing false-positive incidents when spend exceeds 100% but remains below the configured threshold.
+>
+> Documented the fix in CHANGELOG.md.
+>
+
+#### Metadata
+
+- **Policies**: [Budget Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/README.md)
+- **Merged At**: 2026-11-10 20:32:40 UTC
+
+---
+
+### PR [#5153](https://github.com/flexera-public/policy_templates/pull/5153): POL-1871 Azure Rightsize Compute: Lifecycle Filtering Options
+
+*Minor Update*
+
+#### Description
+
+> Updates both Azure Rightsize Compute policy templates with the following changes:
+> - Added the `Allowed Instance Lifecycle Stages` parameter, which controls which Azure virtual machine size lifecycle stages (`Current`, `Extended`, `End-of-Life`) are allowed for recommended sizes.
+> - Virtual machine sizes that Microsoft has retired are no longer recommended as resize targets.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/README.md), [Meta Parent: Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/README.md)
+- **Merged At**: 2026-11-10 13:47:53 UTC
+
+---
+
+### PR [#5149](https://github.com/flexera-public/policy_templates/pull/5149): POL-1870 AWS Rightsize EC2: Generation Filters
+
+*Minor Update*
+
+#### Description
+
+> Adds a filter for filtering (or not filtering) previous generation AWS EC2 instances to both AWS Rightsize EC2 policy templates. Both default to the already existing functionality so this is not a breaking change.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Meta Parent: AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [AWS Rightsize EC2 Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances_cross_family/README.md), [Meta Parent: AWS Rightsize EC2 Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances_cross_family/README.md)
+- **Merged At**: 2026-11-09 14:45:04 UTC
+
+---
+
 ### PR [#5081](https://github.com/flexera-public/policy_templates/pull/5081): FOPTS-31940 Fix S3 Intelligent-Tiering policy
 
 *Major Update*
@@ -1767,65 +1819,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md)
 - **Merged At**: 2026-06-18 17:41:30 UTC
-
----
-
-### PR [#4580](https://github.com/flexera-public/policy_templates/pull/4580): POL-1787 New Policy Template: Google Rule-Based Dimension From Project Tags
-
-*Unpublished, New Policy Template*
-
-#### Description
-
-> `Google Rule-Based Dimension From Project Tags`: This policy template creates and updates custom Rule-Based Dimensions that surface the specified Google Cloud resource manager tag key short names in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question.
->
-> (Warnings are not relevant to this policy template)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4580) for details about unpublished policies.
-- **Merged At**: 2026-06-17 18:30:21 UTC
-
----
-
-### PR [#4573](https://github.com/flexera-public/policy_templates/pull/4573): POL-1786 New Policy Template: AWS Auto Scaling Group Recommendations
-
-*New Policy Template*
-
-#### Description
-
-> New Policy Template: AWS Auto Scaling Group Recommendations
->
-> This policy template looks at the EC2 Auto Scaling Groups (ASGs) in your AWS accounts and flags ones that don't appear to be scaling. The most common pattern it catches is an ASG that was set up to grow and shrink with demand but, in practice, always runs at the same size — meaning you're paying for fixed capacity without getting any of the elasticity benefits of an ASG.
->
-> The policy raises four distinct findings per ASG:
->
-> 1. **Fixed-size ASG** — Min, Max, and Desired capacity are all set to the same number. The ASG cannot scale at all. High confidence.
-> 1. **Never moved off floor** — Min is lower than Max (so the ASG *could* scale), but the Desired capacity never actually changed during the lookback window. Either the floor is the real steady-state demand or a scaling policy exists but is never being triggered. High confidence when ASG group metrics are enabled; reduced confidence when the policy has to rely on the scaling-activity history alone.
-> 1. **Over-provisioned floor** — Min is greater than 1, and either the peak number of running instances stayed well below Min for the whole lookback window, or aggregate CPU stayed below the configured threshold. This is a "worth a review" finding, not a definitive call — the floor may be deliberately oversized for AZ spread or burst headroom that the metrics can't see. Medium confidence.
-> 1. **Group metrics collection disabled** — A hygiene finding raised when the ASG isn't emitting its group-level metrics to CloudWatch. Enabling group metrics is free and unblocks higher-confidence evaluation of findings 2 and 3 on the next policy run. This finding is raised independently of the other three.
->
-
-#### Metadata
-
-- **Policies**: [AWS Auto Scaling Group Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/asg_recommendations/README.md), [Meta Parent: AWS Auto Scaling Group Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/asg_recommendations/README.md)
-- **Merged At**: 2026-06-17 13:08:09 UTC
-
----
-
-### PR [#4558](https://github.com/flexera-public/policy_templates/pull/4558): POL-1785 Untagged Resources Bug Fix
-
-*Minor Update*
-
-#### Description
-
-> Fixed bug in the various "Untagged Resources" policy templates where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.
->
-
-#### Metadata
-
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md), [Azure Untagged Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms/README.md), [Google Unlabeled Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/unlabeled_resources/README.md)
-- **Merged At**: 2026-06-11 18:31:14 UTC
 
 ---
 
