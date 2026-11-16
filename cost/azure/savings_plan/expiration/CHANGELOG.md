@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.3.1
+- Fixed an issue where Savings Plan orders were not retrieved due to billing profile ID mismatches.
+
 ## v0.3.0
 
 - Added `Exclude Expired Savings Plans` parameter to optionally leave Savings Plans that have already expired out of the report.
