@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.2.4
+- Fixed an issue where Savings Plan orders were not retrieved due to billing profile ID mismatches.
+-
 ## v0.2.3
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
