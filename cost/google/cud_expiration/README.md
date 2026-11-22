@@ -8,6 +8,8 @@ This policy generates a report of all Google Committed Use Discounts (CUDs) that
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Days Until Expiration* - The number of days until expiration to include a Committed Use Discount in the report. Set to `0` to only report expired Committed Use Discounts.
+- *Exclude Expired Committed Use Discounts* - Whether or not to exclude Committed Use Discounts that have already expired. If `Days Until Expiration` is set to `0` and this is set to `Yes`, the policy will not report any Committed Use Discounts.
+- *Exclude Auto-Renewing Committed Use Discounts* - Whether or not to exclude Committed Use Discounts that are set to renew automatically.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
 - *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
