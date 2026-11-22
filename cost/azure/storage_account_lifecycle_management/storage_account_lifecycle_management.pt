@@ -8,10 +8,11 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.3.4",
+  version: "5.0.0",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Lifecycle Management",
+  recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
 
@@ -34,6 +35,25 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_cool_after_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Cool Tier"
+  description "The number of days without activity after which a lifecycle management rule would move Hot block blobs to the Cool tier. This is the assumption used to estimate savings, and also the number of days of Azure Monitor metrics that are analyzed. This value cannot be set higher than 90 because Azure platform metrics are only retained for 93 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 1
 end
 
 parameter "param_exclusion_tags" do
@@ -104,6 +124,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_max_payback_months" do
+  type "number"
+  category "Filters"
+  label "Maximum Payback Period (Months)"
+  description "Storage Accounts are not reported if the one-time cost of moving their blobs to the Cool tier would take longer than this many months of estimated savings to recover. Set to 0 for no limit."
+  min_value 0
+  default 12
+end
+
 parameter "param_incident_csv" do
   type "string"
   category "Incident Settings"
@@ -147,6 +176,15 @@ end
 pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "pagination_azure_pricing" do
+  get_page_marker do
+    body_path "NextPageLink"
   end
   set_page_marker do
     uri true
@@ -212,6 +250,98 @@ datasource "ds_applied_policy" do
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_azure_subscriptions" do
@@ -295,6 +425,10 @@ datasource "ds_storage_accounts" do
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
+      field "kind", jmes_path(col_item, "kind")
+      field "skuName", jmes_path(col_item, "sku.name")
+      field "accessTier", jmes_path(col_item, "properties.accessTier")
+      field "isHnsEnabled", jmes_path(col_item, "properties.isHnsEnabled")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
@@ -456,8 +590,34 @@ script "js_storage_accounts_rg_filtered", type: "javascript" do
 EOS
 end
 
+# Only Standard StorageV2 and BlobStorage accounts support blob tiering. Lifecycle management is never recommended for any other kind of Storage Account, so they are left out of the results entirely.
+datasource "ds_storage_accounts_type_filtered" do
+  run_script $js_storage_accounts_type_filtered, $ds_storage_accounts_rg_filtered
+end
+
+script "js_storage_accounts_type_filtered", type: "javascript" do
+  parameters "ds_storage_accounts_rg_filtered"
+  result "result"
+  code <<-'EOS'
+  // Azure Retail Prices product names for the kinds of Storage Accounts that support blob tiering
+  var product_names = { "storagev2": "General Block Blob v2", "blobstorage": "Blob Storage" }
+
+  result = []
+
+  _.each(ds_storage_accounts_rg_filtered, function(account) {
+    var kind = typeof(account['kind']) == 'string' ? account['kind'].toLowerCase() : ''
+    var sku = typeof(account['skuName']) == 'string' ? account['skuName'].toLowerCase() : ''
+
+    // Storage (general purpose v1), FileStorage, BlockBlobStorage, and all Premium accounts are left out
+    if (_.has(product_names, kind) && sku.indexOf('standard_') == 0) {
+      result.push(_.extend({}, account, { productName: product_names[kind] }))
+    }
+  })
+EOS
+end
+
 datasource "ds_management_policies" do
-  iterate $ds_storage_accounts_rg_filtered
+  iterate $ds_storage_accounts_type_filtered
   request do
     run_script $js_management_policies, val(iter_item, "id"), $param_azure_endpoint
   end
@@ -497,17 +657,16 @@ script "js_management_policies", type: "javascript" do
 EOS
 end
 
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_storage_accounts_rg_filtered, $ds_management_policies, $ds_applied_policy, $param_incident_csv
+# Storage Accounts without a lifecycle management policy, along with the details needed to estimate their savings
+datasource "ds_storage_accounts_no_policy" do
+  run_script $js_storage_accounts_no_policy, $ds_storage_accounts_type_filtered, $ds_management_policies
 end
 
-script "js_merged_metrics", type: "javascript" do
-  parameters "ds_storage_accounts_rg_filtered", "ds_management_policies", "ds_applied_policy", "param_incident_csv"
+script "js_storage_accounts_no_policy", type: "javascript" do
+  parameters "ds_storage_accounts_type_filtered", "ds_management_policies"
   result "result"
   code <<-'EOS'
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
-
-  mp_object = {}
+  var mp_object = {}
 
   _.each(ds_management_policies, function(mp) {
     if (mp['management_policy_id'] != null) {
@@ -515,12 +674,727 @@ script "js_merged_metrics", type: "javascript" do
     }
   })
 
-  accounts_without_mp = _.filter(ds_storage_accounts_rg_filtered, function(account) {
+  var accounts_without_mp = _.filter(ds_storage_accounts_type_filtered, function(account) {
     return mp_object[account['id']] == undefined
   })
 
+  // Savings can only be estimated for accounts with a recognized redundancy and without a hierarchical namespace.
+  // All other accounts are still reported, but without a savings estimate.
+  var redundancies = {
+    "standard_lrs": "LRS",
+    "standard_grs": "GRS",
+    "standard_ragrs": "RA-GRS",
+    "standard_zrs": "ZRS",
+    "standard_gzrs": "GZRS",
+    "standard_ragzrs": "RA-GZRS"
+  }
+
   result = _.map(accounts_without_mp, function(account) {
-    tags = []
+    var sku = typeof(account['skuName']) == 'string' ? account['skuName'].toLowerCase() : ''
+    var redundancy = _.has(redundancies, sku) ? redundancies[sku] : ''
+    var hns_enabled = account['isHnsEnabled'] === true || account['isHnsEnabled'] == 'true'
+    var note = ''
+
+    if (redundancy == '') {
+      note = "Storage redundancy not recognized"
+    } else if (hns_enabled) {
+      note = "Hierarchical namespace (Data Lake Gen2) accounts are not estimated"
+    }
+
+    return _.extend({}, account, {
+      redundancy: redundancy,
+      estimateEligible: note == '',
+      estimateNote: note
+    })
+  })
+EOS
+end
+
+datasource "ds_storage_account_batches" do
+  run_script $js_storage_account_batches, $ds_storage_accounts_no_policy
+end
+
+script "js_storage_account_batches", type: "javascript" do
+  parameters "ds_storage_accounts_no_policy"
+  result "result"
+  code <<-'EOS'
+  var eligible_accounts = _.filter(ds_storage_accounts_no_policy, function(account) {
+    return account['estimateEligible'] === true
+  })
+
+  // Group by subscription and region, since each metrics request is made for a single subscription and region
+  var account_groups = _.values(_.groupBy(eligible_accounts, function(account) {
+    return [account['subscriptionId'], account['region']].join('|')
+  }))
+
+  // Split into batches of the same subscription and region
+  var batch_size = 50 // Maximum batch size for Azure Metrics getBatch API is 50
+
+  result = []
+
+  _.each(account_groups, function(accounts) {
+    for (var i = 0; i < accounts.length; i += batch_size) {
+      result.push(_.map(accounts.slice(i, i + batch_size), function(account) {
+        return { id: account['id'], region: account['region'], subscriptionId: account['subscriptionId'] }
+      }))
+    }
+  })
+
+  // 'result' looks like this:
+  /*
+  [
+    [max of 50 accounts of same subscription and same region...],
+    [max of 50 accounts of same subscription and same region...],
+    ...
+  ]
+  */
+EOS
+end
+
+# BlobCapacity and BlobCount use the same filter, aggregation, and interval, so they are requested together
+datasource "ds_blob_capacity_metrics" do
+  iterate $ds_storage_account_batches
+  request do
+    run_script $js_blob_metrics_request, iter_item, $param_azure_endpoint, $param_cool_after_days, "capacity"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
+  end
+end
+
+datasource "ds_blob_ingress_metrics" do
+  iterate $ds_storage_account_batches
+  request do
+    run_script $js_blob_metrics_request, iter_item, $param_azure_endpoint, $param_cool_after_days, "ingress"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
+  end
+end
+
+datasource "ds_blob_egress_metrics" do
+  iterate $ds_storage_account_batches
+  request do
+    run_script $js_blob_metrics_request, iter_item, $param_azure_endpoint, $param_cool_after_days, "egress"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
+  end
+end
+
+script "js_blob_metrics_request", type: "javascript" do
+  parameters "storage_accounts", "param_azure_endpoint", "param_cool_after_days", "metric_group"
+  result "request"
+  code <<-'EOS'
+  // Slow down rate of requests to prevent throttling
+  api_wait = 1
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  // Each group of metrics needs its own request because their aggregations, intervals, and filters differ
+  var metric_groups = {
+    capacity: {
+      metricnames: "BlobCapacity,BlobCount",
+      aggregation: "average",
+      interval: "P1D",
+      filter: "Tier eq 'Hot' and BlobType eq 'BlockBlob'"
+    },
+    ingress: {
+      metricnames: "Ingress",
+      aggregation: "total",
+      interval: "FULL"
+    },
+    egress: {
+      metricnames: "Egress",
+      aggregation: "total",
+      interval: "FULL",
+      filter: "ApiName eq 'GetBlob'"
+    }
+  }
+
+  var metric_group_settings = metric_groups[metric_group]
+
+  // The window always covers at least the last param_cool_after_days full days
+  var end_date = new Date()
+  end_date.setUTCHours(23, 59, 59, 999)
+
+  var start_date = new Date()
+  start_date.setUTCDate(start_date.getUTCDate() - param_cool_after_days)
+  start_date.setUTCHours(0, 0, 0, 0)
+
+  var host_tld = param_azure_endpoint == "management.chinacloudapi.cn" ? "cn" : "com"
+
+  var query_params = {
+    "api-version": "2024-02-01",
+    "starttime": start_date.toISOString(),
+    "endtime": end_date.toISOString(),
+    "interval": metric_group_settings['interval'],
+    "metricnames": metric_group_settings['metricnames'],
+    "metricnamespace": "Microsoft.Storage/storageAccounts/blobServices",
+    "aggregation": metric_group_settings['aggregation']
+  }
+
+  if (metric_group_settings['filter']) { query_params['filter'] = metric_group_settings['filter'] }
+
+  var request = {
+    auth: "auth_azure",
+    host: storage_accounts[0]['region'] + ".metrics.monitor.azure." + host_tld,
+    verb: "POST",
+    path: "subscriptions/" + storage_accounts[0]['subscriptionId'] + "/metrics:getBatch",
+    query_params: query_params,
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      "resourceids": _.map(storage_accounts, function(account) { return account['id'] + "/blobServices/default" })
+    }),
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_storage_account_subscriptions" do
+  run_script $js_storage_account_subscriptions, $ds_storage_accounts_no_policy
+end
+
+script "js_storage_account_subscriptions", type: "javascript" do
+  parameters "ds_storage_accounts_no_policy"
+  result "result"
+  code <<-'EOS'
+  var eligible_accounts = _.filter(ds_storage_accounts_no_policy, function(account) {
+    return account['estimateEligible'] === true
+  })
+
+  result = _.compact(_.uniq(_.pluck(eligible_accounts, 'subscriptionId')))
+EOS
+end
+
+datasource "ds_storage_account_costs" do
+  iterate $ds_storage_account_subscriptions
+  request do
+    run_script $js_storage_account_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "usageType", jmes_path(col_item, "dimensions.usage_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_storage_account_costs", type: "javascript" do
+  parameters "subscriptionId", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  // The last 30 full days of cost data, ending 3 days ago to allow for the delay in billing data.
+  // The end date is exclusive.
+  var start_date = new Date()
+  start_date.setUTCDate(start_date.getUTCDate() - 32)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var end_date = new Date()
+  end_date.setUTCDate(end_date.getUTCDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "usage_type"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Storage"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.storage"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscriptionId
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_hot_storage_costs" do
+  run_script $js_hot_storage_costs, $ds_storage_account_costs
+end
+
+script "js_hot_storage_costs", type: "javascript" do
+  parameters "ds_storage_account_costs"
+  result "result"
+  code <<-'EOS'
+  // The cost of Hot tier "Data Stored" usage over the cost window for each Storage Account, keyed by lowercase resource ID.
+  // Accounts with no matching cost data are left out entirely, so that they are not mistaken for accounts with no cost.
+  // "Hot" must be a whole word so that usage types such as "Snapshot" are not mistaken for the Hot tier.
+  var hot_regex = /(^|[^a-z])hot([^a-z]|$)/;
+
+  result = {}
+
+  _.each(ds_storage_account_costs, function(item) {
+    var resource_id = typeof(item['resourceID']) == 'string' ? item['resourceID'].toLowerCase() : ''
+    var usage_type = typeof(item['usageType']) == 'string' ? item['usageType'].toLowerCase() : ''
+
+    if (resource_id == '' || usage_type.indexOf('data stored') == -1 || !hot_regex.test(usage_type)) { return }
+
+    // Costs of anything nested under a Storage Account are counted towards that Storage Account
+    var account_match = resource_id.match(/^(.*\/storageaccounts\/[^\/]+)/)
+    var account_id = account_match ? account_match[1] : resource_id
+
+    var cost = parseFloat(item['cost'])
+    if (isNaN(cost)) { cost = 0 }
+
+    result[account_id] = (result[account_id] || 0) + cost
+  })
+EOS
+end
+
+datasource "ds_pricing_regions" do
+  run_script $js_pricing_regions, $ds_storage_accounts_no_policy
+end
+
+script "js_pricing_regions", type: "javascript" do
+  parameters "ds_storage_accounts_no_policy"
+  result "result"
+  code <<-'EOS'
+  var eligible_accounts = _.filter(ds_storage_accounts_no_policy, function(account) {
+    return account['estimateEligible'] === true
+  })
+
+  result = _.compact(_.uniq(_.map(eligible_accounts, function(account) {
+    return typeof(account['region']) == 'string' ? account['region'].toLowerCase() : ''
+  })))
+EOS
+end
+
+datasource "ds_pricing" do
+  iterate $ds_pricing_regions
+  request do
+    pagination $pagination_azure_pricing
+    host "prices.azure.com"
+    path "/api/retail/prices"
+    query "currencyCode", val($ds_currency_code, "value")
+    query "$filter", join(["serviceName eq 'Storage' and priceType eq 'Consumption' and armRegionName eq '", iter_item, "' and (productName eq 'General Block Blob v2' or productName eq 'Blob Storage')"])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Items[*]") do
+      field "region", jmes_path(col_item, "armRegionName")
+      field "productName", jmes_path(col_item, "productName")
+      field "skuName", jmes_path(col_item, "skuName")
+      field "meterName", jmes_path(col_item, "meterName")
+      field "unitOfMeasure", jmes_path(col_item, "unitOfMeasure")
+      field "tierMinimumUnits", jmes_path(col_item, "tierMinimumUnits")
+      field "retailPrice", jmes_path(col_item, "retailPrice")
+      field "currencyCode", jmes_path(col_item, "currencyCode")
+    end
+  end
+end
+
+datasource "ds_pricing_lookup" do
+  run_script $js_pricing_lookup, $ds_pricing
+end
+
+script "js_pricing_lookup", type: "javascript" do
+  parameters "ds_pricing"
+  result "result"
+  code <<-'EOS'
+  // The Hot and Cool block blob prices for each region, product, and redundancy, keyed by "region|product|redundancy".
+  // Meters are matched on the SKU name, the end of the meter name, the unit of measure, and the first pricing tier
+  // rather than on exact meter names, because the meter names are not consistent between redundancy levels.
+  // The prices are for the first pricing tier, since that is the one that applies to the first 50 TB of data.
+  var redundancies = ["LRS", "GRS", "RA-GRS", "ZRS", "GZRS", "RA-GZRS"]
+  var product_names = ["General Block Blob v2", "Blob Storage"]
+
+  // Some meters of the read-access redundancies are published under their non-read-access counterparts
+  var fallback_redundancies = { "RA-GRS": "GRS", "RA-GZRS": "GZRS" }
+
+  var lower = function(value) { return typeof(value) == 'string' ? value.toLowerCase().trim() : '' }
+
+  var items = _.map(ds_pricing, function(item, index) {
+    return {
+      index: index,
+      group: [lower(item['region']), lower(item['productName'])].join('|'),
+      sku: lower(item['skuName']),
+      meter: lower(item['meterName']),
+      unit: lower(item['unitOfMeasure']),
+      tier: parseFloat(item['tierMinimumUnits']),
+      price: parseFloat(item['retailPrice']),
+      meterName: item['meterName'],
+      skuName: item['skuName']
+    }
+  })
+
+  var items_by_group = _.groupBy(items, function(item) { return item['group'] })
+
+  var findMeter = function(candidates, sku, meter_suffix, unit) {
+    var match = _.find(candidates, function(item) {
+      return item['sku'] == sku &&
+        item['unit'] == unit &&
+        item['tier'] === 0 &&
+        !isNaN(item['price']) &&
+        item['meter'].slice(-meter_suffix.length) == meter_suffix &&
+        item['meter'].indexOf('iterative') == -1
+    })
+
+    if (match == undefined) { return null }
+
+    return { price: match['price'], meterName: match['meterName'], skuName: match['skuName'], index: match['index'] }
+  }
+
+  result = {}
+
+  _.each(_.uniq(_.map(ds_pricing, function(item) { return lower(item['region']) })), function(region) {
+    _.each(product_names, function(product_name) {
+      var candidates = items_by_group[[region, lower(product_name)].join('|')] || []
+
+      _.each(redundancies, function(redundancy) {
+        var hot_sku = "hot " + redundancy.toLowerCase()
+        var cool_sku = "cool " + redundancy.toLowerCase()
+        var cool_fallback_sku = fallback_redundancies[redundancy] ? "cool " + fallback_redundancies[redundancy].toLowerCase() : cool_sku
+
+        result[[region, product_name, redundancy].join('|')] = {
+          productName: product_name,
+          redundancy: redundancy,
+          hot: findMeter(candidates, hot_sku, "data stored", "1 gb/month"),
+          cool: findMeter(candidates, cool_sku, "data stored", "1 gb/month"),
+          coolWrite: findMeter(candidates, cool_sku, "write operations", "10k") || findMeter(candidates, cool_fallback_sku, "write operations", "10k"),
+          coolRetrieval: findMeter(candidates, cool_sku, "data retrieval", "1 gb") || findMeter(candidates, cool_fallback_sku, "data retrieval", "1 gb")
+        }
+      })
+    })
+  })
+EOS
+end
+
+# Not used by the policy itself. Retrieve this datasource to verify which Azure retail price meters were matched:
+# fpt retrieve_data storage_account_lifecycle_management.pt --names ds_pricing_debug
+datasource "ds_pricing_debug" do
+  run_script $js_pricing_debug, $ds_pricing, $ds_pricing_lookup
+end
+
+script "js_pricing_debug", type: "javascript" do
+  parameters "ds_pricing", "ds_pricing_lookup"
+  result "result"
+  code <<-'EOS'
+  // The raw retail price items, each labeled with the price(s) it was matched as (if any)
+  var slots = ["hot", "cool", "coolWrite", "coolRetrieval"]
+  var matched = {}
+
+  _.each(ds_pricing_lookup, function(entry) {
+    _.each(slots, function(slot) {
+      if (entry && entry[slot]) {
+        var index = entry[slot]['index']
+        if (matched[index] == undefined) { matched[index] = [] }
+        matched[index].push(slot + ":" + entry['redundancy'])
+      }
+    })
+  })
+
+  result = _.map(ds_pricing, function(item, index) {
+    return {
+      region: item['region'],
+      productName: item['productName'],
+      skuName: item['skuName'],
+      meterName: item['meterName'],
+      unitOfMeasure: item['unitOfMeasure'],
+      tierMinimumUnits: item['tierMinimumUnits'],
+      retailPrice: item['retailPrice'],
+      currencyCode: item['currencyCode'],
+      matchedAs: (matched[index] || []).join(', ')
+    }
+  })
+EOS
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_storage_accounts_no_policy, $ds_blob_capacity_metrics, $ds_blob_ingress_metrics, $ds_blob_egress_metrics, $ds_hot_storage_costs, $ds_pricing_lookup, $ds_currency, $ds_applied_policy, $param_cool_after_days, $param_min_savings, $param_max_payback_months, $param_incident_csv
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_storage_accounts_no_policy", "ds_blob_capacity_metrics", "ds_blob_ingress_metrics", "ds_blob_egress_metrics", "ds_hot_storage_costs", "ds_pricing_lookup", "ds_currency", "ds_applied_policy", "param_cool_after_days", "param_min_savings", "param_max_payback_months", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+  var bytes_per_gb = 1024 * 1024 * 1024
+
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        var withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      var decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  // Rounds a number, and returns an empty string for anything that is not a finite number
+  function round(value, decimals) {
+    if (typeof(value) != 'number' || !isFinite(value)) { return "" }
+
+    var factor = Math.pow(10, decimals)
+    return Math.round(value * factor) / factor
+  }
+
+  // Reduces the getBatch responses for one metric to a single value per Storage Account, keyed by lowercase resource ID.
+  // A metric that is not returned, or that returns an error, is left out, which means its value is unknown.
+  // A metric that is returned without any datapoints has a status of "empty", which means there was no activity.
+  // The value of a "last" metric is its most recent datapoint. The value of a "sum" metric is the total of its datapoints.
+  function reduceMetric(responses, metric_name, datapoint_key, mode) {
+    var metrics_by_account = {}
+
+    _.each(responses, function(response) {
+      if (!response || typeof(response['resourceID']) != 'string') { return }
+
+      var account_id = response['resourceID'].toLowerCase().replace(/\/blobservices\/default$/, '')
+
+      var metric = _.find(response['value'], function(item) {
+        return item && item['name'] && String(item['name']['value']).toLowerCase() == metric_name.toLowerCase()
+      })
+
+      if (metric == undefined || (metric['errorCode'] && metric['errorCode'] != 'Success')) { return }
+
+      var found = false
+      var value = 0
+
+      _.each(metric['timeseries'], function(series) {
+        var latest_time = null
+        var latest_value = null
+
+        _.each(series['data'], function(point) {
+          if (!point || typeof(point[datapoint_key]) != 'number') { return }
+
+          found = true
+          if (mode == "sum") { value += point[datapoint_key] }
+
+          if (latest_time == null || String(point['timeStamp']) >= latest_time) {
+            latest_time = String(point['timeStamp'])
+            latest_value = point[datapoint_key]
+          }
+        })
+
+        if (mode == "last" && latest_value != null) { value += latest_value }
+      })
+
+      metrics_by_account[account_id] = { status: found ? "value" : "empty", value: value }
+    })
+
+    return metrics_by_account
+  }
+
+  var capacity_by_account = reduceMetric(ds_blob_capacity_metrics, "BlobCapacity", "average", "last")
+  var blob_count_by_account = reduceMetric(ds_blob_capacity_metrics, "BlobCount", "average", "last")
+  var ingress_by_account = reduceMetric(ds_blob_ingress_metrics, "Ingress", "total", "sum")
+  var egress_by_account = reduceMetric(ds_blob_egress_metrics, "Egress", "total", "sum")
+
+  var price_labels = [
+    { slot: "hot", label: "Hot Data Stored" },
+    { slot: "cool", label: "Cool Data Stored" },
+    { slot: "coolWrite", label: "Cool Write Operations" },
+    { slot: "coolRetrieval", label: "Cool Data Retrieval" }
+  ]
+
+  var unavailable_note = "Required Azure Monitor metrics unavailable"
+
+  // Estimates the monthly savings of a lifecycle rule that moves Hot block blobs to the Cool tier after param_cool_after_days days.
+  //
+  // The estimate is a conservative lower bound. No more than touched_gb of data can have been written or read during
+  // the last param_cool_after_days days, where touched_gb is the Ingress plus the GetBlob Egress over that time. Everything
+  // else in the Hot tier has been untouched for at least param_cool_after_days days, so a rule would have moved it to
+  // Cool. Repeated reads of the same bytes only shrink the amount of data that was touched, which makes the cold fraction
+  // a floor and not a guess.
+  function estimateSavings(account) {
+    var estimate = {
+      computed: false,
+      net_savings: 0,
+      payback_months: Infinity,
+      note: "",
+      hot_gb: "",
+      eligible_gb: "",
+      cold_fraction_pct: "",
+      transition_cost: ""
+    }
+
+    if (account['estimateEligible'] !== true) {
+      estimate['note'] = account['estimateNote']
+      return estimate
+    }
+
+    var account_id = account['id'].toLowerCase()
+
+    // Missing metrics are unknown, and are not treated as zero
+    if (capacity_by_account[account_id] == undefined) {
+      estimate['note'] = unavailable_note
+      return estimate
+    }
+
+    var hot_bytes = capacity_by_account[account_id]['value']
+    var hot_gb = hot_bytes / bytes_per_gb
+    estimate['hot_gb'] = hot_gb
+
+    if (!(hot_bytes > 0)) {
+      estimate['note'] = "No Hot block blob data"
+      return estimate
+    }
+
+    // Ingress and Egress that are returned without any datapoints mean that there was no traffic, which is what an idle account looks like
+    var blob_count = blob_count_by_account[account_id]
+    var ingress = ingress_by_account[account_id]
+    var egress = egress_by_account[account_id]
+
+    if (blob_count == undefined || blob_count['status'] != "value" || ingress == undefined || egress == undefined) {
+      estimate['note'] = unavailable_note
+      return estimate
+    }
+
+    var read_bytes = egress['value']
+    var touched_gb = (ingress['value'] + read_bytes) / bytes_per_gb
+    var cold_fraction = Math.min(Math.max(1 - touched_gb / hot_gb, 0), 1)
+    var eligible_gb = hot_gb * cold_fraction
+    var eligible_blobs = blob_count['value'] * cold_fraction
+
+    estimate['eligible_gb'] = eligible_gb
+    estimate['cold_fraction_pct'] = cold_fraction * 100
+
+    var prices = ds_pricing_lookup[[String(account['region']).toLowerCase(), account['productName'], account['redundancy']].join('|')]
+
+    var missing_prices = _.filter(price_labels, function(item) {
+      var price = prices ? prices[item['slot']] : null
+      return !price || (item['slot'] == "hot" && !(price['price'] > 0))
+    })
+
+    if (missing_prices.length > 0) {
+      estimate['note'] = "Azure retail prices not found: " + _.pluck(missing_prices, 'label').join(', ')
+      return estimate
+    }
+
+    var notes = []
+    var retail_hot_rate = prices['hot']['price']
+    var effective_hot_rate = retail_hot_rate
+    var discount_ratio = 1
+
+    // Use the effective Hot rate from the bill when there is one, so that discounts are taken into account
+    var billed_hot_cost = ds_hot_storage_costs[account_id]
+
+    if (billed_hot_cost == undefined) {
+      notes.push("Billing data not found, so the Azure retail Hot rate was used")
+    } else {
+      effective_hot_rate = Math.max(billed_hot_cost, 0) / hot_gb
+      discount_ratio = effective_hot_rate / retail_hot_rate
+    }
+
+    if (!(effective_hot_rate > 0)) {
+      estimate['note'] = "No Hot storage cost found in billing data"
+      return estimate
+    }
+
+    var cool_rate = prices['cool']['price'] * discount_ratio
+    var gross_monthly = eligible_gb * (effective_hot_rate - cool_rate)
+
+    // Conservative: assumes that all of the reads seen during the window would be reads of Cool data
+    var retrieval_monthly = (read_bytes / bytes_per_gb) * prices['coolRetrieval']['price'] * (30 / param_cool_after_days)
+    var net_monthly = gross_monthly - retrieval_monthly
+    var transition_cost = (eligible_blobs / 10000) * prices['coolWrite']['price'] * discount_ratio
+
+    estimate['computed'] = true
+    estimate['net_savings'] = net_monthly
+    estimate['transition_cost'] = transition_cost
+    estimate['payback_months'] = net_monthly > 0 ? transition_cost / net_monthly : Infinity
+
+    if (net_monthly <= 0 && eligible_gb <= 0) {
+      notes.unshift("Metrics indicate that all Hot block blob data may have been written or read within the last " + param_cool_after_days + " days")
+    } else if (net_monthly <= 0) {
+      notes.unshift("Estimated Cool tier retrieval costs offset the estimated storage savings")
+    }
+
+    estimate['note'] = notes.join('. ')
+
+    return estimate
+  }
+
+  result = []
+  var total_savings = 0.0
+
+  _.each(ds_storage_accounts_no_policy, function(account) {
+    var estimate = estimateSavings(account)
+    var savings = Math.max(estimate['net_savings'], 0)
+
+    if (savings < param_min_savings) { return }
+
+    // The payback period only applies to accounts that an estimate could be made for
+    if (estimate['computed'] && param_max_payback_months > 0 && estimate['payback_months'] > param_max_payback_months) { return }
+
+    total_savings += savings
+
+    var tags = []
 
     if (typeof(account['tags']) == 'object') {
       _.each(_.keys(account['tags']), function(key) {
@@ -528,7 +1402,14 @@ script "js_merged_metrics", type: "javascript" do
       })
     }
 
-    return {
+    var recommendation_details = [
+      "Create a lifecycle management policy for Azure Storage Account ", account['name'], " ",
+      "in Azure Subscription ", account['subscriptionName'],
+      " (", account['subscriptionId'], ") ",
+      "that moves Hot block blobs to the Cool tier after ", param_cool_after_days, " days"
+    ].join('')
+
+    result.push({
       accountID: account['subscriptionId'],
       accountName: account['subscriptionName'],
       resourceGroup: account['resourceGroup'],
@@ -536,11 +1417,88 @@ script "js_merged_metrics", type: "javascript" do
       resourceName: account['name'],
       region: account['region'],
       tags: tags.join(', '),
+      recommendationDetails: recommendation_details,
+      hotCapacityGB: round(estimate['hot_gb'], 3),
+      eligibleCapacityGB: round(estimate['eligible_gb'], 3),
+      coldFractionPct: round(estimate['cold_fraction_pct'], 2),
+      transitionCostOneTime: round(estimate['transition_cost'], 3),
+      paybackMonths: round(estimate['payback_months'], 2),
+      savings: round(savings, 3),
+      savingsCurrency: ds_currency['symbol'],
+      savingsNote: estimate['note'],
       policy_name: ds_applied_policy['name'],
       service: "Microsoft.Storage",
-      csv_message: csv_message
-    }
+      total_savings: "",
+      message: ""
+    })
   })
+
+  // Message for incident output
+  var total_accounts = ds_storage_accounts_no_policy.length
+  var estimated_accounts = _.filter(result, function(item) { return item['savings'] > 0 }).length
+  var estimated_percentage = total_accounts == 0 ? '0.00%' : (estimated_accounts / total_accounts * 100).toFixed(2).toString() + '%'
+
+  var account_noun = total_accounts > 1 ? "Storage Accounts" : "Storage Account"
+  var account_verb = estimated_accounts == 1 ? "is" : "are"
+
+  var findings = [
+    "Out of ", total_accounts, " Azure ", account_noun, " with blob tiering support and without a Lifecycle Management Policy, ",
+    estimated_accounts, " (", estimated_percentage, ") ", account_verb,
+    " estimated to save money by moving Hot block blobs to the Cool tier. "
+  ].join('')
+
+  var explanation = [
+    "The Estimated Monthly Savings of each Storage Account is a conservative lower bound based on the last ",
+    param_cool_after_days, " days of Azure Monitor metrics. ",
+    "It assumes a Lifecycle Management rule that moves Hot block blobs to the Cool tier after ",
+    param_cool_after_days, " days, and it is net of the estimated Cool tier data retrieval costs. ",
+    "Only Hot block blob data that was neither written nor read during that time is counted, ",
+    "and Cold and Archive tier savings are not estimated. "
+  ].join('')
+
+  if (param_max_payback_months > 0) {
+    explanation += [
+      "Storage Accounts that would take more than ", param_max_payback_months,
+      " months of estimated savings to recover the one-time cost of moving their blobs to the Cool tier are not reported. "
+    ].join('')
+  }
+
+  explanation += "See the Savings Note of each Storage Account for details on why an estimate could not be made.\n\n"
+
+  var disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  var savings_message = [ ds_currency['symbol'], formatNumber(total_savings, ds_currency['separator']) ].join(' ')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(_.sortBy(result, 'resourceName'), function(item) { return -item['savings'] })
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    region: "",
+    tags: "",
+    recommendationDetails: "",
+    hotCapacityGB: "",
+    eligibleCapacityGB: "",
+    coldFractionPct: "",
+    transitionCostOneTime: "",
+    paybackMonths: "",
+    savings: "",
+    savingsCurrency: "",
+    savingsNote: "",
+    policy_name: "",
+    service: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + explanation + disclaimer + csv_message
+  result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
 
@@ -551,11 +1509,15 @@ end
 policy "pol_azure_storage_account_lifecycle" do
   validate_each $ds_merged_metrics do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Storage Accounts Without Lifecycle Management Policies Found"
-    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "tags"
+    hash_exclude "tags", "savings", "savingsCurrency", "hotCapacityGB", "eligibleCapacityGB", "coldFractionPct", "transitionCostOneTime", "paybackMonths", "savingsNote"
     export do
       resource_level true
       field "accountID" do
@@ -573,11 +1535,41 @@ policy "pol_azure_storage_account_lifecycle" do
       field "tags" do
         label "Tags"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "region" do
         label "Region"
       end
+      field "hotCapacityGB" do
+        label "Hot Capacity (GB)"
+      end
+      field "eligibleCapacityGB" do
+        label "Eligible Capacity (GB)"
+      end
+      field "coldFractionPct" do
+        label "Estimated Cold Fraction (%)"
+      end
+      field "transitionCostOneTime" do
+        label "Transition Cost (One-Time)"
+      end
+      field "paybackMonths" do
+        label "Payback Period (Months)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savingsNote" do
+        label "Savings Note"
+      end
       field "service" do
         label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
       end
       field "id" do
         label "ID"

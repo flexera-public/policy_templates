@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.0.0
+
+- Added `Estimated Monthly Savings` for each Storage Account without a lifecycle management policy along with several parameters and incident fields to support this.
+- Recommendations are now scraped into the Flexera One Optimization dashboard.
+- Policy template now requires the `Microsoft.Insights/metrics/read` Azure permission and the `billing_center_viewer` Flexera role.
+
 ## v4.3.4
 
 - Fixed an issue where the policy could fail to identify any storage accounts missing a lifecycle management policy, even when such accounts existed.
