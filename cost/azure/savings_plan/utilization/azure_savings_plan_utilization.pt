@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "0.2.3",
+  version: "0.2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -212,6 +212,7 @@ datasource "ds_billing_profiles" do
       field "billingAccountCurrency", val(iter_item, "currency")
       field "billingProfileId", jmes_path(col_item, "id")
       field "billingProfileName", jmes_path(col_item, "name")
+      field "billingProfileSystemId", jmes_path(col_item, "properties.systemId")
       field "billingProfileCurrency", jmes_path(col_item, "properties.currency")
     end
   end
@@ -235,6 +236,7 @@ script "js_billing_details", type: "javascript" do
           "billingAccountName": acc.name,
           "billingProfileId": "N/A",
           "billingProfileName": "N/A",
+          "billingProfileSystemId": "N/A",
           "agreementType": acc.agreementType,
           "currency": acc.currency
         })
@@ -246,6 +248,7 @@ script "js_billing_details", type: "javascript" do
             "billingAccountName": prof.billingAccountName,
             "billingProfileId": prof.billingProfileId,
             "billingProfileName": prof.billingProfileName,
+            "billingProfileSystemId": prof.billingProfileSystemId,
             "agreementType": prof.agreementType,
             "currency": prof.billingProfileCurrency
           })
@@ -283,8 +286,10 @@ script "js_savings_plan_details", type: "javascript" do
   // Define whether $filter query_param is required (only required if MCA)
   filter_query = ""
 
-  if (ds_billing_detail.billingProfileId && ds_billing_detail.billingProfileId != "N/A") {
-    filter_query = "properties/billingProfileId eq '" + ds_billing_detail.billingProfileId + "'"
+  if (ds_billing_detail.billingProfileSystemId && ds_billing_detail.billingProfileSystemId != "N/A") {
+      var billingProfileResourceId = ds_billing_detail.billingAccountId + "/billingProfiles/" + ds_billing_detail.billingProfileSystemId
+
+      filter_query = "properties/billingProfileId eq '" + billingProfileResourceId + "'"
   }
 
   query_params = {
@@ -483,7 +488,7 @@ script "js_sp_data_for_incident", type: "javascript" do
 
   result = {
     "savings_plan_details": filtered_sps,
-    "message": "The total estimated hourly wasted spend is " + total_wastage
+    "message": "The total estimated hourly wasted spend is " + total_wastage,
     "csv_message": csv_message
   }
   EOS
